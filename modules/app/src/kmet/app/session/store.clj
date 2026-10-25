@@ -20,7 +20,7 @@
 ;; Off, the same entry loads: a session file that parses is trusted, and
 ;; dropping data is opt-in. An atom rather than a dynamic var: a session loads
 ;; on whichever thread asked for it, and the switch is process-wide like debug
-;; logging itself. The host owns the switch (`kmet.agent.debug/enable!`), which
+;; logging itself. The host owns the switch (`kmet.app.debug/enable!`), which
 ;; is why this layer does not require the logger.
 
 (defonce ^:private report-wrong-shape (atom false))
@@ -538,7 +538,7 @@
    opts may carry :tokens-before, :usage, :details, :from-hook (true when an
    extension supplied the summary — pi: CompactionEntry.fromHook).
    Returns the compaction entry, or nil when first-kept-id is not found.
-   The compaction policy that calls this lives in kmet.agent.compaction.stage;
+   The compaction policy that calls this lives in kmet.app.compaction.stage;
    the entry shape belongs here, next to make-bash-entry."
   [session summary first-kept-id & [opts]]
   (when (some #(= (:id %) first-kept-id) @(:entries session))

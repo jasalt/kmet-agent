@@ -1,7 +1,7 @@
 (ns kmet.agent.test-compaction
   (:require [clojure.test :as t]
             [clojure.string :as str]
-            [kmet.agent.compaction.core :as core]))
+            [kmet.app.compaction.core :as core]))
 
 ;; ─── Token estimation (pi: estimateTokens) ─────────────────────────────────
 

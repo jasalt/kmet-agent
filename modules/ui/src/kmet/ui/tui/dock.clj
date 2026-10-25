@@ -42,7 +42,7 @@
    explicitly before publishing the stack — only they know the new
    panel's target (a selector's inner list, not its chrome))."
   (:require [kmet.ui.tui.custom-dialog-adapter :as cda]
-            [kmet.agent.debug :as debug]
+            [kmet.app.debug :as debug]
             [kmet.libs.reakt.core :as r]
             [kmet.tui.core :as tui]))
 

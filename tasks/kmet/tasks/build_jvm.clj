@@ -36,7 +36,7 @@
             [babashka.process :as p]
             [clojure.string :as str]
             [clojure.tools.build.api :as b]
-            [kmet.agent.version :as version-lib]
+            [kmet.app.version :as version-lib]
             [kmet.tasks.build :as build]
             [kmet.tasks.modules :as modules]))
 

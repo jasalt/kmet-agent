@@ -7,7 +7,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.debug :as debug]
+            [kmet.app.debug :as debug]
             [kmet.app.session.core :as s]
             [kmet.app.session.store :as store]))
 

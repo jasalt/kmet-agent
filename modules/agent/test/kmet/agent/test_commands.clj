@@ -1,12 +1,12 @@
 (ns kmet.agent.test-commands
-  "Tests for kmet.agent.commands — slash command registry, and the runtime
+  "Tests for kmet.app.commands — slash command registry, and the runtime
    builtins' registry-facing behavior."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.commands.builtins :as builtins]
+            [kmet.app.commands :as commands]
+            [kmet.app.commands.builtins :as builtins]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
 

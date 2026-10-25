@@ -100,10 +100,10 @@
       (t/is (identical? (ns-resolve 'kmet.extension 'register-tool!)
                         (loader/load host {:kind :var :name "kmet.extension/register-tool!"}))
             "a shared host namespace comes back by reference")
-      (t/is (= [] (loader/find host {:kind :ns :name "kmet.agent.commands"}))
+      (t/is (= [] (loader/find host {:kind :ns :name "kmet.app.commands"}))
             "a name outside the contract is invisible")
       (t/is (= :loader/miss
-               (:type (ex-data (threw #(loader/load host {:kind :ns :name "kmet.agent.commands"})))))
+               (:type (ex-data (threw #(loader/load host {:kind :ns :name "kmet.app.commands"})))))
             "invisible means a miss, not a denial — a context's own roots get their turn")
       (t/is (str/includes? (str (ex-message (threw #(loader/find host {:kind :ns :name "kmet.loader.core"}))))
                            "host machinery")

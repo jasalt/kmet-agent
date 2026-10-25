@@ -18,7 +18,7 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.agent.debug :as debug]
+            [kmet.app.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.host :as host]
             [kmet.libs.process :as libs-process]))

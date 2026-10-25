@@ -2,7 +2,7 @@
   "SkillInvocationMessageComponent — pi's SkillInvocationMessageComponent.
 
    A `/skill:name args` invocation expands to a `<skill …>` block
-   (kmet.agent.skills/expand-skill-command) that goes to the model verbatim
+   (kmet.app.skills/expand-skill-command) that goes to the model verbatim
    and is stored in the session as the user message's content. Rendering
    that text directly would dump the XML wrapper and the whole skill body
    into the transcript, so the block is parsed back
@@ -27,7 +27,7 @@
    (`tool-renderers/format-compact-read-call`), so the two spellings cannot
    drift."
   (:require [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.libs.reakt.core :as reakt]
             [kmet.ui.tui.subs :as s]
             [kmet.tui.components.box :as box]

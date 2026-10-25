@@ -5,7 +5,7 @@
    (via the on-changed callback) and invalidates the TUI."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.theme :as theme]))
 

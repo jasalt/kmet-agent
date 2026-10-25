@@ -6,11 +6,11 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.ai.models :as m]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.loop :as agent]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.test-utils :as tu]))
 
 (defn- install-runtime-capabilities!

@@ -19,7 +19,7 @@
             [kmet.tui.components.box :as box]
             [kmet.tui.components.container :as container]
             [kmet.tui.utils :as utils]
-            [kmet.agent.tools.util :as tool-util]
+            [kmet.app.tools.util :as tool-util]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
             [kmet.ui.tui.custom-dialog-adapter :as cda]
             [kmet.ui.tui.image-block :as image-block]

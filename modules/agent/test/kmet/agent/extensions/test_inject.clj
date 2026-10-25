@@ -6,7 +6,7 @@
             [clojure.string :as str]
             [clojure.test :as t :refer [testing]]
             [kmet.agent.app-runtime :as app]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.srce.core :as srce]))
 
 (defn- mount-fiber

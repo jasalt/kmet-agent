@@ -6,11 +6,11 @@
             [clojure.string :as str]
             [clojure.edn :as edn]
             [babashka.fs :as fs]
-            [kmet.agent.extensions.bundled :as bundled]
-            [kmet.agent.packages :as pkgs]
-            [kmet.agent.tools.config :as tools-config]
+            [kmet.app.extensions.bundled :as bundled]
+            [kmet.app.packages :as pkgs]
+            [kmet.app.tools.config :as tools-config]
             [kmet.ui.tui.resource-config :as rc]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
@@ -558,7 +558,7 @@
 
 (t/deftest test-screen-builtin-tools-merged-state
   ;; the global view resolves the user list only; the project view resolves
-  ;; the scope-merged entries (kmet.agent.config/merge-default-tools)
+  ;; the scope-merged entries (kmet.app.config/merge-default-tools)
   (with-settings
     (fn [_]
       (let [rows-of (fn [screen]

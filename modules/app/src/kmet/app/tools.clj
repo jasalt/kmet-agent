@@ -2,7 +2,7 @@
   "The `:tools` service — the app's tool registry, installed once and mutated
    through its handle.
 
-   The service value is a `kmet.agent.registry/Registry` handle created by the
+   The service value is a `kmet.app.registry/Registry` handle created by the
    row's `apply` and provided into the app scope (`{:in …}`, as the events row
    does), so the app's other rows see it while the entry stays this fiber's
    effect. **Installation is the `provide!`; every later change is a handle
@@ -11,7 +11,7 @@
    the registering fiber is disposed (the disposer is the tool's removal).
 
    The tool *semantics* — the built-in map, schema normalization, selection for
-   a caller's surface — live beside it in `kmet.agent.tools.registry`, which
+   a caller's surface — live beside it in `kmet.app.tools.registry`, which
    took every reader a handle as its first argument at landing 4f: the built-in
    table is built per handle, so two agents' tool tables share no state. kmet1's
    arity-less forms are a rank-4 façade over this service

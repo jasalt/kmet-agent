@@ -7,8 +7,8 @@
    ctx chain under `:loop-stages`, which means nothing here knows which process,
    root or composition the ctx belongs to. A reload re-seats the map a ctx holds
    (`refresh!`) rather than reaching for one."
-  (:require [kmet.agent.loop-guard :as loop-guard]
-            [kmet.agent.retry :as retry]
+  (:require [kmet.app.loop-guard :as loop-guard]
+            [kmet.app.retry :as retry]
             [kmet.srce.core :as srce]))
 
 (def defaults

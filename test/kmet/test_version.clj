@@ -1,11 +1,11 @@
 (ns kmet.test-version
-  "kmet.agent.version — jolt's checkout-version rule (jolt tools/version.sh),
+  "kmet.app.version — jolt's checkout-version rule (jolt tools/version.sh),
    the baked/source assembly both apps print, and the live git round-trip."
   (:require [babashka.fs :as fs]
             [babashka.process :as p]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kmet.agent.version :as version]))
+            [kmet.app.version :as version]))
 
 (deftest describe-normalization
   (testing "a release tag stands as git describe reports it, v kept"

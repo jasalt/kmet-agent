@@ -7,13 +7,13 @@
             [babashka.fs :as fs]
             [kmet.libs.host :as host]
             [kmet.ai.models :as models]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.extensions.context :as ext-context]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.extensions.context :as ext-context]
             [kmet.agent.app-runtime :as rt]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.skills :as skills]
+            [kmet.app.commands :as commands]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.registry :as registry]
+            [kmet.app.skills :as skills]
             [kmet.agent.tools.core :as tools]))
 
 ;; ─── Bundled resource descriptors ───────────────────
@@ -329,7 +329,7 @@
   ;; injected and the bundled jars excluded.
   ;;
   ;; Runs on both hosts: the fixture's deps.edn excludes rewrite-clj for the
-  ;; bb port, and the fixed bundled set (kmet.agent.extensions.libs) provides
+  ;; bb port, and the fixed bundled set (kmet.app.extensions.libs) provides
   ;; it where the declaration's gap would otherwise be — the closure
   ;; assertions below stay meaningful on both (the declared cljfmt is in the
   ;; closure, the host-provided ports are not).
@@ -349,7 +349,7 @@
     (extensions/unload-all-extensions!)))
 
 (t/deftest test-extension-fixed-bundled-set
-  ;; the fixed bundled set (kmet.agent.extensions.libs; src/kmet/extension.md § Bundled
+  ;; the fixed bundled set (kmet.app.extensions.libs; src/kmet/extension.md § Bundled
   ;; extension libraries) needs no deps.edn: a single-file extension requires
   ;; every third-party member and calls each one — same result on both hosts.
   (extensions/clear-extensions!)
@@ -653,7 +653,7 @@
           (extensions/unload-all-extensions!))))
 
     (testing "kmet.agent.* requires are rejected with an actionable error"
-      (let [result (load "app" "(ns bad-app (:require [kmet.agent.commands :as c]))\n(defn init [api] nil)\n")]
+      (let [result (load "app" "(ns bad-app (:require [kmet.app.commands :as c]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
                              "may depend only on kmet.extension, kmet.tui.* and kmet.libs.*"))))

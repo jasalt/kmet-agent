@@ -166,8 +166,8 @@
 ;; ─── Fresh-process cold regex ───────────────────────────────────────────────
 
 (defn cold-regex [grouped?]
-  (require 'kmet.agent.retry)
-  (let [rre (var-get (ns-resolve 'kmet.agent.retry 'retryable-error-regex))
+  (require 'kmet.app.retry)
+  (let [rre (var-get (ns-resolve 'kmet.app.retry 'retryable-error-regex))
         rx (if grouped?
              (re-pattern (str "(" (.pattern rre) ")"))
              rre)

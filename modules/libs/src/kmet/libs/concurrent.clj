@@ -11,11 +11,11 @@
    Extensions run in isolated SCI contexts where `future`/`pmap`/`pcalls`
    are not available — SCI is a pure interpreter with no bundled
    Executor, while babashka injects `future` only into its host context
-   (see `kmet.agent.extensions.core/build-context-namespaces`). `kmet` therefore
+   (see `kmet.app.extensions.core/build-context-namespaces`). `kmet` therefore
    exposes this tiny helper instead of whitelisting `future`:
 
    - host: `babashka` embeds `sci` + injects `future` via `:namespaces`
-   - extensions: second `sci` context built by `kmet.agent.extensions.core` —
+   - extensions: second `sci` context built by `kmet.app.extensions.core` —
      only `slurp`/`spit`/`file-seq` from `clojure.core` plus the shared
      `kmet.tui.*` / `kmet.libs.*` layers are injected; `future` is
      deliberately omitted.
@@ -33,15 +33,15 @@
   "Start a daemon thread running `(f)` — the extension-SCI replacement
    for `future` (which is not available in extension contexts).
 
-   Exceptions in `f` are logged via `kmet.agent.debug/log` and otherwise
+   Exceptions in `f` are logged via `kmet.app.debug/log` and otherwise
    swallowed (extension background work must never kill the host).
    Returns the `Thread` (already started, daemon=true)
    so callers that need to `.interrupt` / `.join` it can."
   [f]
   (let [t (Thread. (fn [] (try (f) (catch Throwable e
                                      (try
-                                       (requiring-resolve 'kmet.agent.debug/log)
-                                       (when-let [log-fn (resolve 'kmet.agent.debug/log)]
+                                       (requiring-resolve 'kmet.app.debug/log)
+                                       (when-let [log-fn (resolve 'kmet.app.debug/log)]
                                          (log-fn "spawn failed" e))
                                        (catch Throwable _ nil))))))]
     (.setDaemon t true)

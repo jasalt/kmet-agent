@@ -5,7 +5,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
-            [kmet.agent.keybindings :as kb]
+            [kmet.app.keybindings :as kb]
             [kmet.ui.tui.scoped-models-selector :as sms]
             [kmet.ai.models :as models]
             [kmet.libs.hikap.core :as engine]

@@ -3,7 +3,7 @@
    one shape: a handle provided into the app scope, empty at mount, mutated
    through the handle, and no tag bleeding between them."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.app.registries :as registries]
             [kmet.app.tools :as tools]
             [kmet.srce.core :as srce]))

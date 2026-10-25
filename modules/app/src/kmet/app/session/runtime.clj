@@ -20,10 +20,11 @@
    paths, never by a reader."
   (:require
    [babashka.fs :as fs]
-   [kmet.agent.config :as cfg]
-   [kmet.agent.event-bus :as event-bus]
-   [kmet.agent.loop.state :as loop-state]
-   [kmet.agent.model-resolver :as resolver]
+   [kmet.app.config :as cfg]
+   [kmet.app.event-bus :as event-bus]
+   [kmet.app.loop.stages :as loop-stages]
+   [kmet.app.loop.state :as loop-state]
+   [kmet.app.model-resolver :as resolver]
    [kmet.app.session.core :as session]
    [kmet.app.session.export :as session-export]
    [kmet.ai.models :as models]))
@@ -90,6 +91,14 @@
    replaces it)."
   [engine]
   (some-> engine :config deref))
+
+(defn refresh-loop-stages!
+  "Re-seat the agent's own loop stage map with the builtin defaults — the
+   /reload path: a reloaded guard or retry stage reaches the next attempt, and
+   an in-flight attempt keeps the map it read. A ctx that carries no stage atom
+   of its own is left alone."
+  [engine]
+  (loop-stages/refresh! (:ctx (agent-state engine))))
 
 (defn set-config!
   "Replace the live process config (/reload re-reads settings.edn and
@@ -359,7 +368,7 @@
 
 (defn switch-model!
   "Switch the session model with the position-preserving thinking rule
-   (kmet rank rule — see kmet.agent.loop.state/switch-thinking-level), persist it
+   (kmet rank rule — see kmet.app.loop.state/switch-thinking-level), persist it
    as the settings default, and return the resulting thinking level.
    EXPLICIT-LEVEL wins when given. The /model + selector + extension
    capability path; set-model! applies the model alone."

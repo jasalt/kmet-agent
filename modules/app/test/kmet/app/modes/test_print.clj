@@ -11,8 +11,8 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.packages :as packages]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support :refer [answering
                                                        sessions-dir

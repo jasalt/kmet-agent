@@ -1,7 +1,7 @@
 (ns kmet.app.test-support
   "Shared helpers for the app's entry-point tests."
   (:require [babashka.fs :as fs]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.concurrent :as concurrent]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]

@@ -8,10 +8,10 @@
    Esc cancels. Mounted in place of the editor (pi: showSelector)."
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]

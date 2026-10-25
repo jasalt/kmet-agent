@@ -16,7 +16,7 @@
             [kmet.tui.components.markdown :as md]
             [kmet.libs.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
-            [kmet.agent.extensions.core :as extensions]))
+            [kmet.app.extensions.core :as extensions]))
 
 ;; ─── Helpers ───────────────────────────────────────────────────────────────
 

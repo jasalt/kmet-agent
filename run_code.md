@@ -16,7 +16,7 @@ Status: **T1, T2 and T4 implemented** in this tree —
 babashka and jolt); the mcp-adapter's `mcpScript` tool and `bb`-subprocess
 runtime retired into the same engine (its catalog joins the sandbox as a
 contributed tool source — T2 below). T4 shares the invocation pipeline with
-the loop (`kmet.agent.tools.invoke`), so scripted calls fire the run's tool
+the loop (`kmet.app.tools.invoke`), so scripted calls fire the run's tool
 hooks and a script abort cancels inner calls. The last plan item, the
 post-adoption T0 re-measurement, is recorded below as well (✅): run_code is
 still used rarely, so the bash find/read workload has not moved yet.
@@ -33,7 +33,7 @@ The sandbox now builds its per-call SCI context from the host's loaded
 so macros survive) plus babashka's class table on the bb host — a script
 `require`s `clojure.pprint`/`clojure.java.io`/… and resolves `System`,
 `java.io.*`, `Throwable`, `future` as in a babashka script. The fixed
-bundled extension set (`kmet.agent.extensions.libs` — `rewrite-clj.*`,
+bundled extension set (`kmet.app.extensions.libs` — `rewrite-clj.*`,
 `edamame.core`, `cljfmt.*`, `parinferish.core`) is copied too, so a script
 requires the same shared copies extension contexts get. kmet's own
 namespaces stay blocked (the boundary error below), and jolt's SCI exposes no
@@ -296,7 +296,7 @@ so T1–T3 don't re-litigate it:
 
 Loader facts: kmet.loader uses **SCI on babashka** and the **native
 `jolt.loader` on jolt** (`.jolt` file; backend selected in
-`kmet.agent.extensions.core`). The run_code tool builds a fresh per-call `sci/init`
+`kmet.app.extensions.core`). The run_code tool builds a fresh per-call `sci/init`
 context (the T1 original forked a cached base through
 `kmet.loader.sci-loader`) and evaluates with `sci/eval-string*` directly;
 kmet pins SCI in `jolt/deps.edn`, so the same evaluator is available on
@@ -496,7 +496,7 @@ comes first.
   measured need (boot cost/call frequency) or a second consumer. The tool
   contract (description/skill/API) should survive T1→T3 untouched.
 - **T4 — shared invocation core + hooks + cancellation. ✅ landed.** The
-  bridge stopped owning a private execution path: `kmet.agent.tools.invoke`
+  bridge stopped owning a private execution path: `kmet.app.tools.invoke`
   serves the loop and the sandbox alike, scripted calls fire the run's
   tool hooks, a script abort cancels what it can reach, and surface
   selection unifies through `registry/select-tools`. Details below.
@@ -578,7 +578,7 @@ must emit it.
 
 ### Dispatch and result contract
 
-- One bridge over the record's `:execute-tool` seam (`kmet.agent.tools.invoke`'s
+- One bridge over the record's `:execute-tool` seam (`kmet.app.tools.invoke`'s
   contract, which the registry wires to its handle-bound `execute-tool` and
   kmet1 reaches through the `kmet.agent.tools.core` façade). It already
   provides arg normalization, `:prepare-arguments`, `:contextual?`/`:streams?`
@@ -864,7 +864,7 @@ The probes that found the capture bugs left a set of deliberate behaviors:
 
 ## T4 — shared invocation core, hooks, cancellation (landed)
 
-The bridge no longer owns a private execution path. `kmet.agent.tools.invoke`
+The bridge no longer owns a private execution path. `kmet.app.tools.invoke`
 (`prepare-tool-call` / `execute-tool-call` / `finish-tool-call`) is the one
 pipeline both callers use:
 

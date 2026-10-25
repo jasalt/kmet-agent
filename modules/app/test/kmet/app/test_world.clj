@@ -2,9 +2,9 @@
   "The process world loads once, in order, and an entry's composition is
    published before its extensions register (new-app.md, 5l-ii)."
   (:require [clojure.test :as t]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
+            [kmet.app.config :as cfg]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.packages :as packages]
             [kmet.ai.image-models :as image-models]
             [kmet.ai.models :as models]
             [kmet.app.root :as root]

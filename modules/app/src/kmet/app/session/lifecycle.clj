@@ -18,15 +18,15 @@
    moves whichever holds it."
   (:require
    [babashka.fs :as fs]
-   [kmet.agent.config :as cfg]
-   [kmet.agent.debug :as debug]
-   [kmet.agent.event-bus :as event-bus]
-   [kmet.agent.extensions.core :as extensions]
-   [kmet.agent.loop :as agent]
-   [kmet.agent.loop.state :as loop-state]
+   [kmet.app.config :as cfg]
+   [kmet.app.debug :as debug]
+   [kmet.app.event-bus :as event-bus]
+   [kmet.app.extensions.core :as extensions]
+   [kmet.app.loop :as agent]
+   [kmet.app.loop.state :as loop-state]
    [kmet.app.session.core :as session]
    [kmet.app.session.runtime :as runtime]
-   [kmet.agent.skills :as skills]
+   [kmet.app.skills :as skills]
    [kmet.libs.concurrent :as concurrent]))
 
 (defn- refresh-prompt-cwd!

@@ -2,7 +2,7 @@
   "The `:tools` service: installed by one `provide!`, mutated through its
    handle, visible to a sibling row, and gone with the fiber."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.app.tools :as tools]
             [kmet.srce.core :as srce]))
 

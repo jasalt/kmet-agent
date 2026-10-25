@@ -4,7 +4,7 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t]
             [clojure.string :as str]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.tui.core :as core]
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as theme]

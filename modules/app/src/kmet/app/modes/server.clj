@@ -34,7 +34,7 @@
    a per-connection port needs landing 8's per-agent surface — the host's
    front-end binding is one process atom."
   (:require [clojure.java.io :as io]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as events]
             [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]

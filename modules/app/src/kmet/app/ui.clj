@@ -20,7 +20,7 @@
    a provider adds beyond that (rpc's wire records, the TUI's render hooks)
    wraps the port; the service is the base, not the ceiling."
   (:require [clojure.string :as str]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.srce.core :as srce]))
 
 (def required-keys

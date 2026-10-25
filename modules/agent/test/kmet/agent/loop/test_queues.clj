@@ -3,12 +3,12 @@
    interact with a running turn."
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.compaction.stage :as compact]
-            [kmet.agent.loop.state :as state]
-            [kmet.agent.loop :as loop]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.compaction.stage :as compact]
+            [kmet.app.loop.state :as state]
+            [kmet.app.loop :as loop]
             [kmet.agent.loop.test-support :as support]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.config :as cfg]))
 
 ;; ─── Queues (steering / follow-up) ────────────────────────────────────────
 

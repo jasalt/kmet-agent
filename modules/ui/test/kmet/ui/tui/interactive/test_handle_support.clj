@@ -13,7 +13,7 @@
    *after* the boot; a registration made before it lands in the handle the boot
    replaces and `find-command` will not see it."
   (:require [babashka.fs :as fs]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.core :as core]

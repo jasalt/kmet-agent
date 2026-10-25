@@ -20,7 +20,7 @@ modules/
 ├── ai/     — provider/auth library                  (kmet.ai.*)
 ├── srce/   — the kmet2 kernel: ctx, services, fibers  (kmet.srce.*; srce.md)
 ├── app/    — kmet2's application, below every front end (kmet.app.*;
-│             the file/namespace rule is new-app.md)   (kmet.agent.version)
+│             the file/namespace rule is new-app.md)   (kmet.app.version)
 ├── ui/     — the front ends: the TUI components kmet2 owns (kmet.ui.*;
 │             `kmet.agent.ui.tui.resource-config` is the one file left in
 │             agent's UI tree, waiting on its package lookup)
@@ -40,7 +40,7 @@ may depend only on strictly lower-ranked ones, and a *namespace* may require
 only a file in a strictly lower-ranked module (`srce` 1, `app` 2, `ui` 3,
 `agent` 4 — the legacy app sits above the shared layers and the new front ends
 until it is retired). A file may
-change module without changing namespace: `kmet.agent.version` lives in
+change module without changing namespace: `kmet.app.version` lives in
 `modules/app` so both apps can print one version string, and the module's
 `deps.edn` carries the edge (`agent` → `app`). `kmet.agent.core` in the agent
 module is still the only process entry — it is a bootstrap that selects the
@@ -75,14 +75,14 @@ runtime.
 
 The app module (`modules/agent/src/kmet/agent`). Several `kmet.agent.*`
 namespaces live in `modules/app` instead — the two-axes rule: the file moves,
-its namespace does not — so this tree is what remains. `kmet.agent.version`
-(landing 1), `kmet.agent.registry` (landing 3), the session log
+its namespace does not — so this tree is what remains. `kmet.app.version`
+(landing 1), `kmet.app.registry` (landing 3), the session log
 (`kmet.app.session.*`, 4c-i), the extension host's leaf dependencies
-(`kmet.agent.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
+(`kmet.app.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
 prep), and since 4f the whole tool layer — `kmet.agent.tools.*` and
-`kmet.agent.config` — which is app's now, handle-parameterized, with kmet1's
+`kmet.app.config` — which is app's now, handle-parameterized, with kmet1's
 default installed from `app-runtime`. 7a has since moved the loop the same way
-(namespaces kept): `kmet.agent.loop` and its submodules, `kmet.agent.compaction.*`,
+(namespaces kept): `kmet.app.loop` and its submodules, `kmet.agent.compaction.*`,
 and the three leaves the loop reaches for — `.model-resolver`,
 `.project-context`, `.git-packages` — so this tree is now kmet1's front ends,
 its resource registries and the Engine.
@@ -128,7 +128,7 @@ kmet/agent/
 ├── (packages_cli.clj)  — the install/remove/update/list/config CLI; moved to
 │                         `modules/app` (both entries dispatch it)
 ├── (git_packages.clj)  — git source parsing + managed checkouts; moved at 7a
-├── (loop.clj)          — the agent loop driver (`kmet.agent.loop`, public:
+├── (loop.clj)          — the agent loop driver (`kmet.app.loop`, public:
 │                         make-agent-state, run-agent-turn, cancel-turn);
 │                         moved at 7a
 ├── (loop/)             — loop submodules — `message`, `state`, `completion`,
@@ -154,7 +154,7 @@ kmet/agent/
 │                         layer itself (tool, util, invoke, bash + its two
 │                         halves, read/write/edit, run_code, the `kmet config`
 │                         rows) lives in `modules/app/src/kmet/agent/tools`
-│                         since 4f, namespaces kept; `kmet.agent.config` went
+│                         since 4f, namespaces kept; `kmet.app.config` went
 │                         with it.
 ├── modes/              — entry modes
 │   ├── interactive.clj — interactive TUI entry: run + session start-up
@@ -202,7 +202,7 @@ root `AGENTS.md` topic map.
   rank 0): registrations keyed by owner path, with LIFO, isolated disposal. It
   and its backend `kmet.agent.registry-store` were deleted at landing 4e, and so
   was `scope.md`; the owner-path/LIFO/ordering conventions it established live
-  on in the ctx tree (`srce` effects, `kmet.agent.registry` handles) and are
+  on in the ctx tree (`srce` effects, `kmet.app.registry` handles) and are
   documented with them.
 - `kmet.loader.*` is an outer module (`modules/loader`); it may use
   third-party deps and `kmet.loader.*`, but no other `kmet.*` namespace.
@@ -299,13 +299,13 @@ front end:
   its `CoreState` view state plus the engine, and print/RPC modes construct
   no agent state at all.
   Modes and app UI (kmet.agent.modes.**, kmet.agent.ui.**) use the runtime's
-  front-end surface only — they never require `kmet.agent.loop` — and
+  front-end surface only — they never require `kmet.app.loop` — and
   `kmet.agent.test-layer-guard` enforces that boundary.
 - The event stream is the API. `subscribe!` delivers plain EDN events on the
   emitting thread (fast, non-blocking) and the vocabulary — `event-types` /
   `app-event-types` / `loop-event-types`, declared as `:events` in
   `kmet.app.events/plugin` and read from that declaration,
-  re-exported by `kmet.agent.event-bus`, which keeps kmet1's own table and
+  re-exported by `kmet.app.event-bus`, which keeps kmet1's own table and
   emitters until the loop re-points (`new-app.md`, landing 2) — is the shared
   contract; `:agent-settled` carries the
   run's `:outcome` (`:completed` / `:error` / `:aborted`). A front end that

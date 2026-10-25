@@ -20,7 +20,7 @@
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.model-selector :as model-selector]
             [kmet.ui.tui.theme-submenu :as theme-submenu]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.expandable-text :as expandable-text]

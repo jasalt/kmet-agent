@@ -11,7 +11,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.app.core :as core]
             [kmet.app.runtime :as runtime]
             [kmet.app.test-support :as support]

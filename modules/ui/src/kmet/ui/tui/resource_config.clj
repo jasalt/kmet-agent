@@ -5,12 +5,12 @@
    unified resolution).
 
    The kmet-only built-in tools group renders first
-   (kmet.agent.tools.config): one row per built-in tool, toggled through the
+   (kmet.app.tools.config): one row per built-in tool, toggled through the
    :default-tools settings key of the write scope (global: -name modifier
    or plain selection rewrite; project: +/- delta over the global list).
 
    The bundled group lists the app-provided bundled extensions
-   (kmet.agent.extensions.bundled): always present,
+   (kmet.app.extensions.bundled): always present,
    disabled by default, toggled through the :bundled-extensions settings
    key of the write scope (global: plain/-name; project: +/- delta over
    the global setting).
@@ -44,11 +44,11 @@
    the screen's focus flag (pi: searchInput.focused)."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.packages :as pkgs]
-            [kmet.agent.tools.config :as tools-config]
+            [kmet.app.keybindings :as app-kb]
+            [kmet.app.packages :as pkgs]
+            [kmet.app.tools.config :as tools-config]
             [kmet.ui.tui.subs :as s]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.reakt.core :as r]
             [kmet.libs.path :as path]
             [kmet.tui.components.input :as input]
@@ -305,7 +305,7 @@
         project-settings (cfg/read-project-settings-map)
         ;; the built-in tools group joins each view: user-only settings for
         ;; the global view, the scope-merged :default-tools entries for the
-        ;; project view (kmet.agent.tools.config)
+        ;; project view (kmet.app.tools.config)
         tools (fn [project?]
                 (tools-config/builtin-tool-items user-settings
                                                  (when project? project-settings)))]
@@ -496,7 +496,7 @@
         (cond
           ;; built-in tools are not :packages entries either: the global
           ;; branch writes the :default-tools list, the project branch its
-          ;; +name/-name delta (kmet.agent.tools.config/apply-builtin-tool-*)
+          ;; +name/-name delta (kmet.app.tools.config/apply-builtin-tool-*)
           (tools-config/builtin-tool-item? item)
           (if (= :global (:write-scope st))
             (global-toggle-row! this row item tools-config/apply-builtin-tool-toggle!)
@@ -505,7 +505,7 @@
 
           ;; bundled items are not :packages entries: the global branch
           ;; writes the :bundled-extensions key, the project branch its
-          ;; +/- delta (kmet.agent.packages/apply-bundled-*)
+          ;; +/- delta (kmet.app.packages/apply-bundled-*)
           (pkgs/bundled-item? item)
           (if (= :global (:write-scope st))
             (global-toggle-row! this row item pkgs/apply-bundled-toggle!)

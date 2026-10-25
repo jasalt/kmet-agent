@@ -1,9 +1,13 @@
 (ns kmet.app.test-system-prompt
-  "The `:systemPrompt` row: a builder over the `:skills` registry, provided as a
-   value, filling the one input a service owns."
+  "The `:systemPrompt` row and the pure builder it provides: the row fills the
+   one input a service owns (the skills registry) and hands the builder out as a
+   value; the builder itself takes every registry-shaped input as an argument, so
+   two engines build two prompts and nothing is read from a process registry.
+   `kmet.app.skills/build-system-prompt` is kmet1's wrapper over the builder —
+   it supplies the process defaults and is covered by `kmet.app.test-skills`."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.app.registries :as registries]
             [kmet.app.system-prompt :as system-prompt]
             [kmet.srce.core :as srce]))
@@ -73,3 +77,59 @@
                                       :location "skills/mine/SKILL.md"}])]
         (is (str/includes? prompt "<name>mine</name>"))
         (is (not (str/includes? prompt "from-the-registry")))))))
+
+;; ── the builder itself ────────────────────────────────────────────────────
+
+(defn- tool
+  [name snippet & [guidelines]]
+  {:name name :prompt-snippet snippet :prompt-guidelines guidelines})
+
+(defn- prompt
+  [& opts]
+  (apply system-prompt/build-system-prompt opts))
+
+(deftest the-tool-table-comes-from-the-caller
+  (let [a (prompt :tools [(tool "read" "Read a file") (tool "grep" "Search files")]
+                  :skills [])
+        b (prompt :tools [(tool "bash" "Run a command")] :skills [])]
+    (is (str/includes? a "- read: Read a file"))
+    (is (str/includes? a "- grep: Search files"))
+    (is (not (str/includes? a "- bash:")))
+    (is (str/includes? b "- bash: Run a command"))
+    (is (not (str/includes? b "- read:")))
+    (is (str/includes? a "When a turn needs several tool calls")
+        "the always-on guidelines are not a tool's")))
+
+(deftest no-tool-table-means-no-tools
+  ;; nil is the caller's "this engine has none", not "use the process's": the
+  ;; builder has no registry to fall back to.
+  (let [p (prompt :skills [])]
+    (is (str/includes? p "Available tools:\n(none)"))
+    (is (not (str/includes? p "bash")))))
+
+(deftest the-skills-block-needs-the-read-tool
+  (let [skills [{:name "deploy" :description "Ship it" :location "/tmp/deploy/SKILL.md"}
+                {:name "secret" :description "Hidden" :disable-model-invocation true}]
+        with-read (prompt :tools [(tool "read" "Read a file")] :skills skills)
+        without-read (prompt :tools [(tool "bash" "Run a command")] :skills skills)]
+    (is (str/includes? with-read "<available_skills>"))
+    (is (str/includes? with-read "<name>deploy</name>"))
+    (is (not (str/includes? with-read "secret"))
+        "disable-model-invocation skills are never listed")
+    (is (not (str/includes? without-read "<available_skills>"))
+        "skills load through read, so no read tool means no block")))
+
+(deftest a-custom-prompt-still-carries-context-and-skills
+  (let [p (prompt :custom-prompt "CUSTOM"
+                  :append-prompt "APPENDED"
+                  :cwd "/work"
+                  :context-files [{:path "AGENTS.md" :content "rules"}]
+                  :tools [(tool "read" "Read a file")]
+                  :skills [{:name "deploy" :description "Ship it"}])]
+    (is (str/starts-with? p "CUSTOM"))
+    (is (str/includes? p "APPENDED"))
+    (is (str/includes? p "<project_instructions path=\"AGENTS.md\">\nrules\n"))
+    (is (str/includes? p "<name>deploy</name>"))
+    (is (str/includes? p "Current working directory: /work"))
+    (is (not (str/includes? p "Available tools:"))
+        "a custom prompt replaces the built one, not just its first line")))

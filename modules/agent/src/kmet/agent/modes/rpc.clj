@@ -6,24 +6,24 @@
    (event-bus/wire-event). Extension UI dialogs and output channels arrive
    as {:type :ui-request :id ... :method ...} records and a dialog is
    answered with {:type :respond :id ...} (the runtime's request-ui!/
-   respond! pair). stdout carries protocol only — kmet.agent.debug writes files
+   respond! pair). stdout carries protocol only — kmet.app.debug writes files
    and nothing else in the runtime prints."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.ai.models :as models]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.commands.builtins :as builtins]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
-            [kmet.agent.prompts :as prompts]
+            [kmet.app.commands :as commands]
+            [kmet.app.commands.builtins :as builtins]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.packages :as packages]
+            [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.skills :as skills]
+            [kmet.app.config :as cfg]))
 
 ;; ─── Records ───────────────────────────────────────────────────────────────
 

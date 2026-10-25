@@ -1,0 +1,333 @@
+(ns kmet.app.tools.registry
+  "Tool registry — built-in tool map, custom tool registration, schema
+   conversion, execution. Custom tools and contributed tool sources live in a
+   `kmet.app.registry/Registry` handle under TAG `:kmet/tool` (and
+   `:kmet/tool-source` for sandbox-only sources), owned by an owner path:
+   visible to every engine, outliving one, and disposed with their owner
+   rather than copied into an engine and reset by hand. The extension ABI
+   registers under its own owner path, so unload disposes what an extension
+   added.
+
+   **The handle is a parameter.** Every reader and writer takes the registry it
+   works on, first, so two agents can hold different tool tables with nothing
+   shared between them (new-app.md, landing 4c-iii-c) and nothing below the app
+   can name a process-wide one.
+
+   There is deliberately no default. An earlier draft resolved an installed
+   cell when the handle was left out, and kmet1's own tests broke it: the
+   extension sandbox loads `kmet.agent.app-runtime` a second time, so that load
+   ran the install with an SCI closure and the shared cell ended up holding a
+   handle from the sandbox's copy of the process. A parameter cannot be written
+   from a sandbox. kmet1's process handle is supplied where it already lives,
+   in a rank-4 namespace: `kmet.agent.tools.core` keeps the arity-less forms
+   and passes `(kmet.agent.app-runtime/registry)`."
+  (:require [clojure.string :as str]
+            [kmet.libs.json :as json]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.tool :as tool]
+            [kmet.app.tools.util :as tool-util]
+            [kmet.app.tools.read :as read]
+            [kmet.app.tools.write :as write]
+            [kmet.app.tools.edit :as edit]
+            [kmet.app.tools.bash :as bash]
+            [kmet.app.tools.run-code :as run-code]))
+
+(declare built-in-tools)
+
+;; ─── Built-in tools ─────────────────────────────────────────────────────────
+
+(def ^:private base-tools
+  "Built-in tools without registry seams; the run_code tool joins at the bottom
+   (it dispatches through this namespace, so its record needs the fns)."
+  {"read"  (tool/make-tool
+            :name "read"
+            :label "Read file"
+            :description "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete."
+            :prompt-snippet "Read file contents"
+            :prompt-guidelines ["Use read to examine files instead of cat or sed."]
+            :params {:path   {:type :string :description "Path to the file to read (relative or absolute)"}
+                     :offset {:type :number :description "Line number to start reading from (1-indexed)" :optional? true}
+                     :limit  {:type :number :description "Maximum number of lines to read" :optional? true}}
+            :execute read/execute
+            :title read/title)
+   "write" (tool/make-tool
+            :name "write"
+            :label "Write file"
+            :description "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories."
+            :prompt-snippet "Create or overwrite files"
+            :prompt-guidelines ["Use write only for new files or complete rewrites."]
+            :params {:path    {:type :string :description "File path to write to (relative or absolute)"}
+                     :content {:type :string :description "Content to write to the file"}}
+            :execute write/execute
+            :title write/title)
+   "edit"  (tool/make-tool
+            :name "edit"
+            :label "Edit file"
+            :description "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes."
+            :prompt-snippet "Make precise file edits with exact text replacement, including multiple disjoint edits in one call"
+            :prompt-guidelines ["Use edit for precise changes (edits[].oldText must match exactly)"
+                                "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls"
+                                "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit."
+                                "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions."]
+            :render-shell :self
+             ;; Pi: editSchema — edits is an array of {oldText, newText}
+            :parameters {:type "object"
+                         :properties {"path" {:type "string"
+                                              :description "Path to the file to edit (relative or absolute)"}
+                                      "edits" {:type "array"
+                                               :items {:type "object"
+                                                       :properties {"oldText" {:type "string"
+                                                                               :description "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."}
+                                                                    "newText" {:type "string"
+                                                                               :description "Replacement text for this targeted edit."}}
+                                                       :required ["oldText" "newText"]}
+                                               :description "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."}}
+                         :required ["path" "edits"]}
+            :execute edit/execute
+            :title edit/title)
+   ;; Pi: createBashTool(cwd) with default options
+   "bash"  (bash/create-tool)}
+   ;; grep/find/ls are not builtins — they ship as opt-in extensions
+   ;; (extensions/grep-tool.clj, find-tool.clj, ls-tool.clj); powershell
+   ;; ships the same way (extensions/powershell.clj, Windows-only)
+  )
+
+;; ─── Extended tool registry ────────────────────────────────────────────────
+
+(def tools-owner
+  "The app's tool registry owner — the registry's address; unloading it takes
+   every custom tool and contributed source it added."
+  [:app :tools])
+
+(defn- registered-tools
+  "REGISTRY's custom tools as {name tool}; one value per (owner, name), so a
+   re-registration of a name replaces the earlier one."
+  [reg]
+  (into {} (registry/entries reg :kmet/tool)))
+
+(defn register-tool!
+  "Register a custom tool in REGISTRY after normalizing its provider-facing
+   schema, owned by OWNER — `[:app :tools]` by default; an extension passes its
+   own owner path so unloading it takes the tool with the owner. Returns the
+   registration's deregister fn."
+  ([reg tool] (register-tool! reg tool tools-owner))
+  ([reg tool owner]
+   (let [tool (tool/normalize-tool-definition tool)]
+     (registry/register! reg :kmet/tool (:name tool) tool owner))))
+
+(defn unregister-tool!
+  "Remove REGISTRY's custom tool by name, from whichever owner registered it,
+   or — with OWNER — only that owner's registration (an extension dropping one
+   of its own; another owner's same-name tool survives). Returns nil."
+  ([reg name] (unregister-tool! reg name nil))
+  ([reg name owner]
+   (registry/deregister! reg :kmet/tool name owner)
+   nil))
+
+(defn get-all-tools
+  "Get all available tools (built-in + custom) from REGISTRY — the `:tools`
+   service handle. A custom tool that reuses a built-in's name shadows it
+   (pi: the extension registry is layered over the base definitions, custom
+   wins)."
+  [reg]
+  (merge (built-in-tools reg) (registered-tools reg)))
+
+(defn get-tool
+  "Get a tool by NAME from REGISTRY's view — resolved through get-all-tools, so
+   the map a caller executes is exactly the map the registry lists (custom
+   shadows built-in)."
+  [reg name]
+  (get (get-all-tools reg) name))
+
+;; ─── Extension-contributed tool sources ────────────────────────────────────
+;; Sandbox-only tools: a source contributes tool maps into the run_code tool's
+;; surface without joining get-all-tools (the model's tool set). The
+;; mcp-adapter contributes its cached MCP catalog this way (run_code.md T2).
+
+(defn- registered-tool-sources
+  "REGISTRY's contributed tool sources in registration order: [[id fn] …].
+   A source re-registered under the same ID replaces the earlier one."
+  [reg]
+  (mapv vec (registry/entries reg :kmet/tool-source)))
+
+(defn register-tool-source!
+  "Register (or replace) an extension-contributed tool source on NODE,
+   owned by OWNER — the app's registry by default; an extension passes its
+   own owner path so unloading it disposes the source. ID
+   identifies the source; TOOLS-FN is a 0-arg fn returning {name → tool map}
+   — the same shape a registered tool map has (:name :label :description
+   :parameters :execute, optional :streams?/:contextual?/:prepare-arguments).
+   Contributed tools join the run_code sandbox's surface only; the registry
+   shadows a colliding name. Re-registering under the same ID replaces the
+   source; the next run_code call resolves the new catalog. Returns cells'
+   deregister fn."
+  ([reg id tools-fn] (register-tool-source! reg id tools-fn tools-owner))
+  ([reg id tools-fn owner]
+   (registry/register! reg :kmet/tool-source id tools-fn owner)))
+
+(defn unregister-tool-source!
+  "Remove REGISTRY's contributed tool source by ID, from whichever owner
+   registered it, or — with OWNER — only that owner's registration. Returns
+   nil."
+  ([reg id] (unregister-tool-source! reg id nil))
+  ([reg id owner]
+   (registry/deregister! reg :kmet/tool-source id owner)
+   nil))
+
+(defn get-contributed-tools
+  "Merge every source registered in REGISTRY into its current tools. A source that throws or returns a non-map
+   contributes nothing — a broken extension must not take the sandbox's
+   surface down."
+  [reg]
+  (reduce (fn [acc [_ tools-fn]]
+            (let [tools (try (tools-fn) (catch Exception _ nil))]
+              (if (map? tools) (merge acc tools) acc)))
+          {} (registered-tool-sources reg)))
+
+;; ─── Callable surfaces ─────────────────────────────────────────────────────
+
+(defn select-tools
+  "Filter ALL (a name → Tool map, e.g. get-all-tools) to a caller's surface:
+   ENABLED names (nil = every tool in ALL), plus CONTRIBUTED sandbox-only
+   tools (not in get-all-tools; a colliding name keeps ALL's record), minus
+   EXCLUDE names (a sandbox must not expose itself). Preserves ALL's order.
+   The loop's schema and the run_code bridge's callable set both resolve
+   through this, so what a caller lists and what it can dispatch cannot
+   drift."
+  [all {:keys [enabled contributed exclude]}]
+  (let [enabled (or enabled (set (keys all)))
+        contributed (apply dissoc (or contributed {}) (keys all))
+        keep? (fn [n]
+                (and (not (contains? (or exclude #{}) n))
+                     (or (contains? enabled n)
+                         (contains? contributed n))))]
+    (->> (merge all contributed)
+         (filter (fn [[n _]] (keep? n)))
+         (into (empty all)))))
+
+;; ─── Execution ─────────────────────────────────────────────────────────────
+
+(defn- normalize-args
+  "Guard so tool execute fns always receive map args. Defense in depth — the
+   stream accumulator in loop.clj already degrades unparseable tool-call
+   arguments to {} (pi: parseStreamingJson); this catches any other path
+   where string args reach execute-tool so tools report a validation error
+   instead of a ClassCastException from assoc/merge on a string."
+  [args]
+  (if (map? args)
+    args
+    (try
+      (let [parsed (json/parse-string args true)]
+        (if (map? parsed) parsed {}))
+      (catch Exception _ {}))))
+
+(defn execute-tool
+  "Execute REGISTRY's tool by name with given arguments.
+   opts — {:on-update (fn [partial]) streaming callback (passed to the
+   tool's execute when it declares :streams?); :signal — cancel atom; :ctx
+   — extension context map for :contextual? tools (pi: execute(toolCallId,
+   params, signal, onUpdate, ctx)); :tools — a name → tool map override for
+   the run_code sandbox, which passes its own surface so the script's listing
+   is authoritative for dispatch (contributed sandbox tools are not in
+   get-all-tools). A :contextual? tool's execute always receives 4 args
+   (fn [args on-update signal ctx]) — pi passes the signal and ctx
+   unconditionally; other tools keep (fn [args]) / (fn [args on-update]).
+   Returns {:content str :is-error bool}."
+  [reg tool-name args & [opts]]
+  (let [{:keys [on-update signal ctx tools]} (or opts {})
+        tool (if tools (get tools tool-name) (get-tool reg tool-name))]
+    (if tool
+      (try
+        ;; pi prepareToolCallArguments: a tool's :prepare-arguments shim
+        ;; rewrites the raw args before schema validation/execution
+        (let [args (normalize-args args)
+              args (if-let [prepare (:prepare-arguments tool)]
+                     (prepare args)
+                     args)]
+          (cond
+            (:contextual? tool)
+            ((:execute tool) args on-update signal ctx)
+
+            (and on-update (:streams? tool))
+            ((:execute tool) args on-update)
+
+            :else
+            ((:execute tool) args)))
+        (catch Exception e
+          {:content (str "Error executing " tool-name ": " (ex-message e))
+           :is-error true}))
+      {:content (str "Unknown tool: " tool-name) :is-error true})))
+
+;; ─── The full built-in map ─────────────────────────────────────────────────
+
+(defn built-in-tools
+  "Map of tool name → Tool record for all built-in tools, built for REGISTRY.
+
+   A function, not a constant, because the run_code tool closes over the
+   registry: it lists through get-all-tools (plus extension-contributed
+   sources) and dispatches inner calls through execute-tool, so run_code
+   resolution is the same as the model's — and two agents' tables resolve to
+   their own handle, not the one that happened to load first."
+  [reg]
+  (assoc base-tools
+         "run_code"
+         (run-code/create-tool {:get-all-tools #(get-all-tools reg)
+                                :get-contributed-tools #(get-contributed-tools reg)
+                                :select-tools select-tools
+                                :execute-tool #(execute-tool reg %1 %2 %3)})))
+
+;; ─── Default tool selection (pi: defaultTools) ─────────────────────────────
+
+(def builtin-tool-names
+  "Names of the built-in tools in registry order — the base a modifier-only
+   :default-tools list modifies, and the set the setting can exclude.
+   Pi: DEFAULT_TOOL_NAMES; kmet ships every built-in active by default, so the
+   base is the full built-in set (docs/configuration.md). Derived from the
+   static half: `built-in-tools` needs a registry, a name list does not."
+  (conj (vec (keys base-tools)) "run_code"))
+
+(defn tool-selection-modifier?
+  "True when a :default-tools entry is a +name/-name modifier (pi:
+   isToolModifier). The definition is kmet.app.tools.util's, re-exported
+   for callers of the registry."
+  [entry]
+  (tool-util/tool-selection-modifier? entry))
+
+(defn resolve-default-tools
+  "Resolve a merged :default-tools entry list to the initial built-in tool
+   selection (pi: SettingsManager.resolveDefaultTools). Plain names replace
+   the default built-in set; +name adds and -name removes in list order; a
+   list of only +name/-name entries modifies the default set; an empty list
+   selects no built-ins (extension tools are unaffected). Unknown names pass
+   through — they select nothing; callers match against the live registry.
+   A non-list value resolves empty and non-string entries are dropped (pi:
+   getDefaultTools). nil when ENTRIES is nil: no setting, every tool stays
+   active."
+  [entries]
+  (when entries
+    ;; pi: getDefaultTools filters to strings and treats a non-array value
+    ;; as [] before resolving; settings files are not validated
+    (let [entries (if (sequential? entries) (filterv string? entries) [])
+          plain (filterv (complement tool-selection-modifier?) entries)
+          base (cond
+                 (seq plain) plain
+                 (empty? entries) []
+                 :else builtin-tool-names)]
+      (reduce (fn [names entry]
+                (if (tool-selection-modifier? entry)
+                  (let [n (subs entry 1)]
+                    (if (str/starts-with? entry "+")
+                      (if (some #(= n %) names) names (conj names n))
+                      (filterv #(not= n %) names)))
+                  names))
+              (vec base)
+              entries))))
+
+(defn default-tool-exclusions
+  "Built-in tool names a resolved :default-tools SELECTION leaves out — the
+   :exclude list a caller passes to select-tools. nil when SELECTION is nil
+   (no setting; every built-in stays available)."
+  [selection]
+  (when selection
+    (let [selected (set selection)]
+      (into #{} (remove selected) builtin-tool-names))))

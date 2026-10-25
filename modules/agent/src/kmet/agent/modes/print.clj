@@ -5,11 +5,11 @@
    prints the session header and every event as EDN (pi's --mode json, the
    machine-readable variant)."
   (:require [clojure.string :as str]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.driver :as session-driver]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.packages :as packages]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.packages :as packages]
+            [kmet.app.config :as cfg]))
 
 (defn- message-text
   "The concatenated text blocks of MESSAGE, or nil when it has none."

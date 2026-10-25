@@ -5,9 +5,9 @@
    pair a request with its answer."
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest testing]]
-            [kmet.agent.extensions.core :as ex]
+            [kmet.app.extensions.core :as ex]
             [kmet.agent.app-runtime :as app]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
             [kmet.test-utils :as tu]))

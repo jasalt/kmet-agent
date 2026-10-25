@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [kmet.test-utils :as tu]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.app.skill-block :as skill-block]
             [kmet.ui.tui.chat-history :as ch]
             [kmet.ui.tui.skill-message :as sm]

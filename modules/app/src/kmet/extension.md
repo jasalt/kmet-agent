@@ -66,7 +66,7 @@ What an extension may require is a fixed, enforced list:
   the host (there is nothing to reimplement; the authoring guide's
   § Building UI covers the component library).
 - The shared renderer namespaces `kmet.agent.ui.tui.tool-renderers` and
-  `kmet.agent.keybindings`.
+  `kmet.app.keybindings`.
 - `clojure.*` and `babashka.*` builtins, and the fixed bundled set below.
 
 Any other kmet namespace — internals such as `kmet.agent.*` /
@@ -90,7 +90,7 @@ Maven deps into the Jolt binary. On both hosts the library is loaded once
 (extensions through `host-requires!`, scripts on the first `run_code` call),
 so sharing costs nothing per user and keeps `identical?`/protocol identity.
 Requiring a set member needs **no `deps.edn`** and no host-conditional code.
-The set is enumerated in `kmet.agent.extensions.libs`:
+The set is enumerated in `kmet.app.extensions.libs`:
 
 | Library | Namespaces | Notes |
 |---|---|---|
@@ -173,11 +173,11 @@ replaced or closed, or until `/reload` disposes it. Release what such a
 surface holds in `shutdown` or when it closes; unload alone does not reach
 it.
 
-Implementation note: the entry points above live in `kmet.agent.extensions.core`,
+Implementation note: the entry points above live in `kmet.app.extensions.core`,
 together with the registries they wire the API into. The isolation machinery
 they drive — artifact/jar discovery, class seeding, the shared SCI base,
 loader construction, and source evaluation — lives in
-`kmet.agent.extensions.context`.
+`kmet.app.extensions.context`.
 
 ## The API surface
 
@@ -472,7 +472,7 @@ the target untouched — usage totals, replay and the TUI show the original —
 only the projection changes, and the live context is rebuilt so the next
 request already sees it. Entry ids come from the boundary payload
 (`:message-entry-id` / `:tool-result-entry-ids`) or from `(:session ctx)`
-(`get-branch`/`get-entry`). `kmet.agent.loop.state/append-context-edit!` is the same
+(`get-branch`/`get-entry`). `kmet.app.loop.state/append-context-edit!` is the same
 operation outside a boundary handler.
 
 ### Bundled resources (`io/resource` + self-registration)

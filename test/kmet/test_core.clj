@@ -7,7 +7,7 @@
             [kmet.agent.cli :as cli]
             [kmet.ai.models :as models]
             [kmet.app.maintenance :as maintenance]
-            [kmet.agent.version :as version]))
+            [kmet.app.version :as version]))
 
 (t/deftest test-format-token-count
   (t/is (= "200K" (@#'maintenance/format-token-count 200000)))

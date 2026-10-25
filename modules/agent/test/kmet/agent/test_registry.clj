@@ -3,7 +3,7 @@
    It ran against kmet1's scope-store handle too until 4e deleted the store;
    the rules stayed the same, so the assertions did."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.registry :as registry]))
+            [kmet.app.registry :as registry]))
 
 (defn- fresh
   "A fresh handle per case, so one case's registrations never leak into the

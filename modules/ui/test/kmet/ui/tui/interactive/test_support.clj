@@ -8,7 +8,7 @@
    [kmet.ui.tui.interactive.test-handle-support :as hs]
    [kmet.ui.tui.interactive.ui-registry :as ui-registry]
    [kmet.ui.tui.interactive.turn :as turn]
-   [kmet.agent.keybindings :as app-kb]
+   [kmet.app.keybindings :as app-kb]
    [kmet.ui.tui.status-indicator :as status-indicator]
    [kmet.agent.tools.core :as tools]
    [kmet.ui.tui.chat-history :as chat-history]

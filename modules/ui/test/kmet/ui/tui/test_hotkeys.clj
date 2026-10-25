@@ -5,7 +5,7 @@
    section headers and both columns."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.hotkeys :as hotkeys]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]

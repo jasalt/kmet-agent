@@ -27,8 +27,8 @@
    process global every front end, engine and loaded extension shares — a run
    that must not share registrations gets its own `child-ctx`."
   (:require [kmet.app.loop.stages :as loop-stages]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.registry :as reg]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.registry :as reg]
             [kmet.app.core :as app-core]
             [kmet.app.registries :as registries]
             [kmet.app.root :as root]
@@ -80,7 +80,7 @@
    composition published (`kmet.app.registries/process-handle`), so a command
    registered here is the `:commands` service kmet2 reads. A process that
    published nothing answers from the empty per-process fallback
-   (`kmet.agent.registry/current`), which is not an error: a bare test or a
+   (`kmet.app.registry/current`), which is not an error: a bare test or a
    cold start still has somewhere to write."
   []
   (reg/current))
@@ -125,7 +125,7 @@
   (loop-stages/refresh! (ctx)))
 
 (defn dispose-deregisters!
-  "Kmet1's name for `kmet.agent.registry/dispose-deregisters!`: run FNS — the
+  "Kmet1's name for `kmet.app.registry/dispose-deregisters!`: run FNS — the
    deregisters an extension recorded for what lives outside the app's
    registries — in reverse registration order. Returns nil."
   [fns]

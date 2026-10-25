@@ -9,7 +9,7 @@
    reaches the model as an image block while a queued image is refused."
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.app.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]

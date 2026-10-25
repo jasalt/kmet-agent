@@ -9,13 +9,13 @@
             [kmet.ui.tui.interactive :as interactive]
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
-            [kmet.agent.packages-cli :as package-manager]
+            [kmet.app.packages-cli :as package-manager]
             [kmet.ai.models :as models]
             [kmet.app.maintenance :as maintenance]
             [kmet.app.world :as world]
-            [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.version :as version]
+            [kmet.app.model-resolver :as resolver]
+            [kmet.app.debug :as debug]
+            [kmet.app.version :as version]
             [clojure.string :as str]))
 
 ;; ─── CLI argument parsing ──────────────────────────────────────────────────

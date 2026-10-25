@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest testing is]]
             [babashka.fs :as fs]
-            [kmet.agent.keybindings :as kb]
+            [kmet.app.keybindings :as kb]
             [kmet.ui.tui.fork-selector :as fork]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]

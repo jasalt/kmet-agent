@@ -6,12 +6,12 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
-            [kmet.agent.loop.state :as state]
-            [kmet.agent.loop :as loop]
-            [kmet.agent.config :as cfg]
+            [kmet.app.loop.state :as state]
+            [kmet.app.loop :as loop]
+            [kmet.app.config :as cfg]
             [kmet.agent.loop.test-support :as support]))
 
 ;; ─── Phase 4: custom-message delivery (pi: sendCustomMessage) ────────────

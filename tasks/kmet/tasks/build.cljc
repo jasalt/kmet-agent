@@ -33,7 +33,7 @@
             [kmet.libs.archive :as archive]
             [kmet.libs.host :as host]
             [kmet.libs.http :as http]
-            [kmet.agent.version :as version-lib]
+            [kmet.app.version :as version-lib]
             [kmet.tasks.modules :as modules]))
 
 (def ^:private gh-api-url
@@ -173,7 +173,7 @@
 ;; ─── Version ───────────────────────────────────────────────────────────────
 
 (defn version
-  "Artifact version string: kmet.agent.version/artifact-version (jolt's
+  "Artifact version string: kmet.app.version/artifact-version (jolt's
    checkout rule, `v` stripped) — the base version artifact names carry."
   []
   (version-lib/artifact-version))

@@ -15,7 +15,7 @@
    Both are pure over their inputs; the catalog is `kmet.ai.models`', as it is
    for kmet1. The session-lifecycle flags are absent on purpose: which session a
    run opens is the mode's, and it says so on its row (`:session-lifecycle`)."
-  (:require [kmet.agent.model-resolver :as resolver]
+  (:require [kmet.app.model-resolver :as resolver]
             [kmet.ai.models :as models]))
 
 (def run-override-keys

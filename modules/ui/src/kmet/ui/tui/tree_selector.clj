@@ -16,12 +16,12 @@
    (shift+l) and label timestamp display (shift+t). ON-NAVIGATE receives
    the chosen entry — the caller performs the branch."
   (:require [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.clipboard :as clipboard]
             [kmet.libs.path :as path]
             [kmet.tui.components.input :as input]

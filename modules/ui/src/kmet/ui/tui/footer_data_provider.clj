@@ -7,7 +7,7 @@
             [babashka.process :as proc]
             [kmet.app.session.core :as session]
             [kmet.ai.usage :as usage]
-            [kmet.agent.compaction.core :as core]))
+            [kmet.app.compaction.core :as core]))
 
 (defrecord FooterDataProvider [cwd-atom git-branch-atom git-branch-resolved?-atom
                                session-atom provider-count-atom context-window-atom

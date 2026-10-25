@@ -14,19 +14,19 @@
    the caller's, because the front end owns what it renders and the loop only
    reports."
   (:require [babashka.fs :as fs]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.loop :as loop]
-            [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.packages :as packages]
-            [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.project-context :as context]
+            [kmet.app.config :as cfg]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.loop :as loop]
+            [kmet.app.loop.state :as loop-state]
+            [kmet.app.packages :as packages]
+            [kmet.app.model-resolver :as resolver]
+            [kmet.app.project-context :as context]
             [kmet.app.session.compaction :as manual]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.session.submission :as submission]
-            [kmet.agent.tools.registry :as tools]
+            [kmet.app.tools.registry :as tools]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
 

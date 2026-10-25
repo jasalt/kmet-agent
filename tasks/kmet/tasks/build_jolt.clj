@@ -46,9 +46,9 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             ;; shared with the babashka packager: one artifact-version rule
-            ;; (kmet.agent.version) and one termux probe
+            ;; (kmet.app.version) and one termux probe
             [kmet.tasks.build :as build]
-            [kmet.agent.version :as version-lib]))
+            [kmet.app.version :as version-lib]))
 
 (def ^:private scratch-root "target/jolt")
 (def ^:private entry-ns "kmet.agent.core")

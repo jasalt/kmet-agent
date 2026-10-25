@@ -12,8 +12,8 @@
    agent, one new session."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.extensions.core :as extensions]
             [kmet.app.session.runtime :as runtime]
             [kmet.tui.components.editor :as editor]
             [kmet.ui.tui.interactive.session-admin :as session-admin]

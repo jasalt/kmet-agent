@@ -11,9 +11,9 @@
    providers; extensions load before the themes (the packages resolve the theme
    paths); and the CLI flags are last, because their registrations are the ones
    the parse collected."
-  (:require [kmet.agent.config :as cfg]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.packages :as packages]
+  (:require [kmet.app.config :as cfg]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.packages :as packages]
             [kmet.ai.image-models :as image-models]
             [kmet.ai.models :as models]
             [kmet.app.root :as root]

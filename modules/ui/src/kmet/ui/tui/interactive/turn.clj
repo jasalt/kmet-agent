@@ -6,8 +6,8 @@
    submission chain and the compaction queue (landing 8); this namespace
    keeps the UI reactions."
   (:require [clojure.string :as str]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.config :as cfg]
+            [kmet.app.debug :as debug]
+            [kmet.app.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.theme :as th]
@@ -17,13 +17,13 @@
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.bash-execution :as be]
-            [kmet.agent.tools.bash-executor :as bash-exec]
-            [kmet.agent.tools.bash :as bash-tool]
-            [kmet.agent.tools.util :as tools-util]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.tools.bash-executor :as bash-exec]
+            [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.util :as tools-util]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.commands :as commands]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.interactive.state :as state]
             [kmet.ui.tui.interactive.status :as status]))
 

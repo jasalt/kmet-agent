@@ -5,8 +5,8 @@
    kmet.agent.loop.test-compact."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
-            [kmet.agent.compaction.stage :as stage]
-            [kmet.agent.loop :as loop]
+            [kmet.app.compaction.stage :as stage]
+            [kmet.app.loop :as loop]
             [kmet.app.session.core :as session]))
 
 (defn- with-session-agent

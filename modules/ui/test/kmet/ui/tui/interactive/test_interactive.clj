@@ -1,7 +1,7 @@
 (ns kmet.ui.tui.interactive.test-interactive
   "Interactive-mode tests: the agent-loop :on-event handler
    (make-agent-event-handler) must consume every event type in the loop
-   vocabulary (kmet.agent.event-bus/event-types) without throwing.
+   vocabulary (kmet.app.event-bus/event-types) without throwing.
 
    Regression guard: the handler's case previously had no clause for
    :agent-start and no :default — it threw IllegalArgumentException on the
@@ -17,10 +17,10 @@
             [kmet.ui.tui.interactive.status :as status]
             [kmet.ui.tui.interactive.turn :as turn]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.loop :as agent]
+            [kmet.app.commands :as commands]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.loop.state :as loop-state]
+            [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.tools.core :as tools]
@@ -29,18 +29,18 @@
             [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.subs :as subs]
-            [kmet.agent.packages :as packages]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.prompts :as prompts]
-            [kmet.agent.project-context :as context]
+            [kmet.app.packages :as packages]
+            [kmet.app.skills :as skills]
+            [kmet.app.prompts :as prompts]
+            [kmet.app.project-context :as context]
             [kmet.libs.host :as host]
             [kmet.libs.process :as process]
             [kmet.libs.reakt.core :as reakt]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
-            [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.config :as cfg]
+            [kmet.app.keybindings :as app-kb]
+            [kmet.app.config :as cfg]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.expandable-text :as expandable-text]

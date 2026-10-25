@@ -13,7 +13,7 @@
    it ends: *what was there*, not the dispatcher's default, because a process can
    have a front end before it has this run (an embedder's port, another mode) and
    a run's teardown must not take it away."
-  (:require [kmet.agent.extensions.core :as extensions]))
+  (:require [kmet.app.extensions.core :as extensions]))
 
 (defn install!
   "Bind SURFACE for the run and return the fn that restores the surface bound

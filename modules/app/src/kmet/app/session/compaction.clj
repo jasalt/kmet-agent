@@ -5,7 +5,7 @@
    The queue rides the front end's value (`:pending-compaction`), not this
    namespace, because a session switch drops it and a disposal drops it: what
    belongs to one session cannot outlive the value that names the session.
-   The work itself is `kmet.agent.compaction.stage/compact-context!`; this
+   The work itself is `kmet.app.compaction.stage/compact-context!`; this
    namespace only orders it — one drain at a time, never under a live turn
    (kmet's cancel is cooperative, so compacting under a running prompt would
    race it), and never after the value was disposed.
@@ -14,8 +14,8 @@
    `abort-compaction!`, `queue-compaction-message!`, `clear-compaction-queue!`);
    the engine path and the loop handle share this implementation, so the
    deferred-completion rule has one copy."
-  (:require [kmet.agent.compaction.stage :as agent-compact]
-            [kmet.agent.debug :as debug]
+  (:require [kmet.app.compaction.stage :as agent-compact]
+            [kmet.app.debug :as debug]
             [kmet.app.session.runtime :as runtime]))
 
 (defn- run-manual-compaction!

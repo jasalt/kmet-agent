@@ -15,7 +15,7 @@
    through its ref."
   (:require [babashka.process :as p]
             [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.tui.components.input :as input]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.core :as tui]

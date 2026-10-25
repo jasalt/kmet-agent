@@ -7,7 +7,7 @@
   (:require [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.core :as tui]
-            [kmet.agent.debug :as debug]
+            [kmet.app.debug :as debug]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [babashka.process :as proc]))

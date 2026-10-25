@@ -7,7 +7,7 @@
             [kmet.ai.auth :as auth]
             [kmet.libs.aws-sigv4 :as aws-sigv4]
             [kmet.ai.google-adc :as google-adc]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.config :as cfg]))
 
 (defn- with-auth-file
   "Run F with the agent dir (and thus auth.edn) redirected to a temp dir and

@@ -3,11 +3,11 @@
    which ones the loop retries."
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
-            [kmet.agent.loop.state :as state]
-            [kmet.agent.loop :as loop]
+            [kmet.app.loop.state :as state]
+            [kmet.app.loop :as loop]
             [kmet.agent.loop.test-support :as support]
-            [kmet.agent.retry :as retry]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.retry :as retry]
+            [kmet.app.config :as cfg]))
 
 ;; ─── Cancellation ─────────────────────────────────────────────────────────
 

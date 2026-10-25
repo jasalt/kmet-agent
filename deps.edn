@@ -124,7 +124,7 @@
                                          :git/sha "00455b8135861b2fd2ddbe3e7887a94e7aba5760"}
         ;; cljfmt / spec.alpha / rewrite-clj serve the format tasks
         ;; (kmet.tasks.format — one code path on both hosts) AND the fixed
-        ;; bundled extension set (kmet.agent.extensions.libs, src/kmet/extension.md §
+        ;; bundled extension set (kmet.app.extensions.libs, src/kmet/extension.md §
         ;; Bundled extension libraries): jolt dist AOT-compiles them in,
         ;; and extension contexts share the loaded namespaces by reference.
         ;; bb.edn carries the same cljfmt version for babashka; bb's
@@ -165,7 +165,7 @@
   ;; The JVM host's runtime extras — the two libraries babashka bundles and
   ;; Jolt provides natively, but a plain JVM classpath lacks:
   ;; clojure.tools.deps (an extension's :deps are resolved in-process through
-  ;; kmet.agent.extensions.context/jars-for) and babashka.ffi (the Windows
+  ;; kmet.app.extensions.context/jars-for) and babashka.ffi (the Windows
   ;; clipboard backend). `bb start-jvm`, the JVM test tasks and the JVM
   ;; packager (which resolves its basis with this alias) opt in.
   :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}

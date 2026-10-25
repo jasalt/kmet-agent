@@ -2,13 +2,13 @@
   "Builtin slash commands for the interactive mode: the view-bound commands
    (thinking handling, help/tools text, /session, /share, /reload, and the
    session/selector flows) and their registration. The engine-portable
-   builtins live in kmet.agent.commands.builtins and are registered by
+   builtins live in kmet.app.commands.builtins and are registered by
    register-builtin-commands! first."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.config :as cfg]
+            [kmet.app.debug :as debug]
+            [kmet.app.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as term]
@@ -20,17 +20,16 @@
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.session.export :as session-export]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.commands.builtins :as runtime-commands]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.packages :as packages]
-            [kmet.agent.prompts :as prompts]
-            [kmet.app.loop.stages :as loop-stages]
+            [kmet.app.commands :as commands]
+            [kmet.app.commands.builtins :as runtime-commands]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.keybindings :as app-kb]
+            [kmet.app.packages :as packages]
+            [kmet.app.prompts :as prompts]
             [kmet.app.root :as root]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.tools.registry :as tools]
+            [kmet.app.skills :as skills]
+            [kmet.app.tools.registry :as tools]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer :as footer]
@@ -46,7 +45,7 @@
             [kmet.ui.tui.subs :as subs]
             [kmet.ui.tui.thinking-selector :as thinking-selector]
             [kmet.libs.clipboard :as clipboard]
-            [kmet.agent.project-context :as context]
+            [kmet.app.project-context :as context]
             [kmet.libs.process :as process]
             [kmet.tui.terminal-escape :as lib-term]
             [kmet.ui.tui.interactive.auth :as auth]
@@ -647,7 +646,7 @@
         (let [config (cfg/init!)
               ;; a reloaded loop stage reaches the next attempt by re-seating
               ;; the app node's stages
-              _ (loop-stages/refresh! (:ctx cs))
+              _ (runtime/refresh-loop-stages! (:engine cs))
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)

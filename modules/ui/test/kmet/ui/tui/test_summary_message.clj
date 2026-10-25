@@ -6,7 +6,7 @@
    wording (token count + key hint)."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.chat-history :as ch]
             [kmet.ui.tui.summary-message :as sm]
             [kmet.tui.core :as core]

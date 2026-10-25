@@ -12,7 +12,7 @@
    [kmet.ui.tui.subs :as subs]
    [kmet.ui.tui.tool-execution :as te]
    [kmet.agent.ui.tui.tool-renderers :as renderers]
-   [kmet.agent.tools.bash :as bash]
+   [kmet.app.tools.bash :as bash]
    [kmet.tui.protocols :as protocols]
    [kmet.tui.components.text :as text]))
 

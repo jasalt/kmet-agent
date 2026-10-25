@@ -28,7 +28,7 @@
 
    Package subcommands (`install`, `remove`, `update`, `list`, `config`) are
    commands rather than profiles: they run the same package CLI kmet1 uses
-   (`kmet.agent.packages-cli`) before the app's own flags, and the config
+   (`kmet.app.packages-cli`) before the app's own flags, and the config
    command's terminal UI is resolved when it runs, so a session never pays for
    the TUI it does not start.
 
@@ -37,10 +37,10 @@
    command's output and status without forking a process."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.packages-cli :as packages-cli]
+            [kmet.app.debug :as debug]
+            [kmet.app.packages-cli :as packages-cli]
             [kmet.app.maintenance :as maintenance]
-            [kmet.agent.version :as version]
+            [kmet.app.version :as version]
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
             [kmet.app.invocation :as invocation]

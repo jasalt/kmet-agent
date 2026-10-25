@@ -12,7 +12,7 @@
 
    `provider` is a value so the contract test can check it without mounting it;
    `plugin` is the row that mounts it (`:bundle/headless`)."
-  (:require [kmet.agent.extensions.core :as extensions]
+  (:require [kmet.app.extensions.core :as extensions]
             [kmet.app.ui :as ui]
             [kmet.srce.core :as srce]))
 

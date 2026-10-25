@@ -6,7 +6,7 @@
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.settings-selector :as ss]
             [kmet.ui.tui.subs :as subs]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]

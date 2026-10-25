@@ -9,9 +9,9 @@
             [babashka.fs :as fs]
             [kmet.agent.modes.print :as print-mode]
             [kmet.ai.models :as m]
-            [kmet.agent.loop :as agent]
+            [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.test-utils :as tu]))
 
 ;; Print mode bootstraps real engines onto the app tree, loading the

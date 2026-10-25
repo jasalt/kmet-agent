@@ -11,7 +11,7 @@ combinators, host root), `modules/loader/src/kmet/loader/memory_loader.clj` (in-
 `modules/loader/src/kmet/loader/sci_loader.clj` (SCI code backend: locate/read/eval, SCI's
 `require` routed through the loader, injected share list), the conformance
 suites (`test/kmet/loader/test_core.clj`, `test/kmet/loader/test_sci_loader.clj`)
-and the extension runtime rewiring (`kmet.agent.extensions.core` builds one
+and the extension runtime rewiring (`kmet.app.extensions.core` builds one
 loader per extension; the loader lives outside the shared `kmet.libs.*`
 layer — host machinery, not contract). The library keeps this doc and a
 self-containment guard (`kmet.loader.test-self-contained`) so
@@ -910,7 +910,7 @@ upgrades that must satisfy the same suite.
   what runs there now; `kmet.loader.sci-loader` remains the bb/JVM backend, which is
   the only host left that needs an interpreter).
 - `modules/app/src/kmet/extension.clj` — **no re-exports** (decided in Phase 1):
-  extensions never see the loader at all. `kmet.agent.extensions.core` uses
+  extensions never see the loader at all. `kmet.app.extensions.core` uses
   `kmet.loader.*` directly, and a require of it from extension code fails
   with an actionable "host machinery" error; the extension-facing surface is
   unchanged, so promotion still breaks nothing.

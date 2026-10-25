@@ -35,7 +35,7 @@
    convention kmet.libs.concurrent/spawn follows."
   [what err]
   (try
-    ((requiring-resolve 'kmet.agent.debug/log) "fs: retrying " what " after: " (ex-message err))
+    ((requiring-resolve 'kmet.app.debug/log) "fs: retrying " what " after: " (ex-message err))
     (catch Throwable _ nil)))
 
 (defn- retry-write!

@@ -24,7 +24,7 @@
 
    The **wire projections** (`wire-event`, `wire-error`) are not here: they are
    transport, so they live with the transport that serializes (kmet1's
-   `kmet.agent.event-bus` until `kmet.mode.print`/`kmet.mode.rpc` land), not
+   `kmet.app.event-bus` until `kmet.mode.print`/`kmet.mode.rpc` land), not
    with the bus."
   (:require [kmet.srce.core :as srce]))
 ;; ── declarations ─────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@
                         summarization_retry_finished). No payload."}
     :thinking-level-select {:mode :emit :domain :loop
                             :doc "Thinking level changed (pi: thinking_level_select, emitted by
-                        kmet.agent.loop.state/set-thinking-level! on an actual change).
+                        kmet.app.loop.state/set-thinking-level! on an actual change).
                         Payload: :level, :previous-level."}
     :session-before-switch {:mode :collect-last :domain :app
                             :doc "Actionable: fired before /new or /resume replaces the active session

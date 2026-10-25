@@ -13,7 +13,7 @@
    set of assertions over two backends is what keeps the pair in step while
    both exist: a behavior added to one path and not the other fails here."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.event-bus :as bus]
+            [kmet.app.event-bus :as bus]
             [kmet.app.events :as events]
             [kmet.srce.core :as srce]))
 
@@ -97,7 +97,7 @@
 (defn- bus-backend
   "kmet1's process-level table, through its public API."
   []
-  {:name "kmet.agent.event-bus"
+  {:name "kmet.app.event-bus"
    :register (fn [type owner f] (bus/on-event type owner f))
    ;; kmet1's emitters take the event only (its table is per type)
    :emit-last (fn [_type event] (bus/emit-event! event))

@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [babashka.fs :as fs]
-            [kmet.agent.keybindings :as kb]
+            [kmet.app.keybindings :as kb]
             [kmet.ui.tui.auth-selector :as auth-selector]
             [kmet.libs.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]

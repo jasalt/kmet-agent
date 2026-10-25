@@ -17,7 +17,7 @@
    `:ui`, `:register-provider!` under `:models`)."
   (:require [clojure.java.io :as io]
             [clojure.test :as t]
-            [kmet.agent.extensions.core :as extensions]))
+            [kmet.app.extensions.core :as extensions]))
 
 (defn- abi-source []
   (or (some-> (io/resource "kmet/extension.clj") slurp)

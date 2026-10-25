@@ -45,13 +45,13 @@
  ;; path), so the namespace-name-mismatch linter is off repo-wide; all other
  ;; linters still apply to extension code, which is part of `lint`.
  :linters {:namespace-name-mismatch {:level :off}}
- ;; kmet.agent.extensions and its context machinery branch on the host at
+ ;; kmet.app.extensions and its context machinery branch on the host at
  ;; their seams (loader-aware wraps a handler only on Jolt; track-cached-jar!
  ;; pins a jar only off Jolt; create-loader's params feed one branch each), so
  ;; each view sees the other branch's bindings go unused. The other view lints
  ;; it with the binding used, so an unused one is still caught there.
- :config-in-ns {kmet.agent.extensions {:linters {:unused-binding {:level :off}}}
-                kmet.agent.extensions.context {:linters {:unused-binding {:level :off}}}
+ :config-in-ns {kmet.app.extensions {:linters {:unused-binding {:level :off}}}
+                kmet.app.extensions.context {:linters {:unused-binding {:level :off}}}
                 ;; the JVM packager runs under the deps.edn :build alias, whose
                 ;; only extra dep (tools.build) is on no other classpath — the
                 ;; lint view has no copy to resolve against

@@ -21,7 +21,7 @@
    the caller passes it."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.registry :as registry]
+            [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]))
 
 ;; ─── Skills section (pi: formatSkillsForPrompt) ───────────────────────────
@@ -89,7 +89,7 @@
    guidelines, then the always-on ones. The parallel-batching rule is kmet's
    addition — pi has no parallel-tool-call guidance, while kmet's loop runs a
    batch's calls in parallel by default
-   (kmet.agent.loop.tool-exec/execute-tool-calls-parallel!)."
+   (kmet.app.loop.tool-exec/execute-tool-calls-parallel!)."
   [selected-tools guidelines]
   (let [tool-set (set selected-tools)
         has-bash? (contains? tool-set "bash")

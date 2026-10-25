@@ -4,13 +4,13 @@
 
    The host lives in `modules/app/src/kmet/agent/extensions` and may not
    require what owns its registries, so it takes them as a value
-   (`kmet.agent.extensions.core/bind-services!`): a registry handle for its own
+   (`kmet.app.extensions.core/bind-services!`): a registry handle for its own
    tags — hooks, renderers, flags, the UI port — and the ctx an extension's
    `:inject` mounts under. This row binds both from the composition it runs in.
 
    **It owns the process handle.** The row publishes
    `(kmet.app.registries/process-handle scope)` as
-   `kmet.agent.registry/current` and binds the complete service map the host
+   `kmet.app.registry/current` and binds the complete service map the host
    reads — the handle, the ctx, the three resource operations and the owner
    sweep — so an extension's command is the `:commands` service the run reads,
    and unloading it sweeps the same handle it registered through. It provides no
@@ -33,8 +33,8 @@
    The binding is process-wide and one owner at a time, so disposing this row
    puts back both what it bound and what it published — a second composition
    (or a test) cannot leave the host pointing at a dead root."
-  (:require [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.registry :as registry]
+  (:require [kmet.app.extensions.core :as extensions]
+            [kmet.app.registry :as registry]
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))
 

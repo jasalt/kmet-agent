@@ -11,10 +11,10 @@
    Nothing here requires `kmet.app.session.driver` or the loop driver: the
    driver and the handle both call it, and it must stay below both."
   (:require [clojure.string :as str]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.loop.state :as loop-state]
+            [kmet.app.commands :as commands]
+            [kmet.app.debug :as debug]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.loop.state :as loop-state]
             [kmet.app.session.compaction :as manual]
             [kmet.app.session.runtime :as runtime]))
 

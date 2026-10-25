@@ -9,11 +9,11 @@
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as th]
             [kmet.tui.timers :as timers]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [babashka.fs :as fs]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.debug :as debug]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.extensions.core :as extensions]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.events :as events]
@@ -198,7 +198,7 @@
    `:confirm`, `:select` and `:input` mount the dialog and block until it is
    answered; every other kind takes the ABI's default answer, because no other
    kind has a terminal answer yet. Outside a run every kind degrades the same
-   way (`kmet.agent.extensions.core/ui-request-default`).
+   way (`kmet.app.extensions.core/ui-request-default`).
 
    Blocks the caller until the dialog is answered, so it must not run on the
    TUI's own threads: the permission gate calls it from the agent's run thread,

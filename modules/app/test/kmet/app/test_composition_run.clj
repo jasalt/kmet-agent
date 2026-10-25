@@ -7,9 +7,9 @@
    its run, the run reaches the (stubbed) model and settles `:completed`."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.ai.llm :as llm]
-            [kmet.agent.tools.registry :as tools]
+            [kmet.app.tools.registry :as tools]
             [kmet.app.core :as core]
             [kmet.app.events :as events]
             [kmet.app.runtime :as runtime]

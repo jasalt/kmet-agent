@@ -2,13 +2,13 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.prompts :as prompts]
+            [kmet.app.commands :as commands]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.prompts :as prompts]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.runtime :as rt]
-            [kmet.agent.skills :as skills]
+            [kmet.app.skills :as skills]
             [kmet.tui.utils :as u]))
 
 (defn test-engine

@@ -7,7 +7,7 @@
    sees the wrapper rather than the command. Reading it back is plain text work
    — no registry, no filesystem — so it lives below every front end: the TUI
    re-parses a stored invocation to render it as its own message, and must not
-   reach `kmet.agent.skills` (discovery, the registry and the app root) to do
+   reach `kmet.app.skills` (discovery, the registry and the app root) to do
    it. Its inverse, `expand-skill-command`, does need those, and stays there."
   (:require [clojure.string :as str]))
 

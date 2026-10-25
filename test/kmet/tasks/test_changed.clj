@@ -33,13 +33,13 @@
 
 (deftest ns-requires-extraction
   (testing "vector entries"
-    (is (= '#{kmet.agent.loop kmet.ai.models kmet.agent.config}
+    (is (= '#{kmet.app.loop kmet.ai.models kmet.app.config}
            (changed/ns-requires
             '(ns kmet.agent.modes.print
                "doc"
-               (:require [kmet.agent.loop :as agent]
+               (:require [kmet.app.loop :as agent]
                          [kmet.ai.models :as models]
-                         [kmet.agent.config :as cfg]))))))
+                         [kmet.app.config :as cfg]))))))
   (testing "prefix-list entries expand to full namespaces"
     (is (= '#{kmet.libs.a kmet.libs.b.c kmet.libs.d}
            (changed/ns-requires
@@ -53,7 +53,7 @@
     (let [nss (set (changed/affected-test-nss-by '[kmet.ai.models]))]
       (is (contains? nss 'kmet.ai.test-models))
       (is (contains? nss 'kmet.ai.test-provider-composer))
-      (is (contains? nss 'kmet.agent.test-model-resolver))))
+      (is (contains? nss 'kmet.app.test-model-resolver))))
   (testing "changing a test namespace includes itself"
     (let [nss (set (changed/affected-test-nss-by '[kmet.tui.components.test-text]))]
       (is (contains? nss 'kmet.tui.components.test-text))))
@@ -84,9 +84,9 @@
     (let [files (set (changed/affected-lint-files-by ["modules/libs/src/kmet/libs/process.clj"]))]
       (is (contains? files "modules/libs/src/kmet/libs/process.clj")
           "the changed file is linted")
-      (is (contains? files "modules/app/src/kmet/agent/extensions/core.cljc")
+      (is (contains? files "modules/app/src/kmet/app/extensions/core.cljc")
           "a dependent is linted (its call sites see a changed signature)")
-      (is (contains? files "modules/app/src/kmet/agent/extensions/context.cljc")
+      (is (contains? files "modules/app/src/kmet/app/extensions/context.cljc")
           "a dependency of the dependent is linted (its vars must resolve)")))
   (testing "unrelated namespaces stay out"
     (let [files (set (changed/affected-lint-files-by ["modules/libs/src/kmet/libs/process.clj"]))]

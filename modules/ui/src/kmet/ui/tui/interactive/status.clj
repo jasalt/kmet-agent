@@ -11,7 +11,7 @@
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.pending-messages :as pending-messages]
             [kmet.ui.tui.status-indicator :as status-indicator]
-            [kmet.agent.debug :as debug]))
+            [kmet.app.debug :as debug]))
 
 ;; Internal forward references (the timer teardown paths).
 (declare cancel-indicator-driver! clear-status-indicator!)

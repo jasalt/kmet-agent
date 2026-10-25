@@ -38,7 +38,7 @@
    A ctx with no `:permissions` allows: the gate exists only where an app
    mounted it. A ctx with a policy but no `:approvals` denies an `:ask` —
    \"nobody can ask\" is not \"yes\"."
-  (:require [kmet.agent.debug :as debug]
+  (:require [kmet.app.debug :as debug]
             [kmet.srce.core :as srce]))
 
 ;; ── the values ────────────────────────────────────────────────────────────

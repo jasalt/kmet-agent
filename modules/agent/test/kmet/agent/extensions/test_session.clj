@@ -8,13 +8,13 @@
             [babashka.fs :as fs]
             [kmet.extension :as ext]
             [kmet.libs.host :as host]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.prompts :as prompts]
+            [kmet.app.registry :as registry]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
-            [kmet.agent.skills :as skills]
+            [kmet.app.skills :as skills]
             [kmet.agent.tools.core :as tools]
             [kmet.tui.theme :as theme]))
 

@@ -5,7 +5,7 @@
    bash-cancel helper."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.app.session.core :as session]
             [kmet.libs.host :as host]
             [kmet.ui.tui.interactive.state :as state]))

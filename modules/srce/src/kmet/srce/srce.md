@@ -581,7 +581,7 @@ instead of a stored node.
 from that declaration (not from a generated projection — one was tried and
 deleted: a file in the load path for data that is already in code), and gave
 kmet2 the modes over the ctx table;
-`kmet.agent.event-bus` re-exports the names and keeps its process-level table,
+`kmet.app.event-bus` re-exports the names and keeps its process-level table,
 its owner/scope and its three emitters. That is the landing rule
 ([`new-app.md`](../../../../../new-app.md): "kmet2 uses the new mechanism, kmet1 still uses the old
 one"), and one contract test asserts the same delivery behaviors against both
@@ -682,13 +682,13 @@ from the keyword. A runtime is dropped when its last fiber unloads, so a later
 
 The kernel writes nothing to stdout. `(srce/log! ctx level & args)` resolves
 `:logger` and calls it; absent means silent. kmet2 provides
-`(srce/provide! ctx :logger kmet.agent.debug/log)` at boot.
+`(srce/provide! ctx :logger kmet.app.debug/log)` at boot.
 
 `kmet.srce.*` may require only rank-0 code — in practice `kmet.libs.*` and, for
 source resolution, `kmet.loader.*` — plus third-party code, so the kernel
-cannot call `kmet.agent.debug` directly — which is also why the full port's
+cannot call `kmet.app.debug` directly — which is also why the full port's
 logger service (exporters, formatters, ANSI palette, ring buffer, `:logger`
-intercept config) is deferred in whole: kmet already has `kmet.agent.debug`,
+intercept config) is deferred in whole: kmet already has `kmet.app.debug`,
 and a second logger is a copy.
 
 ## 8. Scheduling: one thread, no queue
@@ -735,7 +735,7 @@ supplies the lifecycle, so the store lost its reason to exist — but only once
 the registries that read it had moved. The kernel never depended on it (a guard
 test bans the require), and the sites went with their landings, counted from
 `(scope/…` call sites: landing 3 took commands, prompts, skills and tools off it
-(a `kmet.agent.registry` handle, with the store as kmet1's backend), 4b-ii-a
+(a `kmet.app.registry` handle, with the store as kmet1's backend), 4b-ii-a
 took the extension host's nine, 4c-ii-b took the event bus's `in-subtree?`, and
 4d took `owner-listing`'s walk.
 
@@ -754,7 +754,7 @@ Two things went differently than the plan above recorded, both measured:
 - **Cleanup-error reporting did not degrade.** The plan expected the
   `*error-reporter*` rebinding to leave a gap until the `:logger` service
   (§10). It does not: `dispose-deregisters!` caught through the reporter only to
-  call `kmet.agent.debug/log-error`, so it now calls that directly — same
+  call `kmet.app.debug/log-error`, so it now calls that directly — same
   destination, one indirection fewer.
 - **Four test namespaces, not twelve.** `test_commands`' "other registries share
   the store" case was about the store's key shape and became unrepresentable
@@ -772,7 +772,7 @@ value-guarded stale deregister is the handle's entry-identity disposer. `/units`
 was not lost: 4d re-rendered it from the ctx tree ([`new-app.md`](../../../../../new-app.md),
 "Inspection"). `scope.md` went with the code in the same change: its surviving
 rules moved to the homes that implement them (ownership and display order into
-`kmet.agent.registry`'s docstring, the snapshot and tool-capture rules into
+`kmet.app.registry`'s docstring, the snapshot and tool-capture rules into
 `new-app.md`'s "Reload and the turn boundary", disposal order into §4 above),
 and the citations either dropped the pointer or repointed at one of those.
 
@@ -787,7 +787,7 @@ grows a keyword or a key, not a new shape.
 
 | Mechanism | Cordis member | Why out | How it comes back |
 |---|---|---|---|
-| Logger service (facades, exporters, formatters, palette, buffer) | `logger.ts` | kmet already has `kmet.agent.debug`; a second logger is a copy | `:logger` is a service — provide a richer one |
+| Logger service (facades, exporters, formatters, palette, buffer) | `logger.ts` | kmet already has `kmet.app.debug`; a second logger is a copy | `:logger` is a service — provide a richer one |
 | `intercept` chain | `ctx.intercept`, `[Service.resolveConfig]` | unused by `new-app.md`; labels and realms carry the isolation it was needed for | inject values are reserved: they become intercept config |
 | `Service` base / `defservice` | `service.ts` (`:check :invoke :extend :resolve-config`) | `:check` is a `provide!` option; `:invoke`/`:extend`/`:resolveConfig` are class ergonomics (the last needs `intercept`, which is out too) | a map with `:check` already exists on `provide!`; `:extend` is a second `provide!` |
 | `accessor`, `mixin`, `set-service!` | `reflect.ts` | no proxy to feed; a service re-provides, which is one effect | new keys on `provide!` |
@@ -985,7 +985,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 - Porting the separate `@cordisjs/plugin-loader` / `plugin-hmr` /
   `plugin-logger-console` packages: profiles/bundles/patches are kmet's loader,
   HMR is deferred until the kernel settles, and the console exporter is
-  `kmet.agent.debug`.
+  `kmet.app.debug`.
 - The Koishi plugin market / `package.json` service manifest.
 - Re-deriving a mechanism kmet already owns: the event modes (`agent/event-bus`
   is the *dispatcher layer* over `srce/listeners`, not a second registry), the

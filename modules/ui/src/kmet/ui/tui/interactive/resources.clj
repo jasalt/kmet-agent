@@ -3,11 +3,11 @@
    LoadedResources component (pi: showLoadedResources)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.project-context :as context]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.prompts :as prompts]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.config :as cfg]
+            [kmet.app.project-context :as context]
+            [kmet.app.skills :as skills]
+            [kmet.app.prompts :as prompts]
+            [kmet.app.extensions.core :as extensions]
             [kmet.libs.path :as path]))
 
 ;; ─── Loaded resources (pi: showLoadedResources) ────────────────────────────

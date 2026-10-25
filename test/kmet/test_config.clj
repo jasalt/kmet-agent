@@ -4,8 +4,8 @@
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.tools.bash-executor :as bash-exec]
+            [kmet.app.config :as cfg]
+            [kmet.app.tools.bash-executor :as bash-exec]
             [kmet.libs.http :as http]
             [kmet.ai.auth :as auth]
             [kmet.test-utils :refer [slash]]))

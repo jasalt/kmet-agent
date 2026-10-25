@@ -1,7 +1,7 @@
 (ns kmet.agent.test-keybindings
   (:require [clojure.test :as t]
             [babashka.fs :as fs]
-            [kmet.agent.keybindings :as kb]
+            [kmet.app.keybindings :as kb]
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as tui-kb]))
 

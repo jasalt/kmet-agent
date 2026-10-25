@@ -10,16 +10,16 @@
             [babashka.fs :as fs]
             [kmet.agent.modes.rpc :as rpc]
             [kmet.ai.models :as models]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.loop :as agent]
-            [kmet.agent.prompts :as prompts]
+            [kmet.app.commands :as commands]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.loop.state :as loop-state]
+            [kmet.app.loop :as agent]
+            [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.skills :as skills]
+            [kmet.app.skills :as skills]
             [kmet.test-utils :as tu]))
 
 ;; RPC mode bootstraps real engines onto the app tree: the runtime commands it

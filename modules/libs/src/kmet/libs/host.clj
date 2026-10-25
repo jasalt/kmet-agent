@@ -59,7 +59,7 @@
        ((requiring-resolve 'kmet.libs.host-native/stdout-tty?))
        (catch Exception e
          (try
-           ((requiring-resolve 'kmet.agent.debug/log)
+           ((requiring-resolve 'kmet.app.debug/log)
             "host: stdout-tty? native check failed: " (ex-message e))
            (catch Throwable _ nil))
          false)))

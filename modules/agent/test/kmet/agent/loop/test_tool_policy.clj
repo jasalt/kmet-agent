@@ -3,13 +3,13 @@
   an `:ask` goes to the approvals seam, a scripted inner call is gated too, and
   two agents in one process decide independently because the policy is read
   from each agent's own ctx."
-  (:require [kmet.agent.loop.state :as state]
+  (:require [kmet.app.loop.state :as state]
             [clojure.test :refer [deftest is use-fixtures]]
             [kmet.ai.llm :as llm]
             [kmet.app.permissions :as permissions]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.config :as cfg]
-            [kmet.agent.loop :as loop]
+            [kmet.app.config :as cfg]
+            [kmet.app.loop :as loop]
             [kmet.agent.loop.test-support :as support]
             [kmet.libs.json :as json]
             [kmet.srce.core :as srce]))

@@ -3,7 +3,7 @@
    (pi: convertToLlm bashExecution), and per-message cost attachment."
   (:require [clojure.test :as t]
             [clojure.string :as str]
-            [kmet.agent.retry :as retry]
+            [kmet.app.retry :as retry]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.api.anthropic-messages :as anthropic]
             [kmet.ai.api.google-generative-ai :as google]

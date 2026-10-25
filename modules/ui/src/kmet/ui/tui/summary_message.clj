@@ -21,7 +21,7 @@
    pi renders the label/bg in the custom-message palette (its two classes
    are identical modulo label/heading text), so this component reuses the
    same colours as CustomMessageComponent."
-  (:require [kmet.agent.keybindings :as app-kb]
+  (:require [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.subs :as s]
             [kmet.libs.reakt.core :as reakt]
             [kmet.tui.components.box :as box]

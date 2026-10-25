@@ -1,6 +1,6 @@
 (ns kmet.agent.test-loop-message
   (:require [clojure.test :as t]
-            [kmet.agent.loop.message :as message]))
+            [kmet.app.loop.message :as message]))
 
 (t/deftest test-loop-drop-incomplete-tool-calls
   ;; A corrupted session (assistant tool calls without their results, or

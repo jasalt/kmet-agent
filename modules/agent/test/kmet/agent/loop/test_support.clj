@@ -6,13 +6,13 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
-            [kmet.agent.loop :as loop]
+            [kmet.app.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.config :as cfg]
+            [kmet.app.registry :as registry]
+            [kmet.app.config :as cfg]
             [kmet.srce.core :as srce]))
 
 (declare make-test-provider test-ctx)
@@ -37,7 +37,7 @@
   (or *ctx* @suite-ctx))
 
 (defn make-agent-state
-  "`kmet.agent.loop/make-agent-state` on the test process's ctx (`process-ctx`):
+  "`kmet.app.loop/make-agent-state` on the test process's ctx (`process-ctx`):
    a state names the ctx whose `:tools` table and `:loop-stages` it reads, and
    the loop's constructor has no process default of its own. An explicit `:ctx`
    in OPTS still wins."

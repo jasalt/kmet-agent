@@ -7,13 +7,13 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as events]
             [kmet.app.session.core :as session]
-            [kmet.agent.loop.state :as state]
-            [kmet.agent.loop :as loop]
-            [kmet.agent.retry :as retry]
-            [kmet.agent.config :as cfg]
+            [kmet.app.loop.state :as state]
+            [kmet.app.loop :as loop]
+            [kmet.app.retry :as retry]
+            [kmet.app.config :as cfg]
             [kmet.agent.loop.test-support :as support]
             [kmet.srce.core :as srce]))
 

@@ -40,9 +40,9 @@
   ;; The sci backend's helpers are defined for the :default branch, which this
   ;; view does not select — unused here, used on bb/JVM (where the same helpers
   ;; are linted, so a genuinely dead one still fails that view).
-  kmet.agent.extensions.core {:linters {:unresolved-namespace {:exclude [sci]}
+  kmet.app.extensions.core {:linters {:unresolved-namespace {:exclude [sci]}
                                  :unused-namespace {:exclude [kmet.loader.sci-loader]}
                                  :unused-private-var {:level :off}}}
-  kmet.agent.extensions.context {:linters {:unresolved-namespace {:exclude [sci]}
+  kmet.app.extensions.context {:linters {:unresolved-namespace {:exclude [sci]}
                                          :unused-namespace {:exclude [kmet.loader.sci-loader]}
                                          :unused-private-var {:level :off}}}}}

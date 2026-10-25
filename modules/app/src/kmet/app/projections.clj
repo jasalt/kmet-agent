@@ -107,7 +107,7 @@
 (defn outcome
   "A turn's outcome from its assistant entry's `:stop-reason` — `:aborted`,
    `:error`, or `:completed`. The one implementation: the loop's turn-end
-   dispatch reads it too (`kmet.agent.loop/finish-turn!`), so a boundary this
+   dispatch reads it too (`kmet.app.loop/finish-turn!`), so a boundary this
    projection reports and the outcome the loop acts on cannot disagree."
   [entry]
   (case (:stop-reason entry)

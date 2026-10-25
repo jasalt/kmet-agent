@@ -6,7 +6,7 @@
    (\"✓ configured\" / \"✓ env: VAR\" / \"• unconfigured\") and muted
    [subscription]/[API key] type labels when both types are listed."
   (:require [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.subs :as s]
             [kmet.libs.reakt.core :as r]
             [kmet.tui.components.filter-panel :as fp]

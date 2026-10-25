@@ -19,8 +19,8 @@
             [kmet.tui.timers :as timers]
             [kmet.tui.utils :as u]
             [kmet.tui.components.spinner :as spinner]
-            [kmet.agent.tools.bash-output :as bash-out]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.tools.bash-output :as bash-out]
+            [kmet.app.keybindings :as app-kb]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.ui.tui.subs :as s]
             [clojure.string :as str]))

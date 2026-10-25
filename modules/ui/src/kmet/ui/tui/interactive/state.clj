@@ -5,10 +5,10 @@
    mounting) called from every interactive section."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.dock :as dock]
             [kmet.tui.theme :as th]

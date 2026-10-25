@@ -12,10 +12,10 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.libs.edit-diff :as edit-diff]
             [kmet.libs.highlight :as hl]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.skill-message :as skill-message]
             [kmet.tui.hikap :as h]
-            [kmet.agent.tools.bash-output :as bash-out]))
+            [kmet.app.tools.bash-output :as bash-out]))
 
 ;; ─── Shared render helpers (pi: render-utils.ts) ────────────────────────────
 

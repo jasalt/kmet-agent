@@ -5,9 +5,9 @@
    Tab toggle), and the model-switch helpers shared with cycling and the
    footer sync."
   (:require [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.ai.models :as models]
-            [kmet.agent.model-resolver :as resolver]
+            [kmet.app.model-resolver :as resolver]
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]

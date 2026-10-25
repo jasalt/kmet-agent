@@ -3,13 +3,13 @@
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
-            [kmet.agent.loop.state :as state]
-            [kmet.agent.loop :as loop]
-            [kmet.agent.loop-guard :as guard]
+            [kmet.app.loop.state :as state]
+            [kmet.app.loop :as loop]
+            [kmet.app.loop-guard :as guard]
             [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.app-runtime :as runtime]
-            [kmet.agent.retry :as retry]
-            [kmet.agent.config :as cfg]
+            [kmet.app.retry :as retry]
+            [kmet.app.config :as cfg]
             [kmet.agent.loop.test-support :as support]))
 
 ;; ─── Repeat-loop guard (circuit breaker) ────────────────────────────────

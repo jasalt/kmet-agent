@@ -10,7 +10,7 @@
    is never advertised; a row whose ids are all unbound or unwired leaves no
    line."
   (:require [clojure.string :as str]
-            [kmet.agent.keybindings :as app-kb]
+            [kmet.app.keybindings :as app-kb]
             [kmet.libs.process :as process]
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.keybindings :as tui-kb]

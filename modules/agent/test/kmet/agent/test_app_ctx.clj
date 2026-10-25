@@ -4,9 +4,9 @@
    an owner's registrations come back in one call (4c-ii)."
   (:require [clojure.test :as t]
             [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.tools.registry :as tools]
+            [kmet.app.commands :as commands]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.registry :as tools]
             [kmet.app.root :as root]
             [kmet.srce.core :as srce]))
 

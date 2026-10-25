@@ -2,7 +2,7 @@
   "The registry services — `:commands`, `:prompts`, `:skills`, `:tools` — as
    one row shape.
 
-   Each registry is a `kmet.agent.registry/Registry` handle over an atom,
+   Each registry is a `kmet.app.registry/Registry` handle over an atom,
    installed by one `provide!` into the app scope, and mutated through that
    handle afterwards (`kmet.app.tools`' rule: installation is the provide, and a
    plugin adding a command never re-provides). They stay **separate services**
@@ -17,13 +17,13 @@
    AGENTS.md forbids.
 
    `process-handle` is the other half: the one handle a process publishes
-   (`kmet.agent.registry/current`), routing every tag to the service that owns
+   (`kmet.app.registry/current`), routing every tag to the service that owns
    it in a composition. The `:extensions` row mounts it, because that row owns
    the host whose registrations are the reason a process needs one handle."
-  (:require [kmet.agent.commands :as commands]
-            [kmet.agent.prompts :as prompts]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.skills :as skills]
+  (:require [kmet.app.commands :as commands]
+            [kmet.app.prompts :as prompts]
+            [kmet.app.registry :as registry]
+            [kmet.app.skills :as skills]
             [kmet.srce.core :as srce]))
 
 (defn service
@@ -83,7 +83,7 @@
 
 (def resource-tags
   "The registries an extension's contributed resources live in — what unloading
-   it sweeps besides the host's own tags (`kmet.agent.extensions.core/host-tags`)."
+   it sweeps besides the host's own tags (`kmet.app.extensions.core/host-tags`)."
   [:kmet/command :kmet/prompt :kmet/skill])
 
 (defn process-handle
@@ -125,7 +125,7 @@
 
 (def host-service-keys
   "The keys the extension host reads from its bound services
-   (`kmet.agent.extensions.core/services`): the process handle, the ctx an
+   (`kmet.app.extensions.core/services`): the process handle, the ctx an
    `:inject` mounts under, the three resource operations, and the owner sweep.
    An owner binds exactly these; a test compares the binding to this list, so a
    key the host grows cannot be silently dropped."
@@ -133,7 +133,7 @@
 
 (defn host-services
   "The complete service map the extension host reads, for HANDLE and CTX — what
-   an owner binds with `kmet.agent.extensions.core/bind-services!`. One builder
+   an owner binds with `kmet.app.extensions.core/bind-services!`. One builder
    for every owner (the `:extensions` row, kmet1's shim fallback), so the
    contract cannot drift between them."
   [handle ctx]

@@ -4,8 +4,8 @@
    ExtensionUIContext)."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.debug :as debug]
-            [kmet.agent.config :as cfg]
+            [kmet.app.debug :as debug]
+            [kmet.app.config :as cfg]
             [kmet.tui.core :as tui]
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.protocols :as protocols]
@@ -17,14 +17,14 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.expandable-text :as expandable-text]
-            [kmet.agent.project-context :as context]
+            [kmet.app.project-context :as context]
             [kmet.libs.reakt.core :as r]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.prompts :as prompts]
-            [kmet.agent.skills :as skills]
+            [kmet.app.commands :as commands]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.prompts :as prompts]
+            [kmet.app.skills :as skills]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.custom-dialog-adapter :as cda]
@@ -41,7 +41,7 @@
 
 ;; ─── Extension UI registry (pi: ExtensionUIContext) ────────────────────────
 ;; build-layout installs this registry after the layout is live; extensions
-;; call the kmet.agent.extensions.core ui-* fns, which dispatch through it. All
+;; call the kmet.app.extensions.core ui-* fns, which dispatch through it. All
 ;; closures capture the layout pieces they mutate.
 
 (defn make-widget-area-above

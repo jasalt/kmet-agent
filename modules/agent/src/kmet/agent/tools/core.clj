@@ -1,7 +1,7 @@
 (ns kmet.agent.tools.core
   "Tool system public API — Tool record, registry, execution and the shared
-   invocation pipeline. Re-exports from kmet.agent.tools.tool,
-   kmet.agent.tools.registry and kmet.agent.tools.invoke.
+   invocation pipeline. Re-exports from kmet.app.tools.tool,
+   kmet.app.tools.registry and kmet.agent.tools.invoke.
 
    **kmet1's convenience arities live here, not in the registry.** The
    registry takes its `Registry` handle as the first argument, because kmet2
@@ -19,16 +19,16 @@
    namespace, where needing it is allowed.
 
    The loop no longer comes here: it resolves its table and its dispatcher
-   from the agent ctx's `:tools` service (`kmet.agent.loop.state/tool-table`,
+   from the agent ctx's `:tools` service (`kmet.app.loop.state/tool-table`,
    `tool-executor`), which is 4c-iii-c's property — two agents, two tables. What
    keeps these arities alive is the TUI's display read
    (`kmet.ui.tui.chat-history` resolves a tool's render fn while building
    a message component, where no engine is in hand); that read moves with the
    TUI at landing 5, and the arities go with it."
   (:require [kmet.agent.app-runtime :as app-runtime]
-            [kmet.agent.tools.tool :as tool]
-            [kmet.agent.tools.registry :as registry]
-            [kmet.agent.tools.invoke :as invoke]))
+            [kmet.app.tools.tool :as tool]
+            [kmet.app.tools.registry :as registry]
+            [kmet.app.tools.invoke :as invoke]))
 
 (defn- app-registry
   "kmet1's handle, resolved per call rather than captured: the first call boots

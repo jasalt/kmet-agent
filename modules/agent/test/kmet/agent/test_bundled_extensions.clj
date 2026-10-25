@@ -7,9 +7,9 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.extensions.bundled :as bundled]
-            [kmet.agent.packages :as pkgs]
-            [kmet.agent.config :as cfg]
+            [kmet.app.extensions.bundled :as bundled]
+            [kmet.app.packages :as pkgs]
+            [kmet.app.config :as cfg]
             [kmet.tasks.build :as build]
             [kmet.test-utils :refer [slash]]))
 
@@ -147,7 +147,7 @@
   (with-redefs [bundled/manifest (constantly nil)]
     (t/is (= [] (bundled/artifacts)))))
 
-;; ─── The package-item layer (kmet.agent.packages) ───────────────────────────
+;; ─── The package-item layer (kmet.app.packages) ───────────────────────────
 
 (t/deftest test-items-enabled-state
   (let [root (tmp-dir)

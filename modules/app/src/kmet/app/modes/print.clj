@@ -31,8 +31,8 @@
    exit code is the only thing left to say it happened. The mode prints; the
    entry point owns the process and prints its own errors."
   (:require [clojure.string :as str]
-            [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.packages :as packages]
+            [kmet.app.event-bus :as event-bus]
+            [kmet.app.packages :as packages]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
             [kmet.app.invocation :as invocation]

@@ -653,7 +653,7 @@ budget will reject"*, never as an engine preference.
 grouped `retryable-error-regex` (2.01 → 0.79 ms). That was an artifact: the
 non-interleaved benchmark measured the *warming* rounds (irregex's first
 rounds are 3-4x its steady state — see §6.2b). The interleaved A/B/A numbers
-above replace it, and the proposed change to `kmet.agent.loop` was dropped. A
+above replace it, and the proposed change to `kmet.app.loop` was dropped. A
 second revision measured a grouped `bare-url-re` as 113x slower; that was
 building the grouped pattern as `( (?i)… )`, which moves `(?i)` *inside* the
 group — with `(?i)` outside, grouped and group-free are identical (0.108 vs

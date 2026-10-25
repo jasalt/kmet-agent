@@ -10,7 +10,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [kmet.agent.version :as version-lib]
+            [kmet.app.version :as version-lib]
             [kmet.tasks.build :as build]
             [kmet.test-utils :refer [slash]]))
 

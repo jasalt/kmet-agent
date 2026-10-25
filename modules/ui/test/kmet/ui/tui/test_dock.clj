@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest testing]]
             [kmet.ui.tui.dock :as dock]
-            [kmet.agent.debug :as debug]
+            [kmet.app.debug :as debug]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.core :as tui]))
 

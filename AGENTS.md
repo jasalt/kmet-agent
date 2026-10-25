@@ -131,8 +131,8 @@ the session-runtime split’s GUI-independent steps landed.)
 
 - Use `ex-info` with a structured `:cause` or `:type` key. Let errors reach
   the top-level handler instead of silently swallowing them.
-- Lifecycle and handled-error logging belongs to `kmet.agent.debug`; use
-  `kmet.agent.debug/log` for opt-in debug output and `kmet.agent.debug/log-error` for
+- Lifecycle and handled-error logging belongs to `kmet.app.debug`; use
+  `kmet.app.debug/log` for opt-in debug output and `kmet.app.debug/log-error` for
   unhandled top-level errors.
 
 ### Shared layers are extended, not copied

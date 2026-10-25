@@ -8,7 +8,7 @@
    horizontal panning that keeps the selected anchor readable."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.keybindings :as kb]
+            [kmet.app.keybindings :as kb]
             [kmet.ui.tui.tree-selector :as ts]
             [kmet.tui.components.input :as input]
             [kmet.tui.keybindings :as tui-kb]

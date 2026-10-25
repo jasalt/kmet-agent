@@ -16,7 +16,7 @@
             [kmet.tui.components.spacer :as spacer]
             [kmet.libs.hikap.component :refer [track! track-deps]]
             [kmet.tui.macros :refer [defcomponent]]
-            [kmet.agent.extensions.core :as extensions]))
+            [kmet.app.extensions.core :as extensions]))
 
 (declare apply-theme!)
 

@@ -16,10 +16,10 @@
             [kmet.ai.api.anthropic-messages :as anthropic]
             [kmet.ai.api.google-generative-ai :as google]
             [kmet.ai.google-adc :as adc]
-            [kmet.agent.loop :as loop]
+            [kmet.app.loop :as loop]
             [kmet.agent.loop.test-support :as loop-support]
             [kmet.app.session.core :as session]
-            [kmet.agent.config :as cfg]
+            [kmet.app.config :as cfg]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as m]
             [kmet.agent.tools.core :as tools]))

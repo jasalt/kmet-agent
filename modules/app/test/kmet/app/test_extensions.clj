@@ -1,10 +1,10 @@
 (ns kmet.app.test-extensions
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is]]
-            [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.registry :as registry]
-            [kmet.agent.tools.registry :as tools]
+            [kmet.app.commands :as commands]
+            [kmet.app.extensions.core :as extensions]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.registry :as tools]
             [kmet.app.extensions :as row]
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]))

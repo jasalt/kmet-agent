@@ -33,12 +33,12 @@
      reaches them; the settle path runs in the loop's `finally`."
   (:require
    [babashka.fs :as fs]
-   [kmet.agent.compaction.stage :as agent-compact]
-   [kmet.agent.config :as cfg]
-   [kmet.agent.debug :as debug]
-   [kmet.agent.extensions.core :as extensions]
-   [kmet.agent.loop :as agent]
-   [kmet.agent.loop.state :as loop-state]
+   [kmet.app.compaction.stage :as agent-compact]
+   [kmet.app.config :as cfg]
+   [kmet.app.debug :as debug]
+   [kmet.app.extensions.core :as extensions]
+   [kmet.app.loop :as agent]
+   [kmet.app.loop.state :as loop-state]
    [kmet.app.session.compaction :as manual]
    [kmet.app.session.core :as session]
    [kmet.app.session.lifecycle :as lifecycle]
@@ -46,7 +46,7 @@
    [kmet.app.session.runtime :refer [agent-state ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
    [kmet.app.session.submission :as submission]
    [kmet.app.session.summary :as summary]
-   [kmet.agent.skills :as skills]
+   [kmet.app.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
    [kmet.srce.core :as srce]))
@@ -104,12 +104,12 @@
      :expand-input — the fn the engine applies to queued and submitted text
                      before it reaches the run, replacing skill commands and
                      prompt templates with what they stand for; kmet1's front
-                     ends pass `kmet.agent.packages/expand-input`, and an
+                     ends pass `kmet.app.packages/expand-input`, and an
                      engine given none queues text as written
      :load-resources! — a thunk `bootstrap` calls once, before the prompt is
                      built, to put the caller's skills and prompt templates
                      into the app's registries; kmet1's front ends pass
-                     `kmet.agent.packages/load-resources!` (the unified
+                     `kmet.app.packages/load-resources!` (the unified
                      package resolution), and an engine given none loads none
 
    Loads the caller's resources (`:load-resources!`), builds the system prompt
@@ -465,7 +465,7 @@
 
 (defn compact!
   "Compact the session (manual /compact path); custom-instructions and
-   reason are loop/pi-shaped (see kmet.agent.compaction.stage/compact-context!)."
+   reason are loop/pi-shaped (see kmet.app.compaction.stage/compact-context!)."
   ([engine] (agent-compact/compact-context! (agent-state engine)))
   ([engine custom-instructions reason]
    (agent-compact/compact-context! (agent-state engine) custom-instructions reason)))

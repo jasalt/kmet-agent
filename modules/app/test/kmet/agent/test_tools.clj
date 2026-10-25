@@ -5,14 +5,14 @@
             [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.agent.tools.core :as tools]
-            [kmet.agent.tools.invoke :as invoke]
-            [kmet.agent.tools.util :as tool-util]
-            [kmet.agent.extensions.core :as extensions]
+            [kmet.app.tools.invoke :as invoke]
+            [kmet.app.tools.util :as tool-util]
+            [kmet.app.extensions.core :as extensions]
             [kmet.ai.api.shared :as schema-shared]
-            [kmet.agent.tools.bash :as bash-tool]
-            [kmet.agent.tools.bash-executor :as bash-exec]
-            [kmet.agent.skills :as skills]
-            [kmet.agent.registry :as registry]
+            [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.bash-executor :as bash-exec]
+            [kmet.app.skills :as skills]
+            [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]
             [kmet.libs.process :as process]
             [kmet.test-utils :refer [slash]]))
@@ -141,7 +141,7 @@
   (t/testing "selecting every built-in excludes nothing"
     (t/is (= #{} (tools/default-tool-exclusions (vec tools/builtin-tool-names))))))
 
-;; ─── Shared invocation pipeline (kmet.agent.tools.invoke) ───────────────────
+;; ─── Shared invocation pipeline (kmet.app.tools.invoke) ───────────────────
 
 (t/deftest test-invoke-prepare-tool-call
   (t/testing "no hook passes (nil = keep the original args)"

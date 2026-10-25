@@ -5,16 +5,16 @@
    loop-event-type — a new event type fails the coverage test until the
    renderer (and by extension every front end) decides what the transcript
    does with it."
-  (:require [kmet.agent.loop.state :as state]
+  (:require [kmet.app.loop.state :as state]
             [clojure.test :as t]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
-            [kmet.agent.event-bus :as event-bus]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as app-events]
-            [kmet.agent.loop :as loop]
+            [kmet.app.loop :as loop]
             [kmet.agent.loop.test-support :as support]
-            [kmet.agent.config :as cfg]))
+            [kmet.app.config :as cfg]))
 
 ;; ─── The headless renderer ────────────────────────────────────────────────
 
@@ -171,7 +171,7 @@
             (str "round-trips through EDN: " (:type event))))))
 
 (def ^:private loop-boundary-names
-  "The loop's actionable names: the events `kmet.agent.loop/emit-boundary`
+  "The loop's actionable names: the events `kmet.app.loop/emit-boundary`
    dispatches. Its two call sites are the source, so this set is what the test
    pins — derived from the vocabulary, the test would only compare the
    declaration with itself."
