@@ -55,22 +55,23 @@
      :tui (vec (filter #(str/starts-with? % "kmet.tui") graph))
      :tk (vec (filter #(str/starts-with? % "kmet.tk") graph))}))
 
-(deftest headless-front-ends-do-not-reach-the-interactive-stack
-  (testing "print and RPC modes require no interactive mode, TUI
-            namespace, or Tk backend"
-    (doseq [{:keys [root loaded? ui tui tk]}
-            (mapv headless-violations ["kmet.agent.modes.print" "kmet.agent.modes.rpc"])]
-      (is loaded? (str root " must be part of the graph"))
-      (is (empty? ui) (str root " reaches the UI layer: " ui))
-      (is (empty? tui) (str root " reaches the TUI layer: " tui))
-      (is (empty? tk) (str root " reaches the Tk backend: " tk)))))
+(defn- assert-headless
+  "ROOT's static require graph reaches no UI layer, widget namespace or Tk
+   backend, and ROOT itself was loaded (an empty graph would pass vacuously)."
+  [root]
+  (let [{:keys [loaded? ui tui tk]} (headless-violations root)]
+    (is loaded? (str root " must be part of the graph"))
+    (is (empty? ui) (str root " reaches the UI layer: " ui))
+    (is (empty? tui) (str root " reaches the TUI layer: " tui))
+    (is (empty? tk) (str root " reaches the Tk backend: " tk))))
+
+(deftest headless-front-ends-do-not-reach-the-ui-layer
+  (testing "print and RPC modes require no UI layer, TUI widget namespace, or
+            Tk backend"
+    (doseq [root ["kmet.agent.modes.print" "kmet.agent.modes.rpc"]]
+      (assert-headless root))))
 
 (deftest rpc-client-stays-headless
   (testing "the scripted RPC client loads no view layer at all (it binds
             no extensions)"
-    (let [{:keys [root loaded? ui tui tk]}
-          (headless-violations "kmet.agent.modes.rpc-client")]
-      (is loaded? (str root " must be part of the graph"))
-      (is (empty? ui) (str root " reaches the UI layer: " ui))
-      (is (empty? tui) (str root " reaches the TUI layer: " tui))
-      (is (empty? tk) (str root " reaches the Tk backend: " tk)))))
+    (assert-headless "kmet.agent.modes.rpc-client")))

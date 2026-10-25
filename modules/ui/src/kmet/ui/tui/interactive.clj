@@ -104,9 +104,9 @@
 ;; The TUI is the process's `:ui` and `:approvals` provider (`kmet.ui.tui`):
 ;; a dialog is drawn by the terminal that is actually on screen, and there is
 ;; at most one of those per process, so one atom is the whole state the
-;; provider needs. Both answers block the caller — a tool call or an extension
-;; handler — until a human answers, which is what an unanswered dialog means
-;; (kmet.app.permissions: the ask owns its timeout).
+;; provider needs. Both answers block the caller — a tool call, an extension's
+;; dialog request — until a human answers, which is what an unanswered dialog
+;; means (kmet.app.permissions: the ask owns its timeout).
 
 ;; the running TUI's CoreState, or nil outside a run
 (defonce ^:private live-mode (atom nil))
@@ -116,20 +116,22 @@
 ;; never be answered
 (defonce ^:private pending-answers (atom #{}))
 
-(defn- choose!
-  "Mount a selector over OPTIONS on CS's dock and return the chosen label, nil
-   when it is cancelled or the mode tears down first. Blocks."
-  [cs title options]
+(defn- wait-for-dialog!
+  "Mount the dialog MAKE builds — given ANSWER!, which closes the dialog and
+   delivers its value — on CS's dock, and block until one of its callbacks
+   answers. Returns that value, or nil when the mode tears down first (the
+   promise joins `pending-answers` before the mount, and run's teardown denies
+   every one of them)."
+  [cs make]
   (let [dlg-atom (atom nil)
         result (promise)
         close! (fn []
                  (dock/close-atom! cs dlg-atom)
                  (tui/tui-request-render (:tui cs)))
-        dlg (dialogs/make-selector-dialog
-             title options
-             (fn [choice] (close!) (deliver result choice))
-             (fn [] (close!) (deliver result nil))
-             (th/get-current-theme))]
+        answer! (fn [value]
+                  (close!)
+                  (deliver result value))
+        dlg (make answer!)]
     (reset! dlg-atom dlg)
     (swap! pending-answers conj result)
     (dock/mount! cs dlg)
@@ -139,29 +141,33 @@
       (finally
         (swap! pending-answers disj result)))))
 
+(defn- choose!
+  "Mount a selector over OPTIONS on CS's dock and return the chosen label, nil
+   when it is cancelled or the mode tears down first. Blocks."
+  [cs title options]
+  (wait-for-dialog!
+   cs (fn [answer!]
+        (dialogs/make-selector-dialog title options
+                                      answer! #(answer! nil)
+                                      (th/get-current-theme)))))
+
 (defn- type-in!
   "Mount a one-line input dialog on CS's dock and return the submitted text,
    nil when it is cancelled or the mode tears down first. Blocks."
   [cs title prefill]
-  (let [dlg-atom (atom nil)
-        result (promise)
-        close! (fn []
-                 (dock/close-atom! cs dlg-atom)
-                 (tui/tui-request-render (:tui cs)))
-        dlg (dialogs/make-input-dialog
-             title
-             (fn [text] (close!) (deliver result text))
-             (fn [] (close!) (deliver result nil))
-             (th/get-current-theme)
-             prefill)]
-    (reset! dlg-atom dlg)
-    (swap! pending-answers conj result)
-    (dock/mount! cs dlg)
-    (tui/tui-request-render (:tui cs))
-    (try
-      (deref result)
-      (finally
-        (swap! pending-answers disj result)))))
+  (wait-for-dialog!
+   cs (fn [answer!]
+        (dialogs/make-input-dialog title answer! #(answer! nil)
+                                   (th/get-current-theme) prefill))))
+
+(defn- selected-value
+  "The value CHOSEN names among OPTIONS: a map option's `:value`, a plain
+   option itself. nil when nothing was chosen."
+  [options chosen]
+  (when chosen
+    (if (every? map? options)
+      (:value (some #(when (= chosen (str (:label %))) %) options))
+      chosen)))
 
 (defn- dialog-title
   "TITLE and MESSAGE as the selector's one title block (a newline keeps the
@@ -184,19 +190,18 @@
    or input thread must use the ABI's asynchronous `request-pending`/`respond!`
    pair instead."
   [_ctx request]
-  (if-let [cs @live-mode]
-    (case (:kind request)
-      :confirm (= "Yes" (choose! cs (dialog-title request) ["Yes" "No"]))
-      :select (let [options (vec (:options request))
-                    labels (mapv #(str (if (map? %) (:label %) %)) options)
-                    chosen (choose! cs (dialog-title request) labels)]
-                (when chosen
-                  (if (every? map? options)
-                    (:value (first (filter #(= chosen (str (:label %))) options)))
-                    chosen)))
-      :input (type-in! cs (dialog-title request) (or (:prefill request) (:value request)))
-      (extensions/ui-request-default (:kind request)))
-    (extensions/ui-request-default (:kind request))))
+  (let [default (extensions/ui-request-default (:kind request))]
+    (if-let [cs @live-mode]
+      (case (:kind request)
+        :confirm (= "Yes" (choose! cs (dialog-title request) ["Yes" "No"]))
+        :select (let [options (vec (:options request))]
+                  (selected-value options
+                                  (choose! cs (dialog-title request)
+                                           (mapv #(str (if (map? %) (:label %) %))
+                                                 options))))
+        :input (type-in! cs (dialog-title request) (or (:prefill request) (:value request)))
+        default)
+      default)))
 
 (defn ask!
   "Answer a permission `:ask` through the live TUI: a Yes/No dialog naming the

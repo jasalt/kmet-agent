@@ -540,6 +540,15 @@
 (defn- configuration-error? [e]
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
 
+(defn- enable-debug!
+  "Turn on debug.log before any load of any kind, so the catalog trail is in
+   the log too (kmet1's order: help, version and the cache pipeline answer
+   without it)."
+  [opts]
+  (when (:debug opts)
+    (debug/enable!)
+    (debug/log "kmet started with --debug")))
+
 (defn main
   "Run kmet2 with ARGS and return the process exit code. A package subcommand
    runs before the app's flags do, as kmet1 dispatches it."
@@ -554,14 +563,10 @@
           help? (do (print-usage) (flush) 0)
           ;; the model-cache pipeline needs no registry, config or world — and
           ;; the run afterwards reads the caches it just wrote
-          (:generate-models opts) (do (flush) (maintenance/generate-models!))
+          (:generate-models opts) (maintenance/generate-models!)
           :else
           (do
-            ;; before any load of any kind, so the catalog trail is in the log
-            ;; too (kmet1's order)
-            (when (:debug opts)
-              (debug/enable!)
-              (debug/log "kmet started with --debug"))
+            (enable-debug! opts)
             (cond
               dump-config? (do (print (dump-config opts)) (flush) 0)
               dump-state? (do (print (dump-state opts)) (flush) 0)
@@ -581,8 +586,9 @@
    the exit code, so a test drives the entry without forking.
 
    The model catalog is not loaded here — it is part of the process world
-   (`run-mode`), after the boot that mounts its registries. 5n's `-d` and
-   `--generate-models` go on this side of that load; `--list-models` after it."
+   (`run-mode`), after the boot that mounts its registries. The maintenance
+   flags follow that split: `-d` and `--generate-models` before the load,
+   `--list-models` after it."
   [args]
   (main args))
 
