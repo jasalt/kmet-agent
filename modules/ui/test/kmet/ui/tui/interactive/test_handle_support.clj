@@ -32,7 +32,7 @@
   "The composition the `with-boot` fixture installed; nil outside it."
   (atom nil))
 
-(defn start!
+(defn- start!
   "A fresh booted `:tui` composition — the real rows, so the handle
    `build-layout` would create is the one a front end reads — with its own
    session directory, so a test that boots twice does not have the first
@@ -43,7 +43,7 @@
     (assoc (runtime-app/boot (core/compose-config {:profile :tui}) {})
            ::sessions-dir dir)))
 
-(defn stop!
+(defn- stop!
   "Tear BOOT down and remove the sessions it wrote."
   [boot]
   (runtime-app/shutdown! boot)
