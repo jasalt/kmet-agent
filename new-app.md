@@ -3575,9 +3575,16 @@ finished, measured from the TUI's own code:
   builtins inside the fixture, after the boot), and a CoreState helper needs
   the caller's boot.
 
-  `modules/agent/test`'s `test-ui-port` and `test-runtime-capabilities` keep
-  `tu/test-engine`: their subject is the extension surface over a bare engine,
-  not a mode driving a composition.
+  Three namespaces outside `modules/ui/test` keep `tu/test-engine`:
+  `modules/agent/test`'s `test-ui-port` and `test-runtime-capabilities` (their
+  subject is the extension surface over a bare engine, not a mode driving a
+  composition) and `modules/ai/test`'s `test-oauth` (rank 1 — it cannot reach
+  the composition at all).
+
+  The fixture boots the real composition, so a run loads the agent directory's
+  resources the way the app does; commands are cleared per test and the tests
+  that depend on a resource set pin it (`th/get-all-themes` in the settings
+  panel), which is the price of proving the mode over the real registry.
 - **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
   files that test the TUI now live beside it: the interactive cluster — the
   support fixture, autocomplete, commands, the compaction queue, import,

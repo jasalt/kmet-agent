@@ -59,8 +59,12 @@
     (try
       (f)
       (finally
-        (stop! boot)
-        (reset! booted nil)))))
+        ;; the slot is cleared even when teardown throws, so the next test's
+        ;; `current` never answers a dead composition
+        (try
+          (stop! boot)
+          (finally
+            (reset! booted nil)))))))
 
 (defn current
   "The composition `with-boot` installed for the running test."
