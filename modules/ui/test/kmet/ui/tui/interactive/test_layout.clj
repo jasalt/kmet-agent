@@ -18,15 +18,15 @@
             [kmet.ui.tui.tool-execution :as te]
             [kmet.ui.tui.dock :as dock]
             [kmet.ai.auth :as auth]
-            [kmet.agent.loop :as agent]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
             [kmet.agent.tools.core :as tools]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each hs/with-boot tu/with-clean-app-registries)
 
 ;; ─── DSL stage 4 review: dock generation gate + widget-area reactivity ────
 
@@ -38,9 +38,10 @@
     (with-redefs [tui/tui-set-focus (fn [_ _] nil)
                   tui/tui-request-render (fn [_] nil)]
       (let [ed (editor/make-editor)
-            cs (tu/with-test-engine {:tui {}
-                                     :dock-stack (atom [])
-                                     :current-editor-atom (atom ed)})
+            cs (assoc (hs/core-state (hs/new-handle)
+                                     {:tui {}
+                                      :current-editor-atom (atom ed)})
+                      :dock-stack (atom []))
             panel-a (status-indicator/make-status-indicator)
             panel-b (editor/make-editor)]
         ;; A mounts, then B replaces it
@@ -87,10 +88,11 @@
     (support/install-app-keybindings!)
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
-          cs (tu/with-test-engine {:tui ui
-                                   :dock-stack (atom [])
-                                   :current-editor-atom (atom ed)
-                                   :chat-history (chat-history/make-chat-history)})
+          cs (assoc (hs/core-state (hs/new-handle)
+                                   {:tui ui
+                                    :current-editor-atom (atom ed)
+                                    :chat-history (chat-history/make-chat-history)})
+                    :dock-stack (atom []))
           covers (atom 0)
           selector-p (promise)
           released-p (promise)
@@ -261,17 +263,16 @@
           ed (editor/make-editor)
           ch (chat-history/make-chat-history)
           fdp-instance (fdp/make-footer-data-provider)
-          cs (tu/with-test-engine {:tui ui
-                                   :dock-stack (atom [])
-                                   :current-editor-atom (atom ed)
-                                   :editor ed
-                                   :chat-history ch
-                                   :footer-provider fdp-instance
-                                   :status-indicator (status-indicator/make-status-indicator)
-                                   :config cfg/default-config
-                                   :agent-state (atom (agent/make-agent-state))
-                                   :session-atom (atom nil)
-                                   :running-turn? (atom false)})
+          cs (assoc (hs/core-state (hs/new-handle)
+                                   {:tui ui
+                                    :current-editor-atom (atom ed)
+                                    :editor ed
+                                    :chat-history ch
+                                    :footer-provider fdp-instance
+                                    :status-indicator (status-indicator/make-status-indicator)
+                                    :config cfg/default-config
+                                    :turn-running? false})
+                    :dock-stack (atom []))
           seen (atom ::unset)
           close-ref (atom nil)
           submit ((var layout/make-editor-submit-handler) cs)

@@ -13,7 +13,11 @@
             [kmet.tui.core :as core]
             [kmet.tui.theme :as th]
             [kmet.agent.session.runtime :as runtime]
-            [kmet.test-utils :as tu]))
+            [kmet.ui.tui.interactive.test-handle-support :as hs]))
+
+;; The settings panel reads a handle's run options; the fixture installs the
+;; composition whose handle `settings-cs` builds on.
+(t/use-fixtures :each hs/with-boot)
 
 (defn- with-image-env
   "Run F with the shared image settings and terminal capabilities bound
@@ -64,29 +68,29 @@
 ;; ─── The panel itself (show-settings) ──────────────────────────────────────
 
 (defn- settings-cs
-  "A minimal CS stand-in: the panel reads the agent state, config,
-   :chat-history, :dock-stack and :current-editor-atom through the runtime
-   engine (the fake agent state is a plain map — the panel only reads its
-   atoms); :tui stays nil (the panel guards the rows that need one)."
+  "The panel's CoreState over a real handle: the panel reads the agent state's
+   run options, :chat-history, :dock-stack and :current-editor-atom through the
+   runtime engine, so the options are seeded where the rows read them and the
+   model is one the catalog does not have (the panel's raw-id row); :tui stays
+   nil (the panel guards the rows that need one)."
   []
-  (tu/with-test-engine
-    {:tui nil
-     :agent-state (atom {:provider (atom :anthropic)
-                         :model (atom "does-not-exist")
-                         :thinking (atom :off)
-                         :cfg (atom {:auto-compact true
-                                     :block-images false
-                                     :steering-mode :one-at-a-time
-                                     :follow-up-mode :one-at-a-time
-                                     :loop-guard-enabled false
-                                     :loop-guard-threshold 3
-                                     :thinking-loop-guard-enabled false
-                                     :max-retries 0
-                                     :base-delay-ms 1000})})
-     :config {}
-     :chat-history (chat-history/make-chat-history)
-     :dock-stack (atom [])
-     :current-editor-atom (atom (editor/make-editor))}))
+  (assoc (hs/core-state (hs/new-handle)
+                        {:tui nil
+                         :chat-history (chat-history/make-chat-history)
+                         :current-editor-atom (atom (editor/make-editor))
+                         :provider :anthropic
+                         :model "does-not-exist"
+                         :thinking :off
+                         :cfg {:auto-compact true
+                               :block-images false
+                               :steering-mode :one-at-a-time
+                               :follow-up-mode :one-at-a-time
+                               :loop-guard-enabled false
+                               :loop-guard-threshold 3
+                               :thinking-loop-guard-enabled false
+                               :max-retries 0
+                               :base-delay-ms 1000}})
+         :dock-stack (atom [])))
 
 (defn- plain [comp width]
   (mapv #(str/replace % #"\u001b\[[0-9;]*[a-zA-Z]" "") (core/render comp width)))

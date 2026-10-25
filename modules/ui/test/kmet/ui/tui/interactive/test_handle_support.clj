@@ -110,6 +110,12 @@
       (finally
         (stop! boot)))))
 
+(defn- opt-or
+  "OPTS' K, or DEFAULT when the caller did not name it — an explicit nil is
+   none (the settings panel's :tui nil is a missing terminal, not a stub)."
+  [opts k default]
+  (if (contains? opts k) (get opts k) default))
+
 (defn core-state
   "The CoreState pieces /new and the session commands touch, over a real
    handle: a chat history, the editor, the pending containers, a footer bound
@@ -120,38 +126,40 @@
    `:pending-bash-components`, `:status-indicator`, `:status-current`,
    `:status-root`, `:footer-provider`, `:footer-comp`) and seed the handle's
    own atoms (`:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
-   `:provider`, `:thinking`, `:compaction-queued`, `:pending-compaction`) — the
-   values a test writes directly, written where the run reads them."
+   `:provider`, `:thinking`, `:scoped-models`, `:cfg`,
+   `:compaction-queued`, `:pending-compaction`) — the values a test writes
+   directly, written where the run reads them."
   ([handle] (core-state handle nil))
   ([handle opts]
    (doseq [k [:config :cwd :turn-running? :compaction-queued :pending-compaction]
            :when (contains? opts k)]
      (reset! (get handle k) (get opts k)))
    (let [state @(:agent-state handle)]
-     (doseq [k [:messages :model :provider :thinking]
+     (doseq [k [:messages :model :provider :thinking :scoped-models :cfg]
              :when (contains? opts k)]
        (reset! (get state k) (get opts k))))
-   (let [ch (or (:chat-history opts)
-                (chat-history/make-chat-history :tool-fn (constantly nil)))
+   (let [ch (opt-or opts :chat-history
+                    (chat-history/make-chat-history :tool-fn (constantly nil)))
          ed (or (:editor opts) (editor/make-editor))
-         fdp (or (:footer-provider opts)
-                 (fdp/make-footer-data-provider :session (runtime/session handle)))]
+         fdp (opt-or opts :footer-provider
+                     (fdp/make-footer-data-provider :session (runtime/session handle)))]
      (when (nil? (:editor opts))
        (editor/editor-set-text! ed "draft"))
      (inter/map->CoreState
-      {:tui (or (:tui opts) {:render-requested? (atom false)})
+      {:tui (opt-or opts :tui {:render-requested? (atom false)})
        :engine handle
        :chat-history ch
        :editor ed
-       :current-editor-atom (or (:current-editor-atom opts) (atom ed))
-       :anim-timer (or (:anim-timer opts) (atom nil))
-       :bash-running? (or (:bash-running? opts) (atom false))
-       :bash-signal (or (:bash-signal opts) (atom false))
+       :current-editor-atom (opt-or opts :current-editor-atom (atom ed))
+       :anim-timer (opt-or opts :anim-timer (atom nil))
+       :bash-running? (opt-or opts :bash-running? (atom false))
+       :bash-signal (opt-or opts :bash-signal (atom false))
        :pending-messages-container (container/make-container)
-       :pending-bash-components (or (:pending-bash-components opts) (atom []))
+       :pending-bash-components (opt-or opts :pending-bash-components (atom []))
        :pending-messages-comp (pending-messages/make-pending-messages)
-       :status-current (or (:status-current opts) (atom nil))
+       :status-current (opt-or opts :status-current (atom nil))
        :status-root (:status-root opts)
-       :status-indicator (or (:status-indicator opts) (status-indicator/make-status-indicator))
-       :footer-comp (or (:footer-comp opts) (footer/make-footer :provider fdp))
+       :status-indicator (opt-or opts :status-indicator
+                                 (status-indicator/make-status-indicator))
+       :footer-comp (opt-or opts :footer-comp (footer/make-footer :provider fdp))
        :footer-provider fdp}))))

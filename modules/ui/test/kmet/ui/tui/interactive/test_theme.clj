@@ -28,11 +28,12 @@
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.
-(t/use-fixtures :each tu/with-clean-app-registries)
+(t/use-fixtures :each hs/with-boot tu/with-clean-app-registries)
 
 ;; ─── /theme command ───────────────────────────────────────────────────────
 
@@ -55,9 +56,8 @@
                     chat-history/chat-history-add-message! (fn [_ m] (reset! msg m))
                     cfg/save-setting! (fn [path value] (reset! saved [path value]))]
         (reset! tc-ctrl (theme-ctrl/make-theme-controller {:theme "dark"} nil nil (fn [])))
-        (let [cs (tu/with-test-engine {:config cfg/default-config
-                                       :chat-history nil
-                                       :theme-controller @tc-ctrl})]
+        (let [cs (assoc (hs/core-state (hs/new-handle) {:config cfg/default-config})
+                        :theme-controller @tc-ctrl)]
           (testing "with a full theme name"
             ((:handler (commands/find-command "theme")) cs "light")
             (t/is (= "light" (get-in @saved [1])) "theme persisted as the full name")
@@ -72,7 +72,7 @@
   (testing "the editor's dynamic border follows the ACTIVE theme, not the
             config :theme snapshot — a /theme switch re-styles it"
     (let [bf (atom nil)
-          cs (tu/with-test-engine {:editor {:border-fn bf}})
+          cs (hs/core-state (hs/new-handle) {:editor {:border-fn bf}})
           rule (fn [theme-name]
                  ((theme/get-thinking-border-color (theme/get-theme theme-name) :max) "─"))]
       (reset! theme/theme-atom (theme/get-theme "dark"))
@@ -94,10 +94,11 @@
                                :context-window 32768})]
       (with-redefs [m/providers-atom (atom {:test-provider {:models [model]}})]
         (try
-          (let [ag (agent/make-agent-state :provider :test-provider :model "test-model")
-                cs (tu/with-test-engine {:agent-state (atom ag)
-                                         :config cfg/default-config
-                                         :session-atom (atom nil)})
+          (let [handle (hs/new-handle)
+                ag (runtime/agent-state handle)
+                cs (hs/core-state handle {:config cfg/default-config
+                                          :provider :test-provider
+                                          :model "test-model"})
                 registry ((var ui-registry/build-extension-ui-registry)
                           {:tui nil :cs cs}
                           {:fdp (fdp/make-footer-data-provider)}
@@ -170,12 +171,10 @@
             run and compaction flags, not the status atom — the settle window
             (e.g. D's post-run compaction) has status idle while the prompt is
             still in flight (pi: isIdle / isStreaming / abort)"
-    (let [ag (agent/make-agent-state)
-          cs (tu/with-test-engine {:agent-state (atom ag)
-                                   :config cfg/default-config
-                                   :session-atom (atom nil)
-                                   :compaction-queued (atom [])
-                                   :running-turn? (atom false)})
+    (let [handle (hs/new-handle)
+          ag (runtime/agent-state handle)
+          cs (hs/core-state handle {:config cfg/default-config
+                                    :turn-running? false})
           registry ((var ui-registry/build-extension-ui-registry)
                     {:tui nil :cs cs}
                     {:fdp (fdp/make-footer-data-provider)}
@@ -216,10 +215,11 @@
                                :base-url "https://adapter.test/v1"
                                :headers {"X-Test" "yes"}})
         alternate (assoc adapter :id "other")
-        ag (agent/make-agent-state :provider :test-native :model "test-model")
-        cs (tu/with-test-engine {:agent-state (atom ag)
-                                 :config cfg/default-config
-                                 :session-atom (atom nil)})]
+        handle (hs/new-handle)
+        ag (runtime/agent-state handle)
+        cs (hs/core-state handle {:config cfg/default-config
+                                  :provider :test-native
+                                  :model "test-model"})]
     (with-redefs [m/providers-atom (atom {:test-native {:models [native]}
                                           :test-adapter {:models [adapter alternate]}})]
       (try
@@ -251,12 +251,13 @@
   (let [native (m/map->Model {:provider :test-native :id "test-model"})
         alternate (m/map->Model {:provider :test-native :id "other"})
         foreign (m/map->Model {:provider :test-adapter :id "test-model"})
-        ag (agent/make-agent-state :provider :test-native :model "test-model"
-                                   :scoped-models ["test-native/test-model"
-                                                   "test-adapter/test-model"])
-        cs (tu/with-test-engine {:agent-state (atom ag)
-                                 :config cfg/default-config
-                                 :session-atom (atom nil)})]
+        handle (hs/new-handle)
+        ag (runtime/agent-state handle)
+        cs (hs/core-state handle {:config cfg/default-config
+                                  :provider :test-native
+                                  :model "test-model"
+                                  :scoped-models ["test-native/test-model"
+                                                  "test-adapter/test-model"]})]
     (with-redefs [m/providers-atom (atom {:test-native {:models [native alternate]}
                                           :test-adapter {:models [foreign]}})]
       (try
@@ -301,12 +302,12 @@
             no harness for this path)"
     (let [ui (tui/create-tui nil)
           ed (editor/make-editor)
-          cs (tu/with-test-engine {:tui ui
-                                   :dock-stack (atom [])
-                                   :current-editor-atom (atom ed)
-                                   :status-indicator (status-indicator/make-status-indicator)
-                                   :config cfg/default-config
-                                   :session-atom (atom nil)})
+          cs (assoc (hs/core-state (hs/new-handle)
+                                   {:tui ui
+                                    :current-editor-atom (atom ed)
+                                    :status-indicator (status-indicator/make-status-indicator)
+                                    :config cfg/default-config})
+                    :dock-stack (atom []))
           ch (chat-history/make-chat-history)
           disposed (atom [])
           logged (atom [])
@@ -348,12 +349,12 @@
   [{:keys [ui ed above below hdr sp1 header-container ch]}]
   ((var ui-registry/build-extension-ui-registry)
    {:tui ui
-    :cs (tu/with-test-engine {:tui ui
-                              :dock-stack (atom [])
-                              :current-editor-atom (atom ed)
-                              :status-indicator (status-indicator/make-status-indicator)
-                              :config cfg/default-config
-                              :session-atom (atom nil)})}
+    :cs (assoc (hs/core-state (hs/new-handle)
+                              {:tui ui
+                               :current-editor-atom (atom ed)
+                               :status-indicator (status-indicator/make-status-indicator)
+                               :config cfg/default-config})
+               :dock-stack (atom []))}
    {:ftr {:extension-statuses-atom (atom {})}
     :ed ed
     :ch ch
