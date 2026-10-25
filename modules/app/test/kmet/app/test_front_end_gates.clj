@@ -12,6 +12,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
+            [kmet.ai.models :as models]
             [kmet.app.core :as core]
             [kmet.app.events :as events]
             [kmet.app.runtime :as runtime-app]
@@ -36,8 +37,23 @@
 
 (defn- shutdown!
   [boot]
-  (srce/dispose-subtree! (:ctx boot))
+  (runtime-app/shutdown! boot)
   (fs/delete-tree sessions-dir))
+
+(defn- register-test-provider!
+  "A provider of the test's own, so a model switch resolves through the
+   catalog the run's ExtensionContext reads — the gate is a write a handler
+   can see, not just a stored id."
+  []
+  (models/register-provider!
+   (models/map->Provider {:id :gates-test
+                          :name "Gates"
+                          :api-types #{:openai-completions}
+                          :models [{:id "gates-a" :name "Gates A" :provider :gates-test}
+                                   {:id "gates-b" :name "Gates B" :provider :gates-test}
+                                   {:id "gates-c" :name "Gates C" :provider :gates-test}]
+                          :env-vars []
+                          :default-model "gates-a"})))
 
 (deftest a-created-agent-is-in-the-tree-and-announced
   (testing "a front end's agent is a child context of the ctx it mounted on —
@@ -63,26 +79,35 @@
 
 (deftest a-settings-write-touches-only-its-agent
   (testing "two agents of one composition hold their own model and thinking
-            level; writing one leaves the other's state and run context alone"
+            level; a write leaves the sibling's state and the context its
+            handlers would build alone"
     (let [boot (boot!)]
       (try
+        (register-test-provider!)
         (let [ctx (:ctx boot)
               agents (srce/get ctx :agents)
-              a ((:create! agents) ctx {:config (config-for "claude-haiku-5-5")})
-              b ((:create! agents) ctx {:config (config-for "deepseek-v4-pro")})
-              ;; a Model record without the catalog: set-model! stores the
-              ;; record's provider and id, which is what the run reads
-              target {:provider :opencode-go :id "minimax-m3" :name "Minimax M3"}]
-          ((:set-model! agents) a target)
-          (is (= "minimax-m3" (runtime/model a)))
-          (is (= "deepseek-v4-pro" (runtime/model b))
-              "the sibling's model is untouched")
+              gates-config (fn [model] {:provider :gates-test :model model
+                                        :session-dir sessions-dir})
+              a ((:create! agents) ctx {:config (gates-config "gates-a")})
+              b ((:create! agents) ctx {:config (gates-config "gates-b")})
+              b-thinking (runtime/thinking-level b)]
+          (is (= "gates-b" (get-in (runtime/extension-context b) [:model :id]))
+              "sanity: the sibling's context resolves its model")
+          ((:set-model! agents) a (models/get-model :gates-test "gates-c"))
+          (is (= "gates-c" (runtime/model a)))
+          (is (= "gates-c" (get-in (runtime/extension-context a) [:model :id]))
+              "the context a handler builds names the model the agent was given")
+          (is (= "gates-b" (runtime/model b)) "the sibling's model is untouched")
+          (is (= "gates-b" (get-in (runtime/extension-context b) [:model :id]))
+              "and so is the context the sibling's handlers would build")
           ((:set-thinking-level! agents) a 5)
           (is (= 5 (runtime/thinking-level a)))
           (is (= 5 (get-in (runtime/extension-context a) [:thinking-level])))
-          (is (not= 5 (get-in (runtime/extension-context b) [:thinking-level]))
-              "the context the sibling's handlers would build is unchanged"))
-        (finally (shutdown! boot))))))
+          (is (= b-thinking (get-in (runtime/extension-context b) [:thinking-level]))
+              "the sibling's thinking level is unchanged"))
+        (finally
+          (models/unregister-provider! :gates-test)
+          (shutdown! boot))))))
 
 (deftest each-agent-settles-on-its-own-context
   (testing "two runs in one composition settle their own promises: a listener
