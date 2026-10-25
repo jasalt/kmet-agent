@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-support
+(ns kmet.ui.tui.interactive.test-support
   "Shared stubs for the interactive-mode tests: a dock stand-in, the
    command context, and the autocomplete provider normalizer."
   (:require [kmet.test-utils :as tu]

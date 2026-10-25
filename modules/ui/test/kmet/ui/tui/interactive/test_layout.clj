@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-layout
+(ns kmet.ui.tui.interactive.test-layout
   "Rendering plumbing: the dock generation gate and widget-area reactivity, and the
    editor's submit ordering (submitValue clears before onSubmit)."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -22,7 +22,7 @@
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
             [kmet.agent.tools.core :as tools]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

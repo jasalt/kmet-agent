@@ -3546,16 +3546,22 @@ every capability it would serve already exists on the handle the TUI drives.
 The work is not new features — it is the last pieces of the re-host landing 8
 finished, measured from the TUI's own code:
 
-- **T-1. The interactive tests run on the composition's handle.** The suite in
-  `modules/agent/test/kmet/agent/modes/test_interactive.clj` builds kmet1's
-  `session.driver` engine (`tu/test-engine`); a handle-shaped fixture boots the
-  `:tui` composition and creates through `:agents`, so a test fails when the
-  handle stops answering an op the TUI calls. Started:
+- **T-1. The interactive tests run on the composition's handle.** The suite
+  (`modules/ui/test/kmet/ui/tui/interactive/test_interactive.clj` since T-2)
+  builds kmet1's `session.driver` engine (`tu/test-engine`); a handle-shaped
+  fixture boots the `:tui` composition and creates through `:agents`, so a
+  test fails when the handle stops answering an op the TUI calls. Started:
   `kmet.ui.tui.interactive.test-handle-path` — the TUI's `/new` over a real
   handle: one agent, a moved session, the process slot re-installed, the
   shutdown event carrying the outgoing file.
-- **T-2. The interactive suite moves to `modules/ui/test`**, where the mode
-  lives; its `agent`-module home is 11's remaining blocker on that file.
+- **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
+  files that test the TUI now live beside it: the interactive cluster
+  (`kmet.ui.tui.interactive.test-{support,autocomplete,commands,compaction-
+  queue,import,layout,state,theme,interactive,overlay-input-smoke}`) and the
+  row (`kmet.ui.tui.test-tui`). `modules/agent/test/kmet/agent/modes` keeps
+  only kmet1's front-end tests (`print`, `rpc`, `rpc-client`) and the
+  headless-require guard, which is about those front ends. Discovery needed no
+  registration: the module test roots find the files where they now are.
 - **T-3. A preset reaches a TUI run's child ctx — landed.** `create!`'s
   `:setup` seam (7b-ii) now has its production caller: a mode row names the
   bundles in its config (`{:presets [:bundle/gated]}`), `run-opts` carries them
@@ -3605,8 +3611,7 @@ remaining work is small and measured, and 10a's table is invisible to a TUI
 user. Then retirement is wanted as soon as it can be taken, so the schedule
 follows what each landing actually blocks on, not the landing numbers. 11's
 hard prerequisites were a complete 8 (the TUI reads a handle, so
-`session.driver`'s engine path and the interactive tests' `agent`-module home
-can go — T finishes both) and 10a (kmet1's rpc modes are deleted by 11, and
+`session.driver`'s engine path can go — T-4 took the last TUI call out) and 10a (kmet1's rpc modes are deleted by 11, and
 kmet2 must already answer the whole `docs/rpc.md` table, or the protocol
 regresses). 10b and 10c are kmet2's own boundary and transport
 work — the old app has no server to compare against — so they follow

@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-theme
+(ns kmet.ui.tui.interactive.test-theme
   "The /theme command: the theme registry, the dock's generated theme pane, reload
    fixtures, and cleanup of contributed widgets."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -28,7 +28,7 @@
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

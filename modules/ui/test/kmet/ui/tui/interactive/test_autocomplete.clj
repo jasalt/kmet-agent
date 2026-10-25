@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-autocomplete
+(ns kmet.ui.tui.interactive.test-autocomplete
   "The autocomplete factory wrapper chain (pi: setupAutocompleteProvider) and the
    custom editor duck-typed transfer (pi: setCustomEditorComponent)."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -6,7 +6,7 @@
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.editor :as editor]
             [kmet.ui.tui.interactive.ui-registry :as ui-registry]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

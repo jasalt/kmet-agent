@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-compaction-queue
+(ns kmet.ui.tui.interactive.test-compaction-queue
   "The compaction queue: messages queued while compaction runs, their flush into the
    next prompt, and the status the footer shows meanwhile."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -22,7 +22,7 @@
             [kmet.agent.session.runtime :as runtime]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.agent.config :as cfg]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

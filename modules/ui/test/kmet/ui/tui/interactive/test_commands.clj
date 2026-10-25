@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-commands
+(ns kmet.ui.tui.interactive.test-commands
   "Interactive slash commands: the builtin auth pair, /thinking, /continue, the
    status indicator's model swap, /scoped-models and /settings, and /followup."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -30,7 +30,7 @@
             [babashka.fs :as fs]
             [kmet.agent.config :as cfg]
             [kmet.libs.concurrent :as concurrent]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.test-interactive
+(ns kmet.ui.tui.interactive.test-interactive
   "Interactive-mode tests: the agent-loop :on-event handler
    (make-agent-event-handler) must consume every event type in the loop
    vocabulary (kmet.agent.event-bus/event-types) without throwing.

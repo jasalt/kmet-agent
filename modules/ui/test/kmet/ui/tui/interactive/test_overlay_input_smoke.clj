@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.test-overlay-input-smoke
+(ns kmet.ui.tui.interactive.test-overlay-input-smoke
   "End-to-end pty regression for the overlay-focus incident: open the /lsp
    dialog, close it with ESC, type - the editor must receive the text.
    Drives this host's real app (`jolt start` under jolt, `bb start` under

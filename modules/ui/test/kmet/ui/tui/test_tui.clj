@@ -1,11 +1,11 @@
-(ns kmet.agent.modes.test-tui
+(ns kmet.ui.tui.test-tui
   "The TUI mode row (`kmet.ui.tui`): the plugin the `:tui` profile
    mounts, and the two properties a test can hold without a terminal — the row
    is named what the profile expects, and a diagnostic mount (no `:on-result`)
    starts nothing.
 
-   The mode itself is kmet1's interactive entry (`kmet.ui.tui.interactive`)
-   over the composition's ctx; running it needs a real terminal, which is what
+   The mode itself is the interactive entry (`kmet.ui.tui.interactive`) over
+   the composition's ctx; running it needs a real terminal, which is what
    `scripts/capture/pty_capture.py` drives."
   (:require [clojure.test :refer [deftest is]]
             [kmet.app.core :as core]

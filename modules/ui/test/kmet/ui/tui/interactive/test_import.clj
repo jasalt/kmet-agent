@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-import
+(ns kmet.ui.tui.interactive.test-import
   "The /import command: picking a session file, switching the live session, and the
    re-render that follows (pi: handleImportCommand)."
   (:require [clojure.test :as t :refer [deftest testing]]
@@ -39,7 +39,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.modes.interactive.test-support :as support]))
+            [kmet.ui.tui.interactive.test-support :as support]))
 
 ;; The interactive builtins register the app's whole slash registry; clear it
 ;; so a later namespace never sees the tree filled by this one.

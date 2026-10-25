@@ -490,7 +490,7 @@
    the loop vocabulary. A vocabulary event with no branch here throws — that
    is the point: the exception is swallowed by the run future and would
    leave the UI stuck on \"Working\" forever, so
-   kmet.agent.modes.test-interactive walks every loop event type through
+   kmet.ui.tui.interactive.test-interactive walks every loop event type through
    this handler."
   [deps]
   (fn [evt]

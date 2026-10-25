@@ -1,4 +1,4 @@
-(ns kmet.agent.modes.interactive.test-state
+(ns kmet.ui.tui.interactive.test-state
   "kmet.ui.tui.interactive.state: the exit-hint conditions (pi
    formatResumeCommand: a persisted session file, attached stdout, and the
    --session-dir argument only for a non-default layout) and the shared
