@@ -3543,16 +3543,27 @@ Three things are missing rather than blocked, and they are the rest of the plan:
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | 5m | `ui` (+ one module tree) | ~900 new | 8 | one patch swaps the provider; the same session paints on bb and Jolt |
 | 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
-| 10 | `app` | ~1,100 | 9 | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
-| 11 | all modules | −8,500, ~240 renames | 10 | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
+| 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
+| 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
+
+**The execution order is 8 → 10a → 11 → 9 → 10b/10c → 5m.** Retirement is
+wanted as soon as it can be taken, so the schedule follows what each landing
+actually blocks on, not the landing numbers. 11's hard prerequisites are a
+complete 8 (the TUI reads a handle, so `session.driver`'s engine path and the
+interactive tests' `agent`-module home can go) and 10a (kmet1's rpc modes are
+deleted by 11, and kmet2 must already answer the whole `docs/rpc.md` table, or
+the protocol regresses). 10b and 10c are kmet2's own boundary and transport
+work — the old app has no server to compare against — so they follow
+retirement; 9's isolation seams are also kmet2-only and now land after the
+rename pass, which keeps that pass out of files 9 would touch. 5m's only
+dependency is 8, so it floats to the end.
 
 5m closes landing 5 *after* 8 rather than before it, and the number says so: its
 gate is a provider, and a second toolkit is worth building over a front end that
 reads a handle — otherwise `kmet.ui.tk` implements the `Engine` port that 8 is
 about to delete. 5n sits between 5l and 8: it needs the world load at the entry
 (5l-ii, landed) and it extends the same create-opts map that 8's handle ops read,
-so landing it first keeps 8 about the port and not about flags. 9 and 5m are
-independent; if the server matters first, they swap and nothing else moves.
+so landing it first keeps 8 about the port and not about flags.
 
 ### What kmet1 has, and where each piece lands
 
@@ -3985,7 +3996,10 @@ not the contract's.
 **What remains** is the TUI's own port: the run's streaming and settle
 callbacks replaced by loop events on the handle's ctx, the front end's `:ui`
 port and `:mode` published per agent, the per-agent context/entry sinks, and
-the commands themselves over the handle's ops. The TUI still bootstraps an
+the commands themselves over the handle's ops — including the shared
+`kmet.agent.commands.builtins`, which still prompts and compacts through
+`session-driver`; 11 deletes that engine path with the last caller, so the
+port, not retirement, is where it moves. The TUI still bootstraps an
 engine; its reads already go through the accessors whose handle shape landed,
 which is what makes the port incremental. A `-c`-style continue is
 `find-recent-session` plus a resume at the caller, not a handle op: a query is
@@ -4030,6 +4044,10 @@ has a written reason rather than an accident.
 
 ### 10 — the server's phase 1
 
+**10a lands before retirement** (it is the rpc parity kmet1's deletion must not
+lose); **10b and 10c land after it**, because they are kmet2's own server work
+and nothing in the old app waits on them.
+
 Three commits. **10a, the protocol's whole table**: kmet1's `docs/rpc.md`
 declares ~30 commands and kmet2 serves seven, so "the protocol is served" is a
 second landing's work, not a follow-up. The remaining ones are reads and
@@ -4061,6 +4079,10 @@ models; a client that stops reading gets a `:stream-gap` and resyncs with
 `:get-state`.
 
 ### 11 — retirement
+
+It waits on a complete 8 and on 10a, and on one mechanical move: the
+interactive tests leave `modules/agent/test` for `modules/ui/test` in this
+landing's first step (the module they live in is deleted with kmet1).
 
 The two-axes endgame, in one landing because it cannot be split once started:
 the `s/kmet\.agent\./kmet.app./` pass over the known list (minus
