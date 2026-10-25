@@ -73,6 +73,29 @@
           "and the child ctx is released from the tree, not left extended in it")
       (finally (srce/dispose-subtree! (:ctx boot))))))
 
+(deftest a-collection-of-presets-fails-before-an-agent-exists
+  ;; `setup` takes a collection (a mode row's `:presets`, T-3): the names mount
+  ;; in order, and a later one that cannot mount fails the create. The rows the
+  ;; earlier name mounted go with the child ctx `create!` releases, and the
+  ;; message names the offender — a composition bug is not a silent skip.
+  (let [boot (booted)
+        agents (srce/get (:ctx boot) :agents)]
+    (try
+      (let [thrown (try ((:create! agents) (:ctx boot)
+                                           {:config config
+                                            :setup (presets/setup [:bundle/gated :bundle/nope])})
+                        ::no-throw
+                        (catch clojure.lang.ExceptionInfo e e))]
+        (is (= :kmet.app/unknown-bundle (:type (ex-data thrown)))
+            "a name the composition does not have is a composition error, not
+             a creation that happened to fail")
+        (is (re-find #"unknown bundle: :bundle/nope" (ex-message thrown))
+            "the failure names the preset that could not mount")
+        (is (some #{:bundle/gated} (:known (ex-data thrown)))
+            "the known set is a vector of names, gate included"))
+      (is (empty? ((:list agents) (:ctx boot))) "no handle is published")
+      (finally (srce/dispose-subtree! (:ctx boot))))))
+
 (deftest a-setup-that-is-not-a-fn-is-refused
   ;; An EDN composition can put a keyword where this expects a fn, so the
   ;; opt has its own failure: named before anything is claimed or extended.

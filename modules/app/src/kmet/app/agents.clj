@@ -212,9 +212,12 @@
   "Is T the kernel saying *the composition* is wrong rather than that this
    creation failed? A composition bug keeps its own type through the rollback —
    the caller may act on it — and everything else is wrapped as a creation that
-   failed, with its cause still attached."
+   failed, with its cause still attached. A preset names a bundle a profile
+   author wrote, so an unknown one is the composition's error, like a preset
+   that composes but does not mount."
   [t]
-  (contains? #{:kmet.app/bad-agent-handle :kmet.app/preset-failed}
+  (contains? #{:kmet.app/bad-agent-handle :kmet.app/preset-failed
+               :kmet.app/unknown-bundle}
              (:type (ex-data t))))
 
 (defn- setup-fn
