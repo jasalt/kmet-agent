@@ -7,7 +7,7 @@
    on the app's event layer (new-app.md, 7b-i) for the streaming deltas and for
    the settle that ends the run. One agent runs per print mode, so the listeners
    take the whole app scope; a mode that holds several agents scopes per agent
-   instead (landing 6).
+   instead (landing 8).
 
    The row's config carries the invocation's input — `:prompt`, the
    `:on-result` callback and the output `:format` — because a mode's job is what
@@ -20,8 +20,10 @@
    (`bind-front-end!`): kmet1's print mode goes through its session runtime,
    which binds `:mode :print`, `has-ui` false and the headless capability port,
    so an extension that branches on `ctx.mode` or asks a question gets the same
-   answer under either app. A process that binds nothing keeps the host's own
-   headless defaults, which are more inert than kmet1's per-session port.
+   answer under either app. The port is the composition's — the print profile
+   stacks `:bundle/headless` and the row binds `(:port (srce/get ctx :ui))` — so
+   a run that patched in a provider answers through it rather than through a
+   hardcoded default.
 
    Two formats, kmet1's two: `:text` (the default) streams the answer and
    reports a failure on stderr; `:edn` prints the session header and every event
@@ -30,7 +32,6 @@
    entry point owns the process and prints its own errors."
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions.core :as extensions]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
             [kmet.app.invocation :as invocation]
@@ -139,10 +140,11 @@
             settled (promise)
             dispose (subscriptions scope format settled error)
             ;; kmet1's print mode binds exactly this, a layer down: kind :print,
-            ;; no UI, the headless port that answers where it must
+            ;; no UI, and the composition's port (the headless answers, because
+            ;; the profile stacks :bundle/headless)
             restore (front-end/install! {:mode :print
                                          :has-ui false
-                                         :ui (extensions/headless-ui-port)})]
+                                         :ui (:port (srce/get ctx :ui))})]
         (future
           (on-result {:exit (run-prompt! scope agents (assoc config :format format)
                                          settled error)}))
@@ -156,5 +158,8 @@
 
 (srce/defplugin plugin
   {:name :mode-print
-   :inject [:agents]
+   ;; :ui is the ABI port the run binds: the profile stacks :bundle/headless,
+   ;; so a composition that patched the provider out fails at the mount instead
+   ;; of binding nil
+   :inject [:agents :ui]
    :apply serve})

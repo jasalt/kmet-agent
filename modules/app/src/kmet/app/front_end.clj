@@ -1,7 +1,12 @@
 (ns kmet.app.front-end
   "The front-end surface a run installs for the extension host: the mode kind
-   (`:mode`), whether a UI port exists (`has-ui`) and the port's capability map
-   (see `kmet.agent.extensions.core`).
+   (`:mode`), whether a UI port exists (`has-ui`) and the port itself.
+
+   The port is the run's `:ui` provider's `:port` (`kmet.app.ui`): the ABI's
+   mandatory answers plus the provider's dialog answer. The run supplies the
+   surface's other two keys (`:mode`, `has-ui`) and any wire capabilities on
+   top — a mode does not build the base, it binds the one its composition
+   mounted.
 
    A mode is not a front end for the process's life — it is one for its run. It
    installs the surface when it starts serving and puts back what was there when

@@ -51,6 +51,15 @@
           {:id :approvals :plugin kmet.app.permissions/approvals}]
    :patch []}
 
+ ;; The headless UI provider: the first implementation of the `:ui` contract
+ ;; (kmet.app.ui), and the only one the profiles that draw nothing need. A
+ ;; profile that renders stacks it after :bundle/minimal; print and rpc inject
+ ;; :ui and bind `(:port (srce/get ctx :ui))`, and the server stacks it for the
+ ;; per-connection surface landing 8 adds.
+ :bundle/headless
+ {:rows [{:id :ui :plugin kmet.ui.headless/plugin}]
+  :patch []}
+
  ;; The gate as a bundle: one row, the policy, mounted wherever an agent's child
  ;; ctx should decide per agent. A profile stacks it at the root (the `:rpc-ask`
  ;; profile below); a *preset* mounts it on one agent's ctx
@@ -77,7 +86,7 @@
   ;; on stdout, the exit code in `kmet.app.core`. `:mode true` marks the row the
   ;; entry point hands the invocation's input to (the prompt, where to report).
   :print
-  {:bundles [[:bundle/minimal {}]]
+  {:bundles [[:bundle/minimal {}] [:bundle/headless {}]]
    :rows [{:id :mode-print :plugin kmet.app.modes.print/plugin
           :mode true :prompt true}]
    :patch []}
@@ -86,7 +95,7 @@
   ;; prompt: one agent, its events as the wire projection, commands on stdin.
   ;; No :prompt — a bare `--profile rpc` is legal and waits on stdin.
   :rpc
-  {:bundles [[:bundle/minimal {}]]
+  {:bundles [[:bundle/minimal {}] [:bundle/headless {}]]
    :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
    :patch []}
 
@@ -95,7 +104,7 @@
   ;; of naming the policy rather than assuming allow. A profile that stacks a
   ;; bundle rather than reaching into it.
   :rpc-ask
-  {:bundles [[:bundle/minimal {}] [:bundle/gated {}]]
+  {:bundles [[:bundle/minimal {}] [:bundle/headless {}] [:bundle/gated {}]]
    :rows [{:id :mode-rpc :plugin kmet.app.modes.rpc/plugin :mode true}]
    :patch []}
 
@@ -107,6 +116,6 @@
   ;; mounted patches in `{:id :permissions :plugin kmet.app.permissions/permissions
   ;; :config {:policy :ask-all}}`.
   :server
-  {:bundles [[:bundle/minimal {}]]
+  {:bundles [[:bundle/minimal {}] [:bundle/headless {}]]
    :rows [{:id :mode-server :plugin kmet.app.modes.server/plugin :mode true}]
    :patch [{:id :approvals :plugin kmet.app.modes.server/approvals}]}}}

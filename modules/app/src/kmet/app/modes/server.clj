@@ -29,10 +29,10 @@
    announces as a `:listening` record before it accepts anything; a test reads
    that record, a client reads that record, and neither has to guess.
 
-   What this row does not have yet is landing 6's dialog surface: a run's
-   extension UI calls and approvals still answer headlessly, and the
-   `:request`/`:response` pair the protocol carries arrives with the approvals
-   increment."
+   What this row does not have yet is a per-connection UI port: a run's extension
+   UI calls still answer the host's defaults (approvals are the wire's, 6c), and
+   a per-connection port needs landing 8's per-agent surface — the host's
+   front-end binding is one process atom."
   (:require [clojure.java.io :as io]
             [kmet.agent.event-bus :as event-bus]
             [kmet.app.events :as events]

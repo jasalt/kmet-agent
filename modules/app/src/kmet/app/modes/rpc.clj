@@ -14,10 +14,12 @@
 
    **The surface is a front end's.** kmet1's rpc mode binds `:mode :rpc`,
    `has-ui true` and a port that answers extension UI calls over the wire: the
-   fire-and-forget channels here, dialogs left to landing 6's
-   `:request`/`:response` pair (this mode has one agent and no dialog
-   correlation, and a bridged dialog that never got an answer would be worse
-   than the headless default).
+   fire-and-forget channels here, dialogs left to landing 10a's command table
+   (the `:request`/`:response` pair over the wire: this mode has one agent and no
+   dialog correlation, and a bridged dialog that never got an answer would be
+   worse than the headless default). The base is the composition's `:ui` port
+   (`:bundle/headless`), and the wire's capabilities are assoc'd on top — so a
+   profile that patched in a provider changes the answers this mode forwards.
 
    **The commands are the ones kmet2's services answer.** A prompt, a steer, a
    follow-up, an abort, the live state, the session's entries, the model
@@ -31,7 +33,6 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.extensions.core :as extensions]
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
@@ -75,15 +76,15 @@
   (out/record! out- (assoc record :type :ui-request :id (str (random-uuid)))))
 
 (defn- ui-port
-  "The RPC UI port: the headless answers plus what the protocol carries.
-   Widget content cannot cross the wire, so only nil or string lines are
-   forwarded (pi: component factories are ignored) and the TUI-only
-   capabilities stay degraded. `:request` is the headless one: a dialog is
-   landing 6's pair, not this mode's."
-  [out-]
+  "The RPC UI port: the row's ABI port (`base`, from `:bundle/headless`) plus
+   what the protocol carries. Widget content cannot cross the wire, so only nil
+   or string lines are forwarded (pi: component factories are ignored) and the
+   TUI-only capabilities stay degraded. `:request` stays the row's: a dialog's
+   wire pair is landing 10a's command table, not this mode's."
+  [base out-]
   (let [set-editor-text (fn [text]
                           (write-ui-record! out- {:method :set-editor-text :text text}))]
-    (assoc (extensions/headless-ui-port)
+    (assoc base
            :notify (fn [message type]
                      (write-ui-record! out- (cond-> {:method :notify :message message}
                                               type (assoc :notify-type type))))
@@ -272,7 +273,7 @@
    :compact "compaction rides the loop's compaction seam (landing 7)"
    :set-auto-compaction "compaction rides the loop's compaction seam (landing 7)"
 
-   :respond "dialogs are landing 6's :request/:response pair on the wire"
+   :respond "dialogs are landing 10a's command table (:request/:response over the wire)"
    :get-commands "the slash-command registry's wire shape moves with the dispatcher"})
 
 (defn- handlers
@@ -388,10 +389,11 @@
             dispose (events/on-every scope (fn [event]
                                              (out/record! out- (event-bus/wire-event event))))
             ;; kmet1's rpc mode binds exactly this: a front end with a port,
-            ;; whose extension UI calls travel the protocol
+            ;; whose extension UI calls travel the protocol — the row's port as
+            ;; the base, the wire capabilities on top
             restore (front-end/install! {:mode :rpc
                                          :has-ui true
-                                         :ui (ui-port out-)})]
+                                         :ui (ui-port (:port (srce/get ctx :ui)) out-)})]
         (future
           (on-result
            {:exit (try
@@ -415,5 +417,5 @@
 
 (srce/defplugin plugin
   {:name :mode-rpc
-   :inject [:agents :sessions]
+   :inject [:agents :sessions :ui]
    :apply serve})
