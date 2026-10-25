@@ -60,8 +60,9 @@
 (defn teardown-mode!
   "Best-effort release of everything that roots the mode after the TUI
    stopped (findings 2 and 10). Each step is isolated: a throw here must
-   not mask the original exception on the finally path. Order is signal →
-   extension surfaces → tree → process-global roots. Idempotent, so a
+   not mask the original exception on the finally path. Order is the agent
+   (cancel, wait, dispose) → its subscription → the bash signal → the
+   extension surfaces → the tree → process-global roots. Idempotent, so a
    second call is a no-op."
   [cs]
   (try (when-let [engine (:engine cs)]
@@ -74,7 +75,9 @@
            ;; the cancel drops the turn flag synchronously, so the run's future
            ;; is what is waited on, not the flag
            (when running?
-             ((:when-idle engine))))
+             ;; bounded like the old dispose!: a run whose tool future ignores
+             ;; the cancel must not park teardown forever
+             (deref (future ((:when-idle engine))) 2000 nil)))
          (when-let [agents (:agents cs)]
            ((:dispose! agents) engine)))
        (catch Throwable _))

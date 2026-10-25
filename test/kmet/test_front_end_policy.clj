@@ -70,7 +70,7 @@
         (t/is (= expected (select-keys opts [:load-resources! :expand-input]))
               "the front end names its resource policy, and only that")))))
 
-(t/deftest every-handle-front-end-names-the-processes-resource-policy
+(t/deftest a-handle-front-end-names-its-half-of-the-resource-policy
   (doseq [[path value] handle-front-ends]
     (t/testing path
       (t/is (fs/exists? path) "the front end is where the table says")

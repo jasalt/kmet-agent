@@ -113,8 +113,8 @@
    and the status a listing shows. `setting-ops` and `session-ops` are the rest — each writes that
    agent's state or moves its session, so two agents of one process can differ —
    measured from the interactive TUI's own call sites (new-app.md, landing 8)."
-  (into [:send! :inject! :cancel! :when-idle :status
-         :submit! :flush-compaction-queue!]
+  (into [:send! :submit! :flush-compaction-queue! :inject! :cancel! :when-idle
+         :status]
         (concat setting-ops session-ops)))
 
 (defn- validate-handle!

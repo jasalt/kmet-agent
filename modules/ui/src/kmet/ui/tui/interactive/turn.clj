@@ -85,18 +85,18 @@
       (binding [*out* *err*] (println "on-agent-thinking error:" (ex-message e) (.getClass e))))))
 
 (defn on-agent-done
-  "Called when the LLM turn completes.
-   Drop the running-turn flag FIRST — a background status completion
-   (share, branch summary: status/release-background-status!) racing this teardown
-   must see the turn over before it may revive the working spinner; the
-   flag-first order plus its post-revival re-check makes a stuck spinner
-   impossible. Then finalize streaming FIRST (captures thinking text),
-   then clear thinking. Session persistence is handled by the agent loop
-   internally."
+  "Called when the LLM turn completes (on the loop's :agent-settled event).
+   The run has already settled its turn flag by now — a handle's settle
+   callback runs before :agent-settled is emitted, and kmet1's prompt! wrapper
+   clears it before the front end's callbacks — so a background status
+   completion (share, branch summary: status/release-background-status!)
+   racing this teardown sees the turn over and its post-revival re-check stops
+   it; the teardown never writes the flag, which belongs to the run. Finalize
+   streaming FIRST (captures thinking text), then clear thinking. Session
+   persistence is handled by the agent loop internally."
   [cs]
   (try
     (status/stop-anim-timer! cs)
-    (reset! (:turn-running? (:engine cs)) false)
     (status/clear-status-indicator! cs)
     (chat-history/chat-history-finalize-streaming! (:chat-history cs))
     (chat-history/chat-history-finalize-thinking! (:chat-history cs))
@@ -115,12 +115,12 @@
       (binding [*out* *err*] (println "on-agent-done error:" (ex-message e) (.getClass e))))))
 
 (defn on-agent-error
-  "Called when an error occurs during the agent turn."
+  "Called when an error occurs during the agent turn (the loop's :error event,
+   which it emits before settling; the run's flag is already settled — see
+   on-agent-done)."
   [cs error-msg]
   (try
     (status/stop-anim-timer! cs)
-    ;; flag before the status clear — see on-agent-done
-    (reset! (:turn-running? (:engine cs)) false)
     (status/clear-status-indicator! cs)
     ;; If streaming placeholder is still empty, remove it
     ;; so we don't get a blank assistant entry before the error message.
@@ -365,7 +365,7 @@
     action))
 
 (defn flush-compaction-queue!
-  "Deliver messages queued during compaction: the runtime owns the queue and
+  "Deliver messages queued during compaction: the handle owns the queue and
    the delivery (steer/follow-up/prompt per message mode); a failed delivery
    is reported as a transcript status line like before."
   [cs will-retry]
@@ -378,8 +378,8 @@
   (status/update-pending-messages! cs))
 
 (defn- queue-compaction-message!
-  "Queue a message typed during compaction in the runtime's queue and
-   refresh the pending display (pi: queueCompactionMessage →
+  "Queue a message typed during compaction in the handle's queue and refresh
+   the pending display (pi: queueCompactionMessage →
    updatePendingMessagesDisplay — the front end display reads the queue
    back through runtime/compaction-queued, so without the refresh a
    message queued during compaction stays invisible until the next

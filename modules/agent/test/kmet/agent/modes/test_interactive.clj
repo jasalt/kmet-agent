@@ -1182,7 +1182,9 @@
                                                   ["clean scrollback" false false false]]]
         (let [cs (inter/map->CoreState
                   (tu/with-test-engine {:anim-timer (atom nil)
-                                        :running-turn? (atom true)
+                                        ;; the run settles its flag before the
+                                        ;; teardown event reaches the UI
+                                        :running-turn? (atom false)
                                         :bash-running? (atom bash?)
                                         :agent-state (atom {:compacting? (atom false)})
                                         :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
@@ -1199,7 +1201,26 @@
               (str label " / " case-label
                    (if expected " heals the dirty scrollback"
                        " must not emit the clearing redraw")))
-          (is (false? (runtime/turn-running? (:engine cs))) (str label " ends the turn")))))))
+          (is (false? (runtime/turn-running? (:engine cs)))
+              (str label " leaves the settled flag alone"))))
+      ;; …and it never writes the flag: a run that claimed the agent after the
+      ;; settle saw it (an extension's settle handler sending a message) keeps
+      ;; its claim.
+      (let [cs (inter/map->CoreState
+                (tu/with-test-engine {:anim-timer (atom nil)
+                                      :running-turn? (atom true)
+                                      :bash-running? (atom false)
+                                      :agent-state (atom {:compacting? (atom false)})
+                                      :chat-history (chat-history/make-chat-history :tool-fn tools/get-tool)
+                                      :tui {:scrollback-dirty? (atom false)
+                                            :force-redraw? (atom false)
+                                            :render-requested? (atom false)}}))]
+        (with-redefs [status/stop-anim-timer! noop
+                      status/clear-status-indicator! noop
+                      state/update-footer! noop]
+          ((var turn/on-agent-done) cs))
+        (is (true? (runtime/turn-running? (:engine cs)))
+            "the teardown does not clear a newly claimed turn")))))
 
 (deftest global-quit-listener
   (testing "app.quit (ctrl+q by default) quits from anywhere and consumes the key"

@@ -177,11 +177,12 @@
 
 (defn turn-running?
   "True while a prompt started by `prompt!` has not settled. The runtime
-   owns the flag: it is set synchronously by `prompt!` so a second
-   submission steers instead of starting a concurrent run, cleared by
-   `cancel!`, and cleared in the wrapped :on-done/:on-error before the
-   front end's callbacks run — a callback interleaved with a background
-   status revival can never see a settled turn as running."
+   owns the flag: it is set synchronously by `prompt!` (or a handle's
+   `start!`) so a second submission steers instead of starting a concurrent
+   run, and cleared by `cancel!` and by the settle path — `prompt!`'s wrapped
+   :on-done/:on-error for an engine, a handle's `settle!` before it emits
+   :agent-settled — so a callback interleaved with a background status revival
+   can never see a settled turn as running."
   [engine]
   (boolean (some-> engine :turn-running? deref)))
 

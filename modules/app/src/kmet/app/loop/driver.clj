@@ -410,10 +410,7 @@
            ;; server's wire submit (10a) records the fact where the queue is
            ;; durable.
            :submit! (fn [text opts]
-                      (submission/submit! engine text
-                                          (assoc opts
-                                                 :deliver! (fn [text target]
-                                                             (deliver! text target)))))
+                      (submission/submit! engine text (assoc opts :deliver! deliver!)))
            :flush-compaction-queue! (fn [will-retry]
                                       (submission/flush-compaction-queue!
                                        engine will-retry
