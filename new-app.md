@@ -610,10 +610,10 @@ difference between "two sessions" and "two isolated sessions":
 | State | Where | Fix |
 |---|---|---|
 | `shell-options` | `bash_executor.clj` `defonce` | per-context `:shell`/`:subprocess` service value |
-| `System/getProperty "user.dir"` fallback | `libs/path.clj` | fall back to the context's `:workspace` cwd |
-| `cli-flag-values`, `extension-binding`, `extensions` | `modules/app/src/kmet/agent/extensions/core.cljc` | registrations on the ctx; the atoms become the no-node read cache and then die |
-| `bridge-queue` | `tools/run_code.cljc` | per-context |
-| `skill-content-resolver`, `theme-fns-atom` | `tools/read`, `keybindings` | per-context services |
+| `System/getProperty "user.dir"` fallback | `libs/path.clj` | **done** — it resolves against `(:cwd ctx)`; the remaining reads are defaults (see 9's audit) |
+| `cli-flag-values`, `extension-binding`, `extensions` | `modules/app/src/kmet/app/extensions/core.cljc` | **superseded by 5i**: the host's bindings are process-wide by design, and the ctx is the per-agent world; landing 9 leaves them with a written reason |
+| `bridge-queue` | `tools/run_code.cljc` | 9b decides: a pool on the ctx, or a written reason one process-wide bound is right |
+| `skill-content-resolver`, `theme-fns-atom` | `tools/read`, `keybindings` | through the tool factory's config and the key-hint renderers' arguments (9b) |
 
 The tool-layer rows are `modules/app/src/kmet/agent/tools/` since 4f; the
 extension rows are `modules/agent/src/kmet/agent/extensions/`. Moving a file
@@ -4197,31 +4197,64 @@ port retirement deletes.
 
 ### 9 — the execution seams
 
-Each is a row plus a value plus a re-point, and the audit table in
-§ "Multi-session server mode" is the checklist: `:shell` and `:subprocess`
-(first, because `bash_executor`'s `defonce` is what "two isolated sessions" fails
-on), `:workspace` and `:fs` (`user.dir`, the cwd-by-argument pattern),
-`:sandbox` (the one seam that wants `srce/isolate`, since it must not inherit),
-`:llm`/`:models`, `:config`/`:auth`, `:modes`. Three loose cells ride the same
-passes: `tools/read`'s skill resolver, `run_code`'s bridge queue,
-`keybindings`' theme fn cell.
+The audit, measured after the retirement (the table in § "Multi-session server
+mode" was written against the module that is gone, so two of its rows were
+stale and one was already true):
 
-**What the gate measures, as of the retirement.** `modules/app/src` holds 23
-`defonce`s; 15 are the ones the gate keeps (the extension host's nine bindings
-and caches, the debug cells and the log paths, the session store's
-debug flag, `server.clj`'s ask route). The other eight are this landing's work:
-`tools/bash_executor`'s shell options, `run_code`'s bridge queue, `read`'s skill
-resolver, `keybindings`' theme cell, `event_bus`'s listener table (which
-converges with 10b's boundary drain rather than a row), and
-`registry.clj`'s process-handle pair — the fallback a rpc or server connection
-reads, which is the `:config`/`:auth`/`:modes` half of the re-point. `root.clj`'s
-process-root atom stays by decision (it is the one place a process root lives),
-so the gate text names it beside the host's bindings.
+| seam | what stands in today | the slice |
+|---|---|---|
+| `:shell` / `:subprocess` | `bash_executor`'s `defonce shell-options`, applied inside `execute-bash` as a default; written once per process by `config/load-config`, read by the tool (`tools/bash.clj`) and the TUI's `!` path (`ui/…/turn.clj`) | a `:shell` row provides `{:shell-path :command-prefix}`; both call sites read the service and pass the values explicitly (which `execute-bash` already accepts, and pi reads them at tool creation too); the cell dies |
+| `:workspace` / `:fs` | **already true**: `kmet.libs.path` resolves against `(:cwd ctx)`, the tool layer threads `*cwd*`, `execute-bash` takes `:cwd` | a verification, not a refactor — prove two agents in two cwds touch no common file; the remaining `System/getProperty "user.dir"` reads are *defaults* (a temp-file dir, a UI's base path) and get a written reason or a `:cwd` |
+| `:sandbox` | nothing: `srce/isolate` exists in the kernel and no app code calls it | `run_code`'s tool bridge mounts in an isolated realm, so the script cannot see the host's `:tools`/`:shell`/`:workspace`; the realm boundary is the row's value |
+| `:llm` / `:models` | the catalog is data, and a run's model lives on its handle | verification only: two agents on two models, no cell to move |
+| `:config` / `:auth` | `config/load-config` is process-global (and is what writes the shell cell); auth is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal, documented) |
+| `:modes` | a row since 5j | the server row creates one mode per connection (6b) — nothing to move |
+
+**Three loose cells**, each measured to its setter's callers:
+
+- `run_code`'s bridge queue (`tools/run_code.cljc`) — the *decision* is whether a
+  per-agent pool buys isolation or loses the bound it exists for (a fixed worker
+  count is the point, not an accident). Slice 9b settles it either way: a pool on
+  the ctx, or a written reason it is one process-wide queue.
+- `read`'s skill-content resolver — set at **load time** in `skills.clj` with a
+  comment explaining the require cycle (`skills → registry → read`). The fix is
+  the same as the shell seam: the `:tools` row takes a `:skill-resolver` in its
+  config, injected from `:skills`, so the tool is built with it and the cycle
+  never appears.
+- `keybindings`' theme-fns cell — written by the TUI layout at build time
+  (`layout.clj`, two sites) and read by the key-hint renderers. The theme is a
+  value; the renderers should take it, or the `:config` row installs it.
+
+**What the gate measures.** `modules/app/src` holds 23 `defonce`s; 15 are the
+ones the gate keeps (the extension host's nine bindings and caches, the debug
+cells and log paths, the session store's debug flag, `server.clj`'s ask route —
+`root.clj`'s process-root atom stays by decision: it is the one place a process
+root lives). The other eight are this landing: `bash_executor`'s shell options,
+`run_code`'s bridge queue, `read`'s resolver, `keybindings`' cell,
+`event_bus`'s listener table (which converges with 10b's boundary drain rather
+than with a row) and `registry.clj`'s process-handle pair — the fallback a rpc
+or server connection reads, which is the `:config`/`:auth` half of the
+re-point.
+
+**The slices.**
+
+- **9a, `:shell`** — the row, its two call sites, the config wiring, and the
+  test that two contexts running bash get two shells and two prefixes. First
+  because it is the one cell the multi-session gate names outright: two shells
+  is a property, not a frame budget.
+- **9b, the three cells** — `run_code`'s decision, `read`'s resolver through the
+  tool factory's config, the key-hint theme as a value.
+- **9c, `:sandbox`** — `run_code`'s bridge in an isolated realm, which is also
+  where "a script sees the host it was mounted over" becomes a test rather than
+  a promise.
+- **9d, the verification and the guard** — two agents, two cwds, two shells, two
+  filesystems as one test; and `kmet.app.test-process-state`, which holds the
+  23-name `defonce` list with a reason per entry, so the gate is a test that
+  fails when someone adds a cell instead of a sentence in a markdown table.
 
 Gate: two agents in one process run bash in two cwds with two shells and read two
-filesystems; then `grep '^(defonce' modules/app/src` shows only the extension
-host's own bindings, the debug cells and `server.clj`'s ask route — each of which
-has a written reason rather than an accident.
+filesystems; `kmet.app.test-process-state` holds every remaining `defonce` with
+its reason, and the eight above are gone.
 
 ### 10 — the server's phase 1
 
