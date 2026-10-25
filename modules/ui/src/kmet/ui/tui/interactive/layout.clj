@@ -262,11 +262,14 @@
 
     :agent-settled
     ;; The run ended. A completed prompt runs the done teardown here — the
-    ;; callbacks' :on-done used to — while an error or a cancel was already
-    ;; torn down by its own event (on-agent-error) or by handle-cancel, which
-    ;; is what pi's split between agent_end and abort() gives.
+    ;; callbacks' :on-done used to — while an error was torn down by its own
+    ;; event (on-agent-error) and a cancel by handle-cancel, which is what
+    ;; pi's split between agent_end and abort() gives. An abort that came from
+    ;; outside this front end (an extension's cancel, a handle op, a teardown)
+    ;; ran neither, so an :aborted settle runs the same idempotent teardown —
+    ;; the spinner would otherwise keep working on an idle agent.
     (when-let [cs @cs-ref]
-      (when (= :completed (:outcome evt))
+      (when (#{:completed :aborted} (:outcome evt))
         (turn/on-agent-done cs)))
 
     :status

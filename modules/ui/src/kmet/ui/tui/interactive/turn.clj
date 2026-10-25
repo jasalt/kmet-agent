@@ -85,7 +85,8 @@
       (binding [*out* *err*] (println "on-agent-thinking error:" (ex-message e) (.getClass e))))))
 
 (defn on-agent-done
-  "Called when the LLM turn completes (on the loop's :agent-settled event).
+  "Called when the loop settles a turn (`:agent-settled`): completed, or
+   aborted by a cancel this front end did not run itself.
    The run has already settled its turn flag by now — a handle's settle
    callback runs before :agent-settled is emitted, and kmet1's prompt! wrapper
    clears it before the front end's callbacks — so a background status
@@ -109,7 +110,7 @@
     (heal-stale-scrollback-when-idle! cs)
     (state/update-footer! cs)
     (tui/tui-request-render (:tui cs))
-    (debug/log "agent turn completed")
+    (debug/log "agent turn settled")
     (catch Exception e
       (debug/log "on-agent-done callback: " e)
       (binding [*out* *err*] (println "on-agent-done error:" (ex-message e) (.getClass e))))))

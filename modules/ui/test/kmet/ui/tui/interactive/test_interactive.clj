@@ -1222,6 +1222,24 @@
         (is (true? (runtime/turn-running? (:engine cs)))
             "the teardown does not clear a newly claimed turn")))))
 
+(deftest an-external-abort-settles-the-presentation
+  ;; An abort that did not come through this front end's cancel (an
+  ;; extension's cancel, a handle op, a teardown) emits :agent-settled
+  ;; :aborted with no prior error or cancel event; without this the run's
+  ;; spinner keeps working on an idle agent.
+  (let [cs (inter/map->CoreState (tu/with-test-engine {:running-turn? (atom false)}))
+        scope {:cs-ref (atom cs) :tui (:tui cs) :chat-history (:chat-history cs)}
+        calls (atom [])]
+    (with-redefs [turn/on-agent-done (fn [c] (swap! calls conj c))]
+      ((var layout/on-run-lifecycle) scope {:type :agent-settled :outcome :aborted})
+      (is (= [cs] @calls) "an aborted settle runs the done teardown")
+      (reset! calls [])
+      ((var layout/on-run-lifecycle) scope {:type :agent-settled :outcome :completed})
+      (is (= [cs] @calls) "and a completed one still does")
+      (reset! calls [])
+      ((var layout/on-run-lifecycle) scope {:type :agent-settled :outcome :error})
+      (is (empty? @calls) "an error was torn down by its own event"))))
+
 (deftest global-quit-listener
   (testing "app.quit (ctrl+q by default) quits from anywhere and consumes the key"
     (let [prev-global (tui-kb/get-global-keybindings)]
