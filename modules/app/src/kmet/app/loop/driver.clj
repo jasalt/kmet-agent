@@ -27,6 +27,7 @@
             [kmet.app.session.runtime :as runtime]
             [kmet.app.session.submission :as submission]
             [kmet.app.tools.registry :as tools]
+            [kmet.app.tools.shell :as shell]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
 
@@ -249,7 +250,12 @@
    run a command handler or an extension's own fiber still reads the process
    binding."
   [child {:keys [id session config prompt-fn projections]}]
-  (let [engine-ref (atom nil)
+  (let [;; The shell settings are this agent's, on this agent's ctx: a per-agent
+        ;; value has to be the only provider on its chain (the kernel forbids a
+        ;; child shadowing an ancestor's service), which is why this is not a
+        ;; root row — the same reason :permissions is not one (new-app.md 9a).
+        _ (srce/provide! child :shell (atom (shell/value config)))
+        engine-ref (atom nil)
         {:keys [state] runtime-cwd :cwd}
         (agent-state config child
                      {:session session

@@ -4236,7 +4236,21 @@ than with a row) and `registry.clj`'s process-handle pair — the fallback a rpc
 or server connection reads, which is the `:config`/`:auth` half of the
 re-point.
 
-**The slices.**
+**The slices — 9a is landed.** The shell settings are `:shell` now: a value
+each agent carries on its own ctx, provided by the agents factory from that
+agent's config, with `kmet.app.tools.bash/*shell*` bound by the run (and by the
+`!` path, and conveyed to `run_code`'s bridge workers through the pipeline's
+`:bindings`), so the tool resolves it at execution time. `bash_executor`'s atom
+and `set-shell-options!` are gone; `config/load-config` carries the settings and
+writes nothing; `/reload` re-seats the value through `shell/refresh!`.
+
+The first attempt mounted a root row and failed at the kernel's rule: **a child
+may not shadow a service its ancestor provides**, so a root `:shell` could never
+be overridden per agent — the same reason `:permissions` mounts per agent and
+not at the root. The value moved to the factory, which already has the agent's
+ctx and its config; the gate test creates two agents with two prefixes and runs
+the tool under each (`kmet.app.tools.test-shell`).
+
 
 - **9a, `:shell`** — the row, its two call sites, the config wiring, and the
   test that two contexts running bash get two shells and two prefixes. First

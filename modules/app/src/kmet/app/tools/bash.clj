@@ -42,6 +42,16 @@
    (pi reads ctx per call), so a mid-run model/thinking change is reflected."
   nil)
 
+(def ^:dynamic *shell*
+  "The run's `:shell` service value — `{:shell-path … :command-prefix …}` — or
+   nil outside a run (pi: the shellPath/commandPrefix settings read at tool
+   creation and in executeBash). Bound by kmet.app.loop around each agent run
+   and by the interactive ! flow, so a bash tool built once at load time (the
+   built-in registry entry) runs with the settings of the agent that runs it:
+   two agents in one process can run two shells, which the process atom this
+   replaced could not say (new-app.md, landing 9a)."
+  nil)
+
 (defn session-env
   "KMET_* session metadata for a bash command's environment (pi:
    resolveSpawnContext): KMET_SESSION_ID, KMET_SESSION_FILE (when the session
@@ -74,9 +84,12 @@
 (defn- run-bash
   "Execute through the shared executor with the tool's spawn options (pi: the
    BashToolOptions an execute closure closes over)."
-  [args on-update {:keys [command-prefix shell-path shell-args temp-file-prefix
-                          spawn-hook expose-session-env? operations]}]
-  (let [{:keys [command timeout]} args
+  [args on-update {:keys [shell-args temp-file-prefix spawn-hook
+                          expose-session-env? operations shell-path command-prefix]}]
+  (let [;; an explicit tool option wins; otherwise the run's :shell service
+        shell-path (or shell-path (:shell-path *shell*))
+        command-prefix (or command-prefix (:command-prefix *shell*))
+        {:keys [command timeout]} args
         live-chunks (atom [])  ;; whole decoded chunks — no mid-string truncation
         live-bytes (atom 0)
         last-update (atom 0)
@@ -180,9 +193,9 @@
      :label               — display label (default \"Execute command\")
      :description         — provider-facing description (default: pi's)
      :command-prefix      — line prepended to every command (pi: commandPrefix;
-                            default: the :shell-command-prefix setting)
+                            default: the run's :shell service)
      :shell-path          — custom shell binary (pi: shellPath; default: the
-                            :shell-path setting)
+                            run's :shell service)
      :shell-args          — explicit argv template for the shell binary
                             (pi: ShellConfig args) — the command is appended
                             as the final argv element; overrides the

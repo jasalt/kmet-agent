@@ -187,6 +187,7 @@
             ;; session-env thunk so their bash tools see the same KMET_*
             ;; metadata as the ! command itself (pi: the execute ctx).
             _ (binding [bash-tool/*cancel-signal* (:bash-signal cs)
+                        bash-tool/*shell* (runtime/shell (:engine cs))
                         bash-tool/*session-env-fn* (constantly session-env)
                         ;; relative paths in extension bash/tool calls resolve
                         ;; against the runtime cwd, as in an agent run

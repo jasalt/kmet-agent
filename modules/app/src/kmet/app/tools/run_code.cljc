@@ -715,8 +715,9 @@
    pool and return the promise the script derefs. Unknown/inactive names
    settle immediately with {:is-error true} and the active list. The pool
    worker conveys no dynamic bindings, so the bridge passes the run's cancel
-   signal, session env and cwd as the invocation pipeline's :bindings (bash
-   reads *cancel-signal*; read/write/edit resolve against *cwd*). The call
+   signal, session env, shell and cwd as the invocation pipeline's :bindings
+   (bash reads *cancel-signal* and *shell*; read/write/edit resolve against
+   *cwd*). The call
    runs through the shared pipeline (kmet.app.tools.invoke) with the run's
    tool hooks (*tool-hooks*): a blocked call settles with the hook's reason
    without executing, and the after hook runs for blocked calls too (loop
@@ -724,7 +725,7 @@
    assistant message. A call picked up after the script aborted — or whose
    before hook ran past the abort — is settled as cancelled and never
    executes: the pool queue cannot fire side effects past the deadline."
-  [{:keys [surface execute-tool signal ctx cwd session-env-fn hooks assistant-message
+  [{:keys [surface execute-tool signal ctx cwd session-env-fn shell hooks assistant-message
            trace on-update]} name args]
   (let [name (tool-name name)
         p (promise)]
@@ -764,6 +765,7 @@
                                                  :tools surface
                                                  :bindings {:signal signal
                                                             :session-env-fn session-env-fn
+                                                            :shell shell
                                                             :cwd cwd})))
                               result (invoke/finish-tool-call
                                       (assoc call :after-hook (:after hooks))
@@ -957,6 +959,7 @@
         started-at (concurrent/monotonic-ms)
         cwd (tool-util/cwd)
         session-env-fn bash-tool/*session-env-fn*
+        shell bash-tool/*shell*
         hooks *tool-hooks*
         assistant-message *assistant-message*
         live? (atom true)
@@ -990,6 +993,7 @@
                             :ctx ctx
                             :cwd cwd
                             :session-env-fn session-env-fn
+                            :shell shell
                             :hooks hooks
                             :assistant-message assistant-message
                             :on-update on-update

@@ -81,7 +81,7 @@
 
 (defn execute-tool-call
   "Execute one call through EXECUTE-TOOL. BINDINGS, when given, are applied
-   around execution ({:signal :session-env-fn :cwd}) — a raw worker thread
+   around execution ({:signal :session-env-fn :shell :cwd}) — a raw worker thread
    conveys no dynamic bindings, which is the run_code bridge's pool-worker
    case; the loop's futures already convey the run-wide ones. Returns the
    result map; never throws for a tool failure — a throwing tool becomes an
@@ -101,6 +101,7 @@
       (if bindings
         (binding [bash-tool/*cancel-signal* (:signal bindings)
                   bash-tool/*session-env-fn* (:session-env-fn bindings)
+                  bash-tool/*shell* (:shell bindings)
                   tool-util/*cwd* (:cwd bindings)]
           (execute))
         (execute))

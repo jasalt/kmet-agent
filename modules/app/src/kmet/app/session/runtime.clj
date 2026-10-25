@@ -27,7 +27,8 @@
    [kmet.app.model-resolver :as resolver]
    [kmet.app.session.core :as session]
    [kmet.app.session.export :as session-export]
-   [kmet.ai.models :as models]))
+   [kmet.ai.models :as models]
+   [kmet.srce.core :as srce]))
 
 (declare agent-state compaction-queued config cwd model pending-compaction session system-prompt turn-running?)
 
@@ -49,6 +50,14 @@
    without agent state."
   [engine]
   (:ctx (agent-state engine)))
+
+(defn shell
+  "The run's `:shell` service value on the engine's ctx —
+   `{:shell-path … :command-prefix …}` — or nil when the composition did not
+   mount the `:shell` row. The TUI's `!` path binds it so its bash uses the
+   same shell an agent run would (new-app.md, landing 9a)."
+  [engine]
+  (some-> (agent-ctx engine) (srce/get :shell) deref))
 
 (defn tool-table
   "The engine's tool table (name → Tool record) — the one its agent resolves

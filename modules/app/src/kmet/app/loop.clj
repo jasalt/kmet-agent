@@ -1065,6 +1065,9 @@
       ;; run (pi: the runtime cwd the tool definitions were created with) —
       ;; a session resumed or imported from another project.
       (binding [bash-tool/*cancel-signal* (:signal agent)
+                ;; the agent's own :shell value (the row's, or one a preset
+                ;; shadowed on its ctx) — two agents run two shells
+                bash-tool/*shell* (some-> (srce/get (:ctx agent) :shell) deref)
                 bash-tool/*session-env-fn*
                 (fn []
                   (bash-tool/session-env {:session (:session agent)

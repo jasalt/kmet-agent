@@ -30,6 +30,7 @@
             [kmet.app.root :as root]
             [kmet.app.skills :as skills]
             [kmet.app.tools.registry :as tools]
+            [kmet.app.tools.shell :as shell]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.footer :as footer]
@@ -647,6 +648,10 @@
               ;; a reloaded loop stage reaches the next attempt by re-seating
               ;; the app node's stages
               _ (runtime/refresh-loop-stages! (:engine cs))
+              ;; the shell settings are mounted, so a reloaded setting reaches
+              ;; the next run only if the mounted value is re-seated
+              _ (shell/refresh! (runtime/agent-ctx (:engine cs))
+                                (runtime/config (:engine cs)))
               ;; pi: keybindings.reload() — re-read keybindings.edn
               _ (app-kb/reload-agent-keybindings!)
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)

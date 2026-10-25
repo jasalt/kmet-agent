@@ -9,7 +9,6 @@
             [kmet.ai.auth :as auth]
             [kmet.app.config-schema :as config-schema]
             [kmet.app.debug :as debug]
-            [kmet.app.tools.bash-executor :as bash-exec]
             [kmet.app.tools.util :as tool-util]
             [kmet.libs.http :as http]
             [kmet.libs.edn-store :as eds]))
@@ -282,11 +281,6 @@
       (binding [*out* *err*]
         (println "Warning: Wrong-shape config" (pr-str (config-schema/explain-config with-env)))))
     (http/set-transport! (get-http-transport with-env))
-    ;; pi: shellPath/shellCommandPrefix — read by the bash tool and by
-    ;; executeBash in pi; applied here so both paths (and extension-built
-    ;; bash tools) pick the settings up without per-call config reads.
-    (bash-exec/set-shell-options! {:shell-path (get-shell-path with-env)
-                                   :command-prefix (get-shell-command-prefix with-env)})
     with-env))
 
 ;; ─── Config accessors ──────────────────────────────────────────────────────

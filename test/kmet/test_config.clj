@@ -5,7 +5,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.app.config :as cfg]
-            [kmet.app.tools.bash-executor :as bash-exec]
+            [kmet.app.tools.shell :as shell]
             [kmet.libs.http :as http]
             [kmet.ai.auth :as auth]
             [kmet.test-utils :refer [slash]]))
@@ -91,11 +91,6 @@
 
 ;; ─── Shell settings (pi: shellPath / shellCommandPrefix) ──────────────────
 
-(defn- shell-options []
-  ;; the executor's private settings atom (pi: SettingsManager getShellPath /
-  ;; getShellCommandPrefix)
-  @@#'bash-exec/shell-options)
-
 (t/deftest test-get-shell-path
   (t/is (nil? (cfg/get-shell-path cfg/default-config)))
   (t/is (= "/custom/bash" (cfg/get-shell-path (assoc cfg/default-config :shell-path "/custom/bash"))))
@@ -110,23 +105,27 @@
            (cfg/get-shell-command-prefix
             (assoc cfg/default-config :shell-command-prefix "shopt -s expand_aliases")))))
 
-(t/deftest test-load-config-applies-shell-settings
-  (t/testing "load-config applies the shell settings to bash execution (pi: getShellPath/getShellCommandPrefix)"
-    (let [tmp (str (fs/create-temp-dir {:dir "target" :prefix "shell-settings-test-"}))
-          saved (shell-options)]
+(t/deftest test-load-config-carries-shell-settings
+  (t/testing "the shell settings ride the loaded config; the agents factory
+            turns them into each agent's :shell value, so load-config has no
+            process cell to write (new-app.md, landing 9a)"
+    (let [tmp (str (fs/create-temp-dir {:dir "target" :prefix "shell-settings-test-"}))]
       (try
         (spit (str (fs/path tmp "settings.edn"))
               (pr-str {:shell-path "~/bin/bash"
                        :shell-command-prefix "shopt -s expand_aliases"}))
-        (cfg/load-config :no-env? true :agent-dir tmp)
-        (t/is (= (str (System/getProperty "user.home") "/bin/bash")
-                 (:shell-path (shell-options))))
-        (t/is (= "shopt -s expand_aliases" (:command-prefix (shell-options))))
-        (t/testing "the defaults clear the knobs"
-          (cfg/load-config :no-env? true :no-settings? true)
-          (t/is (= {:shell-path nil :command-prefix nil} (shell-options))))
+        (let [c (cfg/load-config :no-env? true :agent-dir tmp)]
+          (t/is (= (str (System/getProperty "user.home") "/bin/bash")
+                   (cfg/get-shell-path c)))
+          (t/is (= "shopt -s expand_aliases" (cfg/get-shell-command-prefix c)))
+          (t/is (= {:shell-path (str (System/getProperty "user.home") "/bin/bash")
+                    :command-prefix "shopt -s expand_aliases"}
+                   (shell/value c))
+                "the config's settings are exactly the service value"))
+        (t/testing "a config with no shell settings is the platform default"
+          (t/is (= {:shell-path nil :command-prefix nil}
+                   (shell/value (cfg/load-config :no-env? true :no-settings? true)))))
         (finally
-          (bash-exec/set-shell-options! saved)
           (fs/delete-tree tmp))))))
 
 (t/deftest test-get-theme-name

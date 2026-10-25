@@ -38,6 +38,11 @@ Example `~/.kmet/agent/settings.edn`:
  :append-system-prompt "Follow the project conventions." ; appended after it}
 ```
 
+Both shell settings are settings the **agent** carries rather than process-wide
+switches: each agent's shell comes from the config it was created with, so two
+agents in one process (a server's connections) can run two shells, and a
+`/reload` re-seats the value for the next run.
+
 A copyable starting point with the current keys is available in
 [`examples/settings.edn`](examples/settings.edn); see the
 [examples guide](examples/README.md#settings) for installation and notes.
