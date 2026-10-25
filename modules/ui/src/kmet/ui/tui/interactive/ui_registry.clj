@@ -19,7 +19,6 @@
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.agent.project-context :as context]
             [kmet.libs.reakt.core :as r]
-            [kmet.agent.model-resolver :as resolver]
             [kmet.agent.session.core :as session]
             [kmet.agent.session.driver :as session-driver]
             [kmet.agent.session.runtime :as runtime]
@@ -504,23 +503,19 @@
                                 idle? (fn []
                                         (and (not (state/turn-running? cs))
                                              (not (runtime/compacting? engine))))]
-                            {:mode :interactive
-                             :has-ui true
-                             :cwd (fdp/fdp-get-cwd fdp)
-                             :model (runtime/model-record engine)
-                             :scoped-models (resolver/scoped-models-for-context
-                                             (runtime/scoped-models engine)
-                                             (runtime/provider engine))
-                             :thinking-level (runtime/thinking-level engine)
-                             :is-idle idle?
-                             :has-pending-messages (fn []
-                                                     (runtime/has-queued-messages? engine))
-                             :signal (fn [] (runtime/cancel-signal engine))
-                             :abort (fn []
+                            (merge (runtime/extension-context engine)
+                                   {:mode :interactive
+                                    :has-ui true
+                                    :cwd (fdp/fdp-get-cwd fdp)
+                                    :is-idle idle?
+                                    :has-pending-messages (fn []
+                                                            (runtime/has-queued-messages? engine))
+                                    :signal (fn [] (runtime/cancel-signal engine))
+                                    :abort (fn []
                                       ;; pi: abort() acts while a run is active
                                       ;; (including the settle window) or a
                                       ;; compaction is running
-                                      (when-not (idle?)
+                                             (when-not (idle?)
                                         ;; pi: ctx.abort() restores queued
                                         ;; steering/follow-up messages to the
                                         ;; editor before aborting — a message
@@ -529,109 +524,109 @@
                                         ;; without restoring would drop it
                                         ;; entirely (restoreQueuedMessagesToEditor
                                         ;; {abort:true})
-                                        (turn/restore-queued-messages! cs)
-                                        (session-driver/cancel! (:engine cs))))
-                             :shutdown (fn [] (tui/tui-stop t))
-                             :get-context-usage (fn []
+                                               (turn/restore-queued-messages! cs)
+                                               (session-driver/cancel! (:engine cs))))
+                                    :shutdown (fn [] (tui/tui-stop t))
+                                    :get-context-usage (fn []
                                                   ;; pi: null without an
                                                   ;; active session
-                                                  (when-let [_ (fdp/fdp-get-session fdp)]
-                                                    (let [tokens (fdp/fdp-context-tokens fdp)
-                                                          window (fdp/fdp-get-context-window fdp)]
-                                                      {:tokens tokens
-                                                       :context-window window
-                                                       :percent (when (and tokens window
-                                                                           (pos? window))
-                                                                  (int (* 100.0 (/ tokens window))))})))
-                             :compact (fn [& [{:keys [custom-instructions
-                                                      on-complete on-error]}]]
-                                        (case (session-driver/request-compaction!
-                                               engine custom-instructions
-                                               {:on-complete (fn [result]
-                                                               (when on-complete
-                                                                 (on-complete {:result result})))
-                                                :on-error (fn [e]
-                                                            (when on-error (on-error e)))})
+                                                         (when-let [_ (fdp/fdp-get-session fdp)]
+                                                           (let [tokens (fdp/fdp-context-tokens fdp)
+                                                                 window (fdp/fdp-get-context-window fdp)]
+                                                             {:tokens tokens
+                                                              :context-window window
+                                                              :percent (when (and tokens window
+                                                                                  (pos? window))
+                                                                         (int (* 100.0 (/ tokens window))))})))
+                                    :compact (fn [& [{:keys [custom-instructions
+                                                             on-complete on-error]}]]
+                                               (case (session-driver/request-compaction!
+                                                      engine custom-instructions
+                                                      {:on-complete (fn [result]
+                                                                      (when on-complete
+                                                                        (on-complete {:result result})))
+                                                       :on-error (fn [e]
+                                                                   (when on-error (on-error e)))})
                                           ;; A run in flight defers the
                                           ;; compaction until it settles
                                           ;; (kmet's cancel is cooperative —
                                           ;; pi aborts the run first). Also
                                           ;; the answer while a compaction is
                                           ;; already in flight.
-                                          :compacting
-                                          (when on-error
-                                            (on-error (ex-info
-                                                       "Compaction already in progress."
-                                                       {:type :busy})))
+                                                 :compacting
+                                                 (when on-error
+                                                   (on-error (ex-info
+                                                              "Compaction already in progress."
+                                                              {:type :busy})))
                                           ;; :started / :scheduled — the
                                           ;; callbacks fire when the
                                           ;; compaction runs (or fails)
-                                          nil))
-                             :get-system-prompt (fn [] (runtime/system-prompt engine))
-                             :get-system-prompt-options (fn []
-                                                          (let [config (runtime/config (:engine cs))]
+                                                 nil))
+                                    :get-system-prompt (fn [] (runtime/system-prompt engine))
+                                    :get-system-prompt-options (fn []
+                                                                 (let [config (runtime/config (:engine cs))]
                                                             ;; pi: getSystemPromptOptions — the prompt's build
                                                             ;; inputs; cwd is the runtime one (a switched
                                                             ;; session's), context files stay the launch dir's
-                                                            {:custom-prompt (cfg/get-custom-prompt config)
-                                                             :append-prompt (cfg/get-append-system-prompt config)
-                                                             :cwd (state/runtime-cwd cs)
-                                                             :context-files (context/load-project-context-files
-                                                                             (cfg/get-agent-dir)
-                                                                             (str (fs/cwd)))}))
-                             :wait-for-idle (fn []
+                                                                   {:custom-prompt (cfg/get-custom-prompt config)
+                                                                    :append-prompt (cfg/get-append-system-prompt config)
+                                                                    :cwd (state/runtime-cwd cs)
+                                                                    :context-files (context/load-project-context-files
+                                                                                    (cfg/get-agent-dir)
+                                                                                    (str (fs/cwd)))}))
+                                    :wait-for-idle (fn []
                                               ;; pi: waitForIdle
-                                              (if (idle?)
-                                                nil
-                                                (let [p (promise)]
-                                                  (future
-                                                    (loop []
-                                                      (if (idle?)
-                                                        (deliver p true)
-                                                        (do (Thread/sleep 100) (recur)))))
-                                                  p)))
-                             :reload (fn [] (builtins/handle-reload cs nil))
-                             :new-session (fn [& _]
-                                            (session-admin/handle-new-session cs)
-                                            {:cancelled false})
-                             :fork (fn [entry-id & _]
-                                     (if entry-id
-                                       (do (session-admin/fork-at! cs entry-id) {:cancelled false})
-                                       {:cancelled true}))
-                             :navigate-tree (fn [target-id & [{:keys [summarize
-                                                                      custom-instructions
-                                                                      replace-instructions
-                                                                      label]}]]
+                                                     (if (idle?)
+                                                       nil
+                                                       (let [p (promise)]
+                                                         (future
+                                                           (loop []
+                                                             (if (idle?)
+                                                               (deliver p true)
+                                                               (do (Thread/sleep 100) (recur)))))
+                                                         p)))
+                                    :reload (fn [] (builtins/handle-reload cs nil))
+                                    :new-session (fn [& _]
+                                                   (session-admin/handle-new-session cs)
+                                                   {:cancelled false})
+                                    :fork (fn [entry-id & _]
+                                            (if entry-id
+                                              (do (session-admin/fork-at! cs entry-id) {:cancelled false})
+                                              {:cancelled true}))
+                                    :navigate-tree (fn [target-id & [{:keys [summarize
+                                                                             custom-instructions
+                                                                             replace-instructions
+                                                                             label]}]]
                                               ;; a run in flight would render its events into
                                               ;; the new branch (the /tree command refuses too)
-                                              (if (state/turn-running? cs)
-                                                {:cancelled true}
-                                                (if-let [sess (runtime/session (:engine cs))]
-                                                  (if-let [entry (session/get-entry sess
-                                                                                    target-id)]
-                                                    (do (session-admin/navigate-tree! cs sess entry
-                                                                                      (boolean summarize)
-                                                                                      custom-instructions
-                                                                                      (boolean replace-instructions)
-                                                                                      label)
-                                                        {:cancelled false})
-                                                    {:cancelled true})
-                                                  {:cancelled true})))
-                             :switch-session (fn [session-path & _]
+                                                     (if (state/turn-running? cs)
+                                                       {:cancelled true}
+                                                       (if-let [sess (runtime/session (:engine cs))]
+                                                         (if-let [entry (session/get-entry sess
+                                                                                           target-id)]
+                                                           (do (session-admin/navigate-tree! cs sess entry
+                                                                                             (boolean summarize)
+                                                                                             custom-instructions
+                                                                                             (boolean replace-instructions)
+                                                                                             label)
+                                                               {:cancelled false})
+                                                           {:cancelled true})
+                                                         {:cancelled true})))
+                                    :switch-session (fn [session-path & _]
                                                ;; a run in flight would render its events into the
                                                ;; switched session (the /resume command refuses too)
-                                               (if (state/turn-running? cs)
-                                                 {:cancelled true}
-                                                 (try
+                                                      (if (state/turn-running? cs)
+                                                        {:cancelled true}
+                                                        (try
                                                    ;; pi: switchSession → session-driver/resume!
                                                    ;; (emitBeforeSwitch, load, swap, session_start)
-                                                   (let [result (session-driver/resume! (:engine cs) session-path)]
-                                                     (if (:cancelled result)
-                                                       {:cancelled true}
-                                                       (do (session-admin/replay-session! cs (:session result) true)
-                                                           {:cancelled false})))
-                                                   (catch Exception _ {:cancelled true}))))
-                             :is-project-trusted (fn [] false)}))
+                                                          (let [result (session-driver/resume! (:engine cs) session-path)]
+                                                            (if (:cancelled result)
+                                                              {:cancelled true}
+                                                              (do (session-admin/replay-session! cs (:session result) true)
+                                                                  {:cancelled false})))
+                                                          (catch Exception _ {:cancelled true}))))
+                                    :is-project-trusted (fn [] false)})))
          :reset (fn []
                   ;; pi: resetExtensionUI — dispose widgets, restore
                   ;; footer/header/editor, clear statuses + working

@@ -42,11 +42,10 @@
    [kmet.agent.extensions.core :as extensions]
    [kmet.agent.loop :as agent]
    [kmet.agent.loop.state :as loop-state]
-   [kmet.agent.model-resolver :as resolver]
    [kmet.agent.session.compaction :as manual]
    [kmet.agent.session.core :as session]
    [kmet.ai.models :as models]
-   [kmet.agent.session.runtime :refer [agent-ctx agent-state compaction-queued config cwd ensure-cwd-session-dir find-recent-session map->Engine session switch-model! turn-running?]]
+   [kmet.agent.session.runtime :refer [agent-ctx agent-state compaction-queued config cwd ensure-cwd-session-dir extension-context find-recent-session map->Engine session switch-model! turn-running?]]
    [kmet.agent.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
@@ -64,12 +63,7 @@
   [engine]
   (assoc (extensions/headless-ui-port)
          :build-context
-         (fn []
-           (let [agent-state (agent-state engine)]
-             {:model (models/get-model @(:provider agent-state) @(:model agent-state))
-              :scoped-models (resolver/scoped-models-for-context
-                              @(:scoped-models agent-state) @(:provider agent-state))
-              :thinking-level @(:thinking agent-state)}))))
+         (fn [] (extension-context engine))))
 
 (defn bootstrap
   "Build the runtime engine for CONFIG.

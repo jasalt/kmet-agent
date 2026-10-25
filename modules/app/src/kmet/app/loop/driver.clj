@@ -282,6 +282,11 @@
               (if (= :next-step target)
                 (loop-state/steer! @live text)
                 (loop-state/follow-up! @live text)))
+            ;; start a run if this call claims it, else queue behind the one
+            ;; another caller claimed
+            (deliver! [text target]
+              (when-not (and (not @running?) (start! text nil))
+                (queue! text target)))
             ;; an extension's sendCustomMessage (pi: ctx.sendCustomMessage):
             ;; the four branches driver/send-message-capability has, over this
             ;; agent's live state — a trigger while idle starts a run, a
@@ -332,12 +337,7 @@
                               (packages/expand-input text)
                               text)]
                    (when text
-                     (if @running?
-                       (queue! text (if (= :steer deliver-as) :next-step :next-turn))
-                       ;; idle: start one, or queue behind the run another
-                       ;; caller claimed in the meantime
-                       (when-not (start! text nil)
-                         (queue! text :next-turn)))))
+                     (deliver! text (if (= :steer deliver-as) :next-step :next-turn))))
                  nil)
                :send-message! (fn [message opts] (inject! message opts))
                :get-active-tools (fn []
@@ -351,19 +351,15 @@
             ;; :has-ui, the front end's session flows) still comes from the
             ;; front end's `:build-context` or the headless default.
             (extension-context []
-              {:model (runtime/model-record engine)
-               :scoped-models (resolver/scoped-models-for-context
-                               (runtime/scoped-models engine)
-                               (runtime/provider engine))
-               :thinking-level (runtime/thinking-level engine)
-               :cwd (runtime/cwd engine)
-               :is-idle (fn []
-                          (and (not @running?)
-                               (not (runtime/compacting? engine))))
-               :has-pending-messages (fn [] (boolean (seq (runtime/queues engine))))
-               :abort (fn [] (stop!))
-               :compact (fn [& [instructions]]
-                          (manual/request-compaction! engine instructions nil))})
+              (merge (runtime/extension-context engine)
+                     {:cwd (runtime/cwd engine)
+                      :is-idle (fn []
+                                 (and (not @running?)
+                                      (not (runtime/compacting? engine))))
+                      :has-pending-messages (fn [] (boolean (seq (runtime/queues engine))))
+                      :abort (fn [] (stop!))
+                      :compact (fn [& [instructions]]
+                                 (manual/request-compaction! engine instructions nil))}))
             ;; true when this call claimed the run: the CAS is what decides, so
             ;; a message arriving as another thread starts a run is queued by
             ;; the caller rather than dropped. A start that throws before it
@@ -391,12 +387,7 @@
                                :on-error (fn [_] (settle!))})))
                    (catch Throwable t
                      (settle!)
-                     (throw t))))))
-            (images-refused [target]
-              (ex-info (str "images can only start a prompt: a queued message ("
-                            (name target) ") carries text")
-                       {:type :kmet.app/unsupported-images
-                        :target target}))]
+                     (throw t))))))]
       (-> engine
           (assoc
            :id id
@@ -410,9 +401,11 @@
                         (when-not (and (= :next-turn target)
                                        (not @running?)
                                        (start! text images))
-                          (throw (images-refused target)))
-                        (when-not (and (not @running?) (start! text nil))
-                          (queue! text target)))
+                          (throw (ex-info (str "images can only start a prompt: a queued message ("
+                                               (name target) ") carries text")
+                                          {:type :kmet.app/unsupported-images
+                                           :target target})))
+                        (deliver! text target))
                       ;; the run has the message now: the inbox's pending entry
                       ;; folds away with the delivery fact, so a long-lived
                       ;; server's inbox stays a queue rather than a log of

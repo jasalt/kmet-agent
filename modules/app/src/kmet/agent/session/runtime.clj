@@ -23,6 +23,7 @@
    [kmet.agent.config :as cfg]
    [kmet.agent.event-bus :as event-bus]
    [kmet.agent.loop.state :as loop-state]
+   [kmet.agent.model-resolver :as resolver]
    [kmet.agent.session.core :as session]
    [kmet.agent.session.export :as session-export]
    [kmet.ai.models :as models]))
@@ -259,6 +260,18 @@
   "The current thinking level."
   [engine]
   @(:thinking (agent-state engine)))
+
+(defn extension-context
+  "The ExtensionContext keys that describe the live agent: the model record,
+   the scoped set the ctx shows (not the auth-filtered cycling view), and the
+   thinking level. Every front end's `:build-context` supplies them and a run
+   binds them, so the rule has one definition rather than one per front end."
+  [engine]
+  {:model (model-record engine)
+   :scoped-models (resolver/scoped-models-for-context
+                   (scoped-models engine)
+                   (provider engine))
+   :thinking-level (thinking-level engine)})
 
 (defn compacting?
   "True while a compaction is in flight."
