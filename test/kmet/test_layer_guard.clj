@@ -1,9 +1,11 @@
-(ns kmet.agent.test-layer-guard
-  "Guard (app layer boundary): app business logic (kmet.agent.*, excluding
-   kmet.agent.ui.tui.** and the extension-ABI injection) must not require the
-   terminal/Tk front ends or the interactive mode, and the front-end layers
-   (kmet.agent.modes.**, kmet.agent.ui.**) drive the engine only through
-   kmet.app.session.runtime."
+(ns kmet.test-layer-guard
+  "Guard (app layer boundary): the app's business logic (`kmet.app.*`, minus the
+   UI tree it does not hold) must not require the terminal/Tk front ends or the
+   interactive mode, and the front-end layers (`kmet.app.modes.**`,
+   `kmet.ui.**`) drive the engine only through `kmet.app.session.runtime`.
+
+   Its subject is the app and UI source trees, not one module's tests, so it
+   lives beside the other cross-cutting guards."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -15,25 +17,35 @@
   [path]
   (str/replace (str path) "\\" "/"))
 
-(defn- app-source-files []
-  (letfn [(walk [dir]
-            (mapcat (fn [f]
-                      (if (fs/directory? f) (walk f) [f]))
-                    (fs/list-dir dir)))]
-    (->> (mapcat walk ["modules/agent/src/kmet/agent"
-                       ;; the app module's business logic — the loop cluster and
-                       ;; the session layer moved there, and landing 11 renamed
-                       ;; them to kmet.app.* with it
-                       "modules/app/src/kmet/app"])
-         (remove #(str/includes? (slash %) "/ui/"))
-         (remove #(str/includes? (slash %) "/modes/"))
-         ;; cli.clj is the composition root: it wires the modes and the TUI
-         ;; engines, so it legitimately requires them. Everything else in the
-         ;; app tree is scanned — core.clj included: the bootstrap above cli.clj
-         ;; requires neither app and no front end.
-         (remove #(= "cli.clj" (fs/file-name %)))
-         (filter #(re-find #"\.clj[ca]?$" (str %)))
-         (map slash))))
+(defn- source-files-under
+  "Every Clojure source file under DIR, path-normalized and sorted. A missing
+   DIR yields nothing instead of throwing: the callers assert which roots they
+   expect files from (`<root> not scanned`), so a renamed or emptied tree fails
+   by name rather than as a NoSuchFileException from the walk."
+  [dir]
+  (when (fs/exists? dir)
+    (letfn [(walk [d]
+              (mapcat (fn [f]
+                        (if (fs/directory? f) (walk f) [f]))
+                      (fs/list-dir d)))]
+      (->> (walk dir)
+           (map slash)
+           (filter #(re-find #"\.clj[ca]?$" %))
+           (sort)))))
+
+(defn- app-source-files
+  "The app's business logic: every source file under the app tree's root, minus
+   the mode rows and the UI subtree (the front-end layers the rules below
+   constrain separately)."
+  []
+  (->> (source-files-under "modules/app/src/kmet/app")
+       (remove #(str/includes? % "/ui/"))
+       (remove #(str/includes? % "/modes/"))
+       ;; cli.clj is the composition root: it wires the modes and the TUI
+       ;; engines, so it legitimately requires them. Everything else in the
+       ;; app tree is scanned — core.clj included: the bootstrap above cli.clj
+       ;; requires neither app and no front end.
+       (remove #(= "cli.clj" (fs/file-name %)))))
 
 (defn- ns-form [path]
   (sr/read-ns-form path "layer guard"))
@@ -61,26 +73,13 @@
       (str/replace #"/" ".")
       (str/replace #"_" "-")))
 
-(defn- source-files-under
-  "Every Clojure source file under DIR, path-normalized and sorted. A missing
-   DIR yields nothing instead of throwing: the callers assert which roots they
-   expect files from (`<root> not scanned`), so a renamed or emptied tree fails
-   by name rather than as a NoSuchFileException from the walk."
-  [dir]
-  (when (fs/exists? dir)
-    (letfn [(walk [d]
-              (mapcat (fn [f]
-                        (if (fs/directory? f) (walk f) [f]))
-                      (fs/list-dir d)))]
-      (->> (walk dir)
-           (map slash)
-           (filter #(re-find #"\.clj[ca]?$" %))
-           (sort)))))
-
 (defn- mode-source-files
-  "Every entry-mode namespace file."
+  "Every mode namespace file: kmet2's mode rows, and kmet1's entry modes while
+   that module exists (landing 11 deletes those; the rows are what a front end
+   is afterwards)."
   []
-  (source-files-under "modules/agent/src/kmet/agent/modes"))
+  (concat (source-files-under "modules/app/src/kmet/app/modes")
+          (source-files-under "modules/agent/src/kmet/agent/modes")))
 
 (def ^:private ui-roots
   "Where the app-UI layer's files are: the `ui` module, in two subtrees — the
@@ -162,8 +161,8 @@
   (testing "modes and app UI reach the engine through the session runtime"
     (let [files (front-end-source-files)]
       (is (seq files) "no front-end sources scanned — check the walk roots")
-      (is (some #(str/starts-with? % "modules/agent/src/kmet/agent/modes/") files)
-          "modes tree not scanned")
+      (is (some #(str/starts-with? % "modules/app/src/kmet/app/modes/") files)
+          "the mode rows are scanned")
       ;; every UI root must contribute a file, named by the root: a root that
       ;; stops matching (moved file, renamed dir) would otherwise narrow the
       ;; scan silently, and the rules below would pass on a smaller set
@@ -190,7 +189,7 @@
             (str ns-name " requires " (vec forbidden)))))))
 
 (def ^:private loop-module-edges
-  "The only allowed kmet.agent.loop.* edges; a subset check, so the map can
+  "The only allowed `kmet.app.loop.*` edges; a subset check, so the map can
    name modules that do not exist yet."
   {"kmet.app.loop.message" #{}
    "kmet.app.loop.state" #{"kmet.app.loop.message"}

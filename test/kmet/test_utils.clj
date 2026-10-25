@@ -132,7 +132,7 @@
     (try (f)
          (finally
            (extensions/bind-services! base)
-           (srce/dispose! ctx)))))
+           (srce/dispose-subtree! ctx)))))
 
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global

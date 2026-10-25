@@ -4299,12 +4299,20 @@ its own host instead of requiring a namespace for the side effect — the
 load-order luck the fixture's docstring used to name is gone, and the message a
 host throws when it is used unbound no longer claims kmet1 binds it at load.
 
-What is left in `modules/agent/test` (2,087 lines): the four `modes/*` and
+What is left in `modules/agent/test` (1,848 lines): the four `modes/*` and
 `test_app_ctx`/`test_runtime` die with kmet1 and its shim; `kmet.agent.test-tools`
-dies with the façade; `test_layer_guard` moves to `test/kmet/` with the other
-cross-cutting guards; `test_ui_port` and `test_runtime_capabilities` reach the
+dies with the façade; `test_ui_port` and `test_runtime_capabilities` reach the
 composition through `tu/test-engine`, which an app test cannot require (rank 2
-below ui's 3), so they take the handle fixture or stay until the endgame. Then
+below ui's 3), so they take the handle fixture or stay until the endgame.
+
+`test_layer_guard` moved first, to `test/kmet/test-layer-guard`: its subject is
+the app and UI source trees, and it was still walking them with its own
+copy of the walk. It reads `modules/app/src/kmet/app` through
+`source-files-under` (a missing tree yields nothing, and the caller asserts the
+roots it means), scans the mode rows beside kmet1's entry modes, and its
+assertion that the modes tree was scanned now names the app rows — the old one
+would have failed the day kmet1 was deleted. Its docstring and the DAG map's
+described the pre-rename namespaces. Then
 the `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and
 the documents.
 
