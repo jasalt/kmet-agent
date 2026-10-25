@@ -73,9 +73,9 @@
    resolved, created here when OPTS names none).
 
    OPTS: `:session`, `:cwd` (the runtime cwd the run starts at), `:config` — a
-   map merged over the run config, the way `tu/test-engine`'s `:config` reads —
-   and any further keys merged into it, so a test names one setting without
-   rebuilding the map."
+   map merged over the run config, the way a test names settings — and any
+   further keys merged into it, so a test names one setting without rebuilding
+   the map."
   ([boot] (create-handle! boot {}))
   ([{:keys [ctx] :as boot} {:keys [session config cwd] :as opts}]
    (let [dir (or (::sessions-dir boot)
@@ -129,7 +129,7 @@
    `:current-editor-atom`, `:anim-timer`, `:bash-running?`, `:bash-signal`,
    `:pending-bash-components`, `:status-indicator`, `:status-current`,
    `:status-root`, `:footer-provider`, `:footer-comp`) and seed the handle's
-   own atoms (`:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
+   own atoms (`:session`, `:config`, `:cwd`, `:turn-running?`, `:messages`, `:model`,
    `:provider`, `:thinking`, `:scoped-models`, `:cfg`,
    `:compaction-queued`, `:pending-compaction`) — the values a test writes
    directly, written where the run reads them."
@@ -138,8 +138,14 @@
    (doseq [k [:config :cwd :turn-running? :compaction-queued :pending-compaction]
            :when (contains? opts k)]
      (reset! (get handle k) (get opts k)))
+   ;; the live session the handle answers is the state record's, the way a
+   ;; switch replaces it (the `:session` thunk reads the record)
+   (when (contains? opts :session)
+     (reset! (:agent-state handle)
+             (assoc @(:agent-state handle) :session (:session opts))))
    (let [state @(:agent-state handle)]
-     (doseq [k [:messages :model :provider :thinking :scoped-models :cfg]
+     (doseq [k [:messages :model :provider :thinking :scoped-models :cfg
+                :compacting?]
              :when (contains? opts k)]
        (reset! (get state k) (get opts k))))
    (let [ch (opt-or opts :chat-history

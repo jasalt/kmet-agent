@@ -3546,26 +3546,37 @@ every capability it would serve already exists on the handle the TUI drives.
 The work is not new features — it is the last pieces of the re-host landing 8
 finished, measured from the TUI's own code:
 
-- **T-1. The interactive tests run on the composition's handle.** The suite
-  (`modules/ui/test/kmet/ui/tui/interactive/test_interactive.clj` since T-2)
-  builds kmet1's `session.driver` engine (`tu/test-engine`); a handle-shaped
+- **T-1. The interactive tests run on the composition's handle — landed.** The
+  suite builds kmet1's `session.driver` engine (`tu/test-engine`); a handle-shaped
   fixture boots the `:tui` composition and creates through `:agents`, so a
   test fails when the handle stops answering an op the TUI calls. The fixture
   is `kmet.ui.tui.interactive.test-handle-support`: `with-boot` for a namespace,
-  `with-handle` for one test, `core-state` for the CoreState pieces a command
-  touches, all over `create!`'s handle. The `/new` group runs on it — the
-  one-agent check (`test-handle-path`) and the swap/cancel pair
-  (`test-interactive`), whose turn flag, session, context, editor, shutdown
-  event and parked bash now come from the handle; the cancel test lost the
-  duplicate ``(:session @ag-atom)`` assertion, which read the same value
-  `runtime/session` answers. `/name` followed: it renames the live session the
-  handle answers (the shared builtin reaches it through the runtime accessor,
-  not the op key; the contract test covers the op set). A converted
-  test registers its builtins inside the fixture — boot publishes the
-  composition's registry as the process command registry, and a registration
-  made before it is invisible to `find-command`. Remaining: the rest of the
-  session commands (`/tree`, `/fork`, `/clone`, `/resume`, `/export`, `/stats`,
-  `/messages`), then the settings, queue and compaction paths.
+  `with-handle` for one test, `new-handle` for a second agent of the installed
+  composition, `create-handle!` with `:session`/`:cwd`/`:config`, and
+  `core-state` for a CoreState — its options override the fields it builds and
+  seed the handle's own atoms (`:session`, `:config`, `:cwd`,
+  `:turn-running?`, `:messages`, `:model`, `:provider`, `:thinking`,
+  `:scoped-models`, `:cfg`, `:compacting?`, the compaction queues), with an
+  explicit nil meaning none. Each boot owns a session directory, so two
+  boots in one test (the two-agent shape landings 9 and 10 need) do not delete
+  each other's sessions.
+
+  Every file in `modules/ui/test` is converted: `tu/test-engine` appears nowhere
+  in it. `test-handle-path` and `test-interactive` (including the `/new` pair,
+  model/thinking cycles, share/summarization and the scrollback-heal fixtures),
+  `test-commands` (`/name` and every settings/queue command), the compaction
+  queue, `/import` and the switch tests, theme, layout and the settings panel.
+  The double's hand-rolled run ops are gone with it: those tests read
+  `runtime/*` and the handle's own atoms, and a test that needs a special
+  session registers its state record the way a switch does. Two fixtures from
+  the double survive as facts about the composition: boot publishes its
+  registry as the process command registry (a converted test registers its
+  builtins inside the fixture, after the boot), and a CoreState helper needs
+  the caller's boot.
+
+  `modules/agent/test`'s `test-ui-port` and `test-runtime-capabilities` keep
+  `tu/test-engine`: their subject is the extension surface over a bare engine,
+  not a mode driving a composition.
 - **T-2. The interactive suite moved to `modules/ui/test` — landed.** The ten
   files that test the TUI now live beside it: the interactive cluster — the
   support fixture, autocomplete, commands, the compaction queue, import,
@@ -3614,7 +3625,7 @@ row's docstring describes the handle path a reader will find.
 | 5l | **landed** — `agent` → `app` (two moves + the world load), `agent` → `ui` (12 moves) | ~5,300 moved, ~120 changed | 5k | pty parity; `agent/modes` holds only kmet1's three; a kmet2 extension's command is in the ctx's `:commands`; a print run has extensions loaded; the TUI profile's ctx provides a terminal `:ui` and an approver |
 | 5n | **landed** — `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
-| T | `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
+| T | **landed** — `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
 | 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
 | 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
 | 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
