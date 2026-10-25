@@ -28,7 +28,7 @@
             [kmet.agent.config :as cfg]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.system-prompt :as system-prompt]
+            [kmet.app.system-prompt :as system-prompt]
             [kmet.agent.retry :as retry]
             [kmet.app.session.core :as session]
             [kmet.agent.tools.registry :as tools]
@@ -127,7 +127,7 @@
          :one-at-a-time),
          :system-prompt-fn (fn the state calls to rebuild the prompt when it must
          — an active-tools change — with :system-prompt-opts as its keyword
-         arguments; default kmet.agent.system-prompt/build-system-prompt, and a
+         arguments; default kmet.app.system-prompt/build-system-prompt, and a
          process-bound caller passes its own — kmet1's Engine passes
          kmet.agent.skills/build-system-prompt, whose :skills default reads the
          process registry),

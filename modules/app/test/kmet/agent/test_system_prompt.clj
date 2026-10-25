@@ -9,7 +9,7 @@
    what kmet2's `:systemPrompt` row calls."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.agent.system-prompt :as system-prompt]))
+            [kmet.app.system-prompt :as system-prompt]))
 
 (defn- tool
   [name snippet & [guidelines]]

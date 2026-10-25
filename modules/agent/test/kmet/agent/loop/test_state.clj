@@ -12,7 +12,7 @@
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.app.session.core :as session]
             [kmet.agent.loop.state :as state]
-            [kmet.agent.system-prompt :as system-prompt]
+            [kmet.app.system-prompt :as system-prompt]
             [kmet.agent.loop :as loop]
             [kmet.agent.retry :as retry]
             [kmet.agent.event-bus :as event-bus]

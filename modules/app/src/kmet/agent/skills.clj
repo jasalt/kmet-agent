@@ -24,7 +24,7 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.registry :as registry]
             [kmet.agent.tools.read :as read]
-            [kmet.agent.system-prompt :as system-prompt]
+            [kmet.app.system-prompt :as system-prompt]
             [kmet.agent.tools.registry :as tools-registry]
             [kmet.libs.yaml :as yaml]))
 
@@ -371,7 +371,7 @@
         skill-list))
 
 ;; ─── System prompt ────────────────────────────────────────────────────────
-;; The builder itself lives in `kmet.agent.system-prompt` (app), where every
+;; The builder itself lives in `kmet.app.system-prompt`, where every
 ;; input is an argument: an engine builds its prompt from the ctx it holds.
 ;; These two are kmet1's process-bound wrappers — the same names and arities
 ;; its callers and tests already use, defaulting `:tools` from the process
@@ -379,13 +379,13 @@
 
 (defn format-skills-for-prompt
   "Format skills as an <available_skills> XML block (see
-   `kmet.agent.system-prompt/format-skills-for-prompt`)."
+   `kmet.app.system-prompt/format-skills-for-prompt`)."
   [skill-list]
   (system-prompt/format-skills-for-prompt skill-list))
 
 (defn build-system-prompt
   "Build the system prompt with tools, guidelines, context files, and skills
-   (see `kmet.agent.system-prompt/build-system-prompt` for the options).
+   (see `kmet.app.system-prompt/build-system-prompt` for the options).
 
    The two process-bound defaults are this wrapper's: `:tools` from the
    process tool table and `:skills` from the process skill registry. A caller
