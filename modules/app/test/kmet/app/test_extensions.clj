@@ -44,6 +44,19 @@
            composition's registries — a kmet2 process has no base binding to
            inherit them from"))))
 
+(deftest the-row-binds-every-key-the-host-reads
+  ;; The overlay is gone, so the row must supply the whole contract: a key the
+  ;; host grows and the row forgets would fail only where an extension's init
+  ;; touches it, far from here.
+  (with-restored-host
+    (fn []
+      (let [{:keys [fiber]} (mounted)]
+        (try
+          (is (= (set registries/host-service-keys)
+                 (set (keys ((extensions/host-binding)))))
+              "the binding is exactly the host's contract, not a subset")
+          (finally (srce/dispose! fiber)))))))
+
 (deftest a-second-composition-puts-the-first-binding-back
   ;; The binding is process-wide and one owner at a time: mounting replaces it,
   ;; disposing puts back what was there, so a composition that goes away cannot

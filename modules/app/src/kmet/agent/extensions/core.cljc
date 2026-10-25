@@ -188,13 +188,14 @@
 ;; ─── Services (what this file may not require, bound by its owner) ───────
 ;; The host lives in `app` and cannot require the process above it: its
 ;; registry handle, the ctx an `:inject` mount lands under, and the
-;; commands/prompts/skills registries are all kmet1's. It takes them as a
-;; value instead — kmet1 (kmet.agent.extensions.services) binds this process's
-;; app root; an agent binds its own when the host is mounted per agent.
-;; A thunk, not a value: binding happens while the root is still being booted,
-;; and a captured value would freeze whatever registry handle existed then.
-;; Unbound is an error — the host has no process default of its own, which is
-;; precisely what lets it live below the process.
+;; commands/prompts/skills registries are all the process's. It takes them as a
+;; value instead — a composition's `:extensions` row binds its own
+;; (`kmet.app.registries/host-services`), kmet1's shim binds the same map as the
+;; fallback before a composition exists, and an agent binds its own when the
+;; host is mounted per agent. A thunk, not a value: binding happens while the
+;; root is still being booted, and a captured value would freeze whatever
+;; registry handle existed then. Unbound is an error — the host has no process
+;; default of its own, which is precisely what lets it live below the process.
 (defonce ^:private services* (atom nil))
 
 (defn bind-services!
@@ -238,7 +239,9 @@
   []
   (if-let [f @services*]
     (f)
-    (throw (ex-info "the extension host was used before its services were bound"
+    (throw (ex-info (str "the extension host was used before its services were bound: "
+                         "a composition needs its :extensions row, and kmet1 binds "
+                         "the process host at load")
                     {:type :kmet/no-host-services}))))
 
 (defn- handle

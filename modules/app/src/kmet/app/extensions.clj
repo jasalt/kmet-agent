@@ -50,8 +50,7 @@
         handle (registries/process-handle scope)
         previous (registry/publish-process-handle! handle)]
     (extensions/bind-services!
-     (fn [] (merge {:registry handle :ctx scope}
-                   (registries/resource-services handle))))
+     (fn [] (registries/host-services handle scope)))
     (fn []
       (registry/publish-process-handle! previous)
       (extensions/bind-services! base))))

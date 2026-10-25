@@ -67,9 +67,8 @@
    hooks, themes, the UI port, entry/message renderers, flags), which share the
    handle's `remainder` until they get one.
 
-   The host's own lists (`host-tags` plus
-   `kmet.agent.extensions.services/resource-tags`) must equal this one; a test
-   holds them to it, because a forgotten tag leaks silently."
+   The host's own lists (`host-tags` plus `resource-tags` below) must equal this
+   one; a test holds them to it, because a forgotten tag leaks silently."
   {:kmet/tool :tools
    :kmet/tool-source :tools
    :kmet/command :commands
@@ -84,7 +83,7 @@
 
 (def resource-tags
   "The registries an extension's contributed resources live in — what unloading
-   it sweeps besides the host's own tags."
+   it sweeps besides the host's own tags (`kmet.agent.extensions.core/host-tags`)."
   [:kmet/command :kmet/prompt :kmet/skill])
 
 (defn process-handle
@@ -123,3 +122,19 @@
    :deregister-owner! (fn [owner]
                         (doseq [tag resource-tags]
                           (registry/deregister-owner! handle tag owner)))})
+
+(def host-service-keys
+  "The keys the extension host reads from its bound services
+   (`kmet.agent.extensions.core/services`): the process handle, the ctx an
+   `:inject` mounts under, the three resource operations, and the owner sweep.
+   An owner binds exactly these; a test compares the binding to this list, so a
+   key the host grows cannot be silently dropped."
+  [:registry :ctx :commands :prompts :skills :deregister-owner!])
+
+(defn host-services
+  "The complete service map the extension host reads, for HANDLE and CTX — what
+   an owner binds with `kmet.agent.extensions.core/bind-services!`. One builder
+   for every owner (the `:extensions` row, kmet1's shim fallback), so the
+   contract cannot drift between them."
+  [handle ctx]
+  (merge {:registry handle :ctx ctx} (resource-services handle)))

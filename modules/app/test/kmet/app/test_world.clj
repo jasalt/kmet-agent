@@ -61,6 +61,23 @@
       (finally
         (root/restore-root! prev)))))
 
+(t/deftest a-root-read-while-it-boots-is-named
+  ;; A row mounted before the extension host that reads the process root would
+  ;; boot a second composition behind the one being mounted; the guard names it
+  ;; instead of mounting a duplicate tree.
+  (let [prev (root/reset-root!)]
+    (try
+      (t/is (= :kmet.app/root-boot-loop
+               (try
+                 (root/boot! (fn []
+                               (root/boot! (fn [] (srce/root {:name :inner})))))
+                 nil
+                 (catch Exception e (:type (ex-data e)))))
+            "the nested read fails by name")
+      (t/is (nil? (root/ctx)) "and the failed boot published nothing")
+      (finally
+        (root/restore-root! prev)))))
+
 (t/deftest the-process-root-boots-once
   (let [prev (root/reset-root!)
         boots (atom 0)

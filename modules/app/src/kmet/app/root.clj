@@ -11,6 +11,11 @@
 
 (defonce ^:private app-root (atom nil))
 
+(def ^:dynamic ^:private *booting*
+  "True while BOOT-FN runs inside `boot!`, so a row that reads the root it is
+   being mounted into is refused by name instead of booting a second tree."
+  false)
+
 (defn publish!
   "Make CTX the process root — the ctx `ctx` returns and every kmet1 shim
    reads. Returns the root in place.
@@ -20,25 +25,39 @@
    kmet1's process-level code (the façades, the extension host's ctx-less
    reads, `/units`) sees a tree that is not the one the run is using. The
    first root wins — a second publish returns the root already in place rather
-   than stranding a tree things are already reading."
+   than stranding a tree things are already reading. A process that runs a
+   second entry in one image must `reset-root!` first; an entry is ordinarily a
+   process, so nothing in the entry path does."
   [ctx]
   (if (compare-and-set! app-root nil {:ctx ctx})
     ctx
     (:ctx @app-root)))
 
 (defn ctx
-  "The published process root, or nil when the process has mounted none yet."
+  "The published process root, or nil when the process has mounted none yet
+   (or when the first one was reset for a test)."
   []
   (:ctx @app-root))
 
 (defn boot!
   "The process root, booting and publishing one when the process has none
    yet: BOOT-FN is called at most once, under the atom's lock, so two readers
-   racing the first read mount one tree."
+   racing the first read mount one tree.
+
+   A read that arrives *while* BOOT-FN runs — a row mounted before the extension
+   host asking for the root it is part of — is refused by name
+   (`:kmet.app/root-boot-loop`) instead of booting a second composition behind
+   the one already being mounted."
   [boot-fn]
   (or (ctx)
       (locking app-root
-        (or (ctx) (publish! (boot-fn))))))
+        (or (ctx)
+            (if *booting*
+              (throw (ex-info (str "the process root was read while it was being booted: "
+                                   "a row cannot read the root it is being mounted into")
+                              {:type :kmet.app/root-boot-loop}))
+              (binding [*booting* true]
+                (publish! (boot-fn))))))))
 
 (defn reset-root!
   "Clear the process root and return what it was.

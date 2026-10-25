@@ -11,8 +11,8 @@
             [kmet.ai.models :as models]
             [kmet.agent.app-runtime :as rt]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.extensions.services :as services]
             [kmet.agent.registry :as registry]
+            [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]))
@@ -227,12 +227,13 @@
   ;; The host holds no process handle of its own: it registers into whatever
   ;; services its owner bound. That is what lets it live in `app` below the
   ;; process it serves, and what gives a second owner (an agent's ctx) a
-  ;; per-agent api. kmet1 binds the app root (kmet.agent.app-runtime);
-  ;; kmet.agent.extensions.services/host-services builds either map.
+  ;; per-agent api. kmet1 binds the app root (kmet.agent.app-runtime); the
+  ;; composition's row binds its own; `registries/host-services` builds either
+  ;; map.
   (let [handle (registry/atom-registry)
         ctx (srce/root {:name :host-test})
         previous (extensions/bind-services!
-                  (fn [] (services/host-services handle ctx)))]
+                  (fn [] (registries/host-services handle ctx)))]
     (try
       (extensions/register-flag! [:app :test] "host-test-flag" {:type :boolean})
       (t/is (= {:type :boolean :default nil}

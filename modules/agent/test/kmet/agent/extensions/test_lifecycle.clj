@@ -7,8 +7,8 @@
             [kmet.libs.host :as host]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.app-runtime :as rt]
+            [kmet.app.registries :as registries]
             [kmet.agent.commands :as commands]
-            [kmet.agent.extensions.services :as services]
             [kmet.agent.registry :as registry]
             [kmet.agent.event-bus :as event-bus]
             [kmet.srce.core :as srce]
@@ -244,5 +244,5 @@
   ;; :kmet/tool-source leaked that way, and an unloaded extension's
   ;; sandbox-only tools survived into the next namespace's run_code surface.
   (t/is (= (set (keys rt/registry-tags))
-           (into (set extensions/host-tags) services/resource-tags))
+           (into (set extensions/host-tags) registries/resource-tags))
         "host-tags + resource-tags must cover exactly the tags kmet1 routes"))

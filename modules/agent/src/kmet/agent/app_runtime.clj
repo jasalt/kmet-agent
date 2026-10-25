@@ -27,7 +27,6 @@
    that must not share registrations gets its own `child-ctx`."
   (:require [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.extensions.services :as extensions-services]
             [kmet.agent.registry :as reg]
             [kmet.app.core :as app-core]
             [kmet.app.registries :as registries]
@@ -114,7 +113,7 @@
     (ctx)
     (let [f (extensions/host-binding)]
       (if (identical? f shim-binding)
-        (extensions-services/host-services (reg/current) (ctx))
+        (registries/host-services (reg/current) (ctx))
         (f)))))
 
 (extensions/bind-services! shim-binding)

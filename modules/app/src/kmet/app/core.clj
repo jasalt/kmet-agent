@@ -250,7 +250,8 @@
 (defn- dump-state
   "The `--dump-state` text: the booted root's unit tree. The booted view needs a
    boot, so this is the one flag that mounts the composition — and disposes it
-   again, so a dump leaves nothing behind. The boot is a diagnostic one: a row
+   again, so the host binding and the published registry are the ones it found
+   and a dump leaves no tree behind. The boot is a diagnostic one: a row
    that stays `:pending` or ends `:failed` is a line in the tree (with what it
    waits for, or why it failed) instead of a boot error, because that tree is
    the answer to the question the flag asks."
