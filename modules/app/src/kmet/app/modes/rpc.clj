@@ -52,6 +52,7 @@
             [kmet.app.front-end :as front-end]
             [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
+            [kmet.app.root :as root]
             [kmet.srce.core :as srce]))
 
 ;; ── protocol records ──────────────────────────────────────────────────────
@@ -522,9 +523,12 @@
             ;; the portable builtins this front end dispatches over `prompt`
             ;; and reports through `get-commands` (docs/rpc.md § Portable slash
             ;; commands); registration is idempotent and owned by the app root,
-            ;; so a second mode in one process reuses them. `/units` renders the
-            ;; tree the mode is mounted under.
-            _ (builtins/register-runtime-commands! (constantly (:parent ctx)))
+            ;; so a second mode in one process reuses them. `/units` renders
+            ;; the process tree when the entry published one — the answer
+            ;; kmet1's rpc registered — and otherwise the tree this mode is
+            ;; mounted under (a test composition).
+            _ (builtins/register-runtime-commands!
+               (fn [] (or (root/ctx) (:parent ctx))))
             ;; the agent does not exist yet, and the listener must scope to it:
             ;; the mode's stream is its own agent's events, not every agent's
             ;; the process booted (5d listened on the app scope)

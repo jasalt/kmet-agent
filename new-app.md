@@ -4057,6 +4057,9 @@ left, which is the residual landing 8 named. The delivery's run-opts also carry
 the wire's images: a caller-named queue target refuses an image even while
 idle, and a start that loses the race refuses rather than stripping it.
 `get-commands` answers the same filtered view the dispatcher uses. The
+builtins register idempotently with a thunk that reads the process root (so
+`/units` answers the tree the entry mounted, as kmet1's rpc did) and falls back
+to the mode's mount scope for a composition that published none. The
 steers/follow-ups still expand in the mode; the session family, the cycles, the
 queue modes, the dialog pair (`:request`/`:response`) and `respond` remain.
 

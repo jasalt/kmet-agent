@@ -371,6 +371,42 @@
       (is (= [] @sent))
       (is (= 3 (count ((:entries log) session)))))))
 
+(deftest a-submit-records-a-durable-queue-fact-when-asked
+  ;; The wire's submit says `:record?` because its queue outlives the process
+  ;; (10a); the TUI's local prompt says nothing, because a message typed into
+  ;; the editor is not a queued one. The fact lands where the message is
+  ;; delivered — a hook that consumes the input delivers nothing, so it
+  ;; records nothing.
+  (let [{:keys [root log agents]} (fixture)
+        session (create-session! {:log log})
+        submitted (atom nil)
+        _ ((:register-factory! agents) root
+                                       (stand-in {} {:submit!
+                                                     (fn [text opts]
+                                                       (reset! submitted {:text text :opts opts})
+                                                       {:action :started})}))
+        handle ((:create! agents) root {:session session})]
+    (testing "without :record? the submit appends nothing"
+      ((:submit! agents) handle "typed locally" {})
+      (is (= 0 (count ((:entries log) session))))
+      (is (nil? (:on-deliver! (:opts @submitted)))
+          "the chain is given no callback to record with"))
+    (testing "with :record? the enqueue fact is written where delivery happens"
+      ((:submit! agents) handle "from the wire" {:record? true})
+      ((:on-deliver! (:opts @submitted)) "from the wire" :next-step)
+      (let [entry (last ((:entries log) session))]
+        (is (= {:op :enqueue :target :next-step :text "from the wire"}
+               (:data entry))
+            "the fact carries what was queued and where it would have gone")
+        (is (= :queued-message (:custom-type entry)))))
+    (testing "an image prompt records nothing: it starts a run or is refused"
+      (reset! submitted nil)
+      ((:submit! agents) handle "with an image"
+                         {:record? true :run-opts {:images [{:type :image :data "eA=="}]}})
+      (is (nil? (:on-deliver! (:opts @submitted))))
+      (is (= 1 (count ((:entries log) session)))
+          "the log still holds only the text prompt's fact"))))
+
 (deftest two-agents-queue-into-two-logs
   (let [{:keys [root log agents]} (fixture)
         one (create-session! {:log log})
