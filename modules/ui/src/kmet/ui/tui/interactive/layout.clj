@@ -590,10 +590,17 @@
    resolved, the run's config, and — when the mode row named any — the presets
    mounted under the agent's child ctx before the agent exists (7b-ii's
    `:setup`). A preset is named by the row's config (`{:presets
-   [:bundle/gated]}`), so a profile mounts a per-agent world without code."
+   [:bundle/gated]}`, or one name without the vector), so a profile mounts a
+   per-agent world without code."
   [config session opts]
-  (cond-> {:session session :config config}
-    (seq (:presets opts)) (assoc :setup (presets/setup (:presets opts)))))
+  (let [presets (:presets opts)
+        ;; a profile author's EDN may name one preset or a list; an empty list
+        ;; is "none". Anything else is a name `presets/setup` will mount (or
+        ;; fail on, named) — a raw `(seq :bundle/gated)` here would be a boot
+        ;; crash saying nothing.
+        presets (if (coll? presets) (seq presets) presets)]
+    (cond-> {:session session :config config}
+      presets (assoc :setup (presets/setup presets)))))
 
 (defn build-layout
   "Create TUI layout and return CoreState.

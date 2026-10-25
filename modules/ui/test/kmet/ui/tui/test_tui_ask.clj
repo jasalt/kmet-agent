@@ -37,6 +37,18 @@
   (is (nil? (get-in (mode-row :tui) [:config :presets]))
       "the default TUI names no preset: its agent's world is the root's"))
 
+(deftest one-name-or-a-list-and-an-empty-list-is-none
+  ;; The row's config is EDN a profile author writes: one name is as natural as
+  ;; a vector, and an empty vector must mean "no preset", not a setup that
+  ;; mounts nothing.
+  (let [session nil
+        config {}
+        setup-of (fn [presets] (:setup (layout/create-opts config session {:presets presets})))]
+    (is (fn? (setup-of [:bundle/gated])))
+    (is (fn? (setup-of :bundle/gated)) "one name needs no vector")
+    (is (nil? (setup-of [])) "an empty list mounts nothing")
+    (is (nil? (setup-of nil)) "and no key at all is the plain TUI")))
+
 (deftest the-rows-preset-is-carried-into-the-run-and-mounted-per-agent
   (let [presets (get-in (mode-row :tui-ask) [:config :presets])
         opts ((var tui-row/run-opts) {:presets presets})]
