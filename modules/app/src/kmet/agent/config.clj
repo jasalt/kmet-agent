@@ -721,22 +721,31 @@
   (resolve-prompt-input (or (:system-prompt config)
                             (discover-prompt-file "SYSTEM.md"))))
 
+(defn- discovered-append-input
+  "The discovered APPEND_SYSTEM.md as a one-element source list, or nil."
+  []
+  (some-> (discover-prompt-file "APPEND_SYSTEM.md") vector))
+
 (defn get-append-system-prompt
   "Append system prompt source (pi: appendSystemPromptSource ??
    discoverAppendSystemPromptFile): the :append-system-prompt config value —
-   one source or a collection of them, each read as a file when it names an
+   one source, or a collection of them, each read as a file when it names an
    existing one and joined with blank lines (pi resolves each append source
    before joining, so `--append-system-prompt a.md --append-system-prompt b.md`
-   sends both files' text). Absent or nil falls back to .kmet/APPEND_SYSTEM.md,
-   then ~/.kmet/agent/APPEND_SYSTEM.md; an explicitly empty collection means no
-   append and suppresses discovery, as an empty source list is truthy in pi.
+   sends both files' text). An absent or nil (or blank string) value falls back
+   to .kmet/APPEND_SYSTEM.md, then ~/.kmet/agent/APPEND_SYSTEM.md; a collection
+   — even an empty one — is taken as given and suppresses discovery, the way
+   pi's truthy source list does.
    Deviations from pi: no project-trust gate."
   [config]
   (let [declared (:append-system-prompt config)
         sources (cond
-                  (some? declared) (if (coll? declared) declared [declared])
-                  :else (when-let [file (discover-prompt-file "APPEND_SYSTEM.md")]
-                          [file]))
+                  (or (nil? declared)
+                      (and (string? declared) (str/blank? declared)))
+                  (discovered-append-input)
+
+                  (coll? declared) declared
+                  :else [declared])
         text (str/join "\n\n" (keep resolve-prompt-input sources))]
     (not-empty text)))
 

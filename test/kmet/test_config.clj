@@ -341,7 +341,9 @@
         (with-redefs [cfg/prompt-file-candidates (fn [_] [file])]
           (t/is (= "discovered" (cfg/get-append-system-prompt {})))
           (t/is (nil? (cfg/get-append-system-prompt {:append-system-prompt []}))
-                "[] is a choice, not an omission"))
+                "[] is a choice, not an omission")
+          (t/is (= "discovered" (cfg/get-append-system-prompt {:append-system-prompt "  "}))
+                "a blank string is an omission"))
         (finally (fs/delete-tree dir))))))
 
 (t/deftest test-apply-cli-overrides
