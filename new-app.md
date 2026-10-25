@@ -3556,11 +3556,18 @@ finished, measured from the TUI's own code:
   shutdown event carrying the outgoing file.
 - **T-2. The interactive suite moves to `modules/ui/test`**, where the mode
   lives; its `agent`-module home is 11's remaining blocker on that file.
-- **T-3. A preset reaches a TUI run's child ctx.** `create!`'s `:setup` seam
-  (7b-ii) has no production caller: `build-layout` passes `{:session :config}`
-  and the row passes no preset. The row's config names the bundles, the run's
-  opts carry them, and a profile (the TUI's `:rpc-ask` counterpart) mounts one —
-  which is 8's gate item for presets, not met yet.
+- **T-3. A preset reaches a TUI run's child ctx — landed.** `create!`'s
+  `:setup` seam (7b-ii) now has its production caller: a mode row names the
+  bundles in its config (`{:presets [:bundle/gated]}`), `run-opts` carries them
+  into the run, and `build-layout`'s `create-opts` mounts them under the child
+  ctx before the agent exists (`presets/setup` takes one name or a collection).
+  `:profile tui-ask` is the built-in that names the gate — the TUI counterpart
+  of `:rpc-ask`, without a root bundle. Verified on a pty: a bash tool call of a
+  `tui-ask` agent asked `Allow bash?` through the TUI's own Yes/No dialog (and a
+  cancelled dialog denied the call), which is 8's gate item for presets now
+  met. `kmet.ui.tui.test-tui-ask` pins the profile, the row-to-run mapping and
+  the per-agent policy (a plain agent's call proceeds; the root provides no
+  `:permissions`).
 - **T-4. The TUI's last driver edges.** `session_admin` calls
   `session.driver/emit-session-start-async!` and `generate-branch-summary`; the
   first is `kmet.agent.session.lifecycle`'s already, and the second is the only
@@ -4002,10 +4009,10 @@ sibling agent's alone, two print runs in one process each settle their own
 promise, an image in the prompt reaches the provider's request, and `/new`
 moves that agent's session while the registry still lists one agent (the dump
 shows one line, not two). **Two gate items were not met when the row was marked
-done, and T owns them**: the `/new` sentence above now states what the shipped
-path does (the handle's session op, not a second agent), and a preset reaching
-a TUI run's child ctx is T-3 — `create!`'s `:setup` seam has no caller in
-`build-layout`, so `:bundle/gated` mounts on a TUI agent nowhere yet.
+done, and T owned them**: the `/new` sentence above now states what the shipped
+path does (the handle's session op, not a second agent), and the preset item is
+T-3's landing — a mode row's `:presets` reach `create!`'s `:setup` through
+`build-layout`, and `:profile tui-ask` mounts the gate on its agent.
 
 **Landed so far** (`479eb19d`, `c6723127`, `2ce32596`): the handle is the value a front
 end reads — Engine-shaped (`:agent-state`, `:config`, `:cwd`,

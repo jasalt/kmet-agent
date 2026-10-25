@@ -92,6 +92,20 @@
           :session-lifecycle true}]
    :patch []}
 
+  ;; the TUI with the gate mounted per agent: no bundle change — the row names
+  ;; the preset a run's child ctx mounts, so every tool call of an agent created
+  ;; by this profile asks, and `:bundle/terminal` answers through the TUI's own
+  ;; Yes/No dialog. The gate is a *preset* here, not a root bundle, because a
+  ;; policy decides per agent and the kernel forbids a child shadowing a service
+  ;; its ancestor provides (`:bundle/gated`'s row is the only `:permissions`
+  ;; provider on the agent's chain).
+  :tui-ask
+  {:bundles [[:bundle/minimal {}] [:bundle/terminal {}]]
+   :rows [{:id :mode-tui :plugin kmet.ui.tui/plugin :mode true
+           :session-lifecycle true
+           :config {:presets [:bundle/gated]}}]
+   :patch []}
+
   ;; print is the first profile with a mode row: one prompt, one run, its text
   ;; on stdout, the exit code in `kmet.app.core`. `:mode true` marks the row the
   ;; entry point hands the invocation's input to (the prompt, where to report).

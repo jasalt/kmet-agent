@@ -21,11 +21,13 @@
 
    **The agent is the composition's.** `build-layout` creates the run's agent
    through the composition's `:agents` registry (`:create!` with the resolved
-   session and the run config), so a TUI run is a handle like any other: its ctx
-   is a child of the ctx the row mounted on, its settings and session ops write
-   that agent, and the registry lists it (`:agent/created`). What the row does
-   not pass yet is `create!`'s `:setup` seam (7b-ii), so a **preset** — a bundle
-   mounted per agent — has no way into a TUI run's child ctx.
+   session, the run config and the presets the row named), so a TUI run is a
+   handle like any other: its ctx is a child of the ctx the row mounted on, its
+   settings and session ops write that agent, and the registry lists it
+   (`:agent/created`). A **preset** — a bundle mounted per agent (7b-ii) — is
+   named by the row's config (`{:presets [:bundle/gated]}`) and mounted under
+   that child ctx before the agent exists; `:profile tui-ask` is the built-in
+   that names the gate.
 
    **The invocation is the run's, and this row only maps it.** `-c`/
    `--continue`, `-r`/`--resume` and `--session <id>` arrive in the row's config
@@ -58,6 +60,10 @@
   [config]
   (cond-> (merge {:mode :interactive}
                  (select-keys config invocation/run-override-keys))
+    ;; the agent's per-agent world: a preset is mounted under the child ctx
+    ;; `build-layout` creates (7b-ii's `:setup`), so the row's config is the
+    ;; only place a profile names it — no flag, no code
+    (:presets config) (assoc :presets (:presets config))
     (:session config) (assoc :session (:session config))
     (:resume config) (assoc :resume true)
     (:continue config) (assoc :continue true)))

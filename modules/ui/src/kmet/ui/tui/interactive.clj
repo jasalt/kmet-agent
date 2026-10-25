@@ -283,7 +283,7 @@
                                          ;; continue → start a fresh one
                                           (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
                        :else (session/create-session (state/ensure-cwd-session-dir config (str (fs/cwd)))))
-             cs (layout/build-layout config session ctx)]
+             cs (layout/build-layout config session ctx opts)]
          (reset! cs-ref cs)
          (reset! live-mode cs)
          (reset! tui-ref (:tui cs))

@@ -62,7 +62,12 @@
 (defn setup
   "The `:setup` a `:agents/create!` opts carries: mount PRESET-NAME under the
    agent's child ctx — `(create! ctx {:setup (presets/setup :bundle/gated)})`.
-   `setup` runs before the factory, so no agent observes a half-composed world."
-  ([preset-name] (setup @builtin preset-name))
+   A collection of names mounts each in order, which is how a front end's row
+   config names more than one. `setup` runs before the factory, so no agent
+   observes a half-composed world."
+  ([preset-name]
+   (if (coll? preset-name)
+     (fn [ctx _id] (doseq [name preset-name] (mount! ctx name)))
+     (setup @builtin preset-name)))
   ([table preset-name]
    (fn [ctx _id] (mount! ctx table preset-name))))

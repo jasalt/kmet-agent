@@ -151,7 +151,9 @@
 
 (deftest builtin-table-is-complete
   (let [table (profile/builtin)]
-    (is (= #{:tui :print :rpc :rpc-ask :server} (set (keys (:profiles table)))))
+    (is (= #{:tui :tui-ask :print :rpc :rpc-ask :server}
+           (set (keys (:profiles table))))
+        "the shipped profiles: the TUI, its gated variant, print, rpc and the server")
     (is (contains? (:bundles table) :bundle/minimal))
     (is (= [{:id :permissions :plugin 'kmet.app.permissions/permissions
              :config {:policy :ask-all}}]
