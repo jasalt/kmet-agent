@@ -1,4 +1,4 @@
-(ns kmet.agent.session.store
+(ns kmet.app.session.store
   "Durable EDNL session storage: the Session record, entry values, the
    line reader/parser with torn-tail repair, atomic rewrite, and the append
    journal callers mutate a session through. Each entry is an EDN map on one
@@ -8,7 +8,7 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.agent.session.schema :as session-schema]
+            [kmet.app.session.schema :as session-schema]
             [kmet.libs.fs :as kfs])
   (:import [java.io InputStreamReader]))
 

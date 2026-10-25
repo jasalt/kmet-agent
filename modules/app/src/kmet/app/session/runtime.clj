@@ -1,9 +1,9 @@
-(ns kmet.agent.session.runtime
+(ns kmet.app.session.runtime
   "The session engine: the value a front end drives, and the accessors it reads
    and writes through.
 
    An `Engine` holds the agent state, the session, the config-derived run
-   options and the front end's callbacks. `kmet.agent.session.driver` builds one
+   options and the front end's callbacks. `kmet.app.session.driver` builds one
    (`bootstrap`) and runs it — prompts, turns, session switching, compaction,
    disposal — and this namespace is what the drivers and the front ends above
    them read: the session and its cwd, the model and thinking level, the run
@@ -24,8 +24,8 @@
    [kmet.agent.event-bus :as event-bus]
    [kmet.agent.loop.state :as loop-state]
    [kmet.agent.model-resolver :as resolver]
-   [kmet.agent.session.core :as session]
-   [kmet.agent.session.export :as session-export]
+   [kmet.app.session.core :as session]
+   [kmet.app.session.export :as session-export]
    [kmet.ai.models :as models]))
 
 (declare agent-state compaction-queued config cwd model pending-compaction session system-prompt turn-running?)

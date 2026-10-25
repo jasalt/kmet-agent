@@ -1,4 +1,4 @@
-(ns kmet.agent.session.test-contract
+(ns kmet.app.session.test-contract
   "The `:sessionPersistence` contract, run against both backends: kmet2's
    in-process `memory-backend` and the EDNL files kmet1's store owns. One set of
    assertions, so the storage seam cannot drift from the store it will replace
@@ -8,7 +8,7 @@
    into the next."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is testing]]
-            [kmet.agent.session.backend :as session-backend]
+            [kmet.app.session.backend :as session-backend]
             [kmet.app.sessions :as sessions]))
 
 (defn- backends

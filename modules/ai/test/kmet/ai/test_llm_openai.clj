@@ -18,7 +18,7 @@
             [kmet.ai.google-adc :as adc]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.test-support :as loop-support]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.config :as cfg]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as m]

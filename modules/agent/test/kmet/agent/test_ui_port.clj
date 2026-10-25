@@ -8,8 +8,8 @@
             [kmet.agent.extensions.core :as ex]
             [kmet.agent.app-runtime :as app]
             [kmet.agent.registry :as registry]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.driver :as session-driver]
             [kmet.test-utils :as tu]))
 
 ;; The binding and the app's registrations are process-global state;

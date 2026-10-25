@@ -6,7 +6,7 @@
    machine-readable variant)."
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.app.session.driver :as session-driver]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.packages :as packages]
             [kmet.agent.config :as cfg]))

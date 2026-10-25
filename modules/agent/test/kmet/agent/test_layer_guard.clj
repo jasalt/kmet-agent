@@ -3,7 +3,7 @@
    kmet.agent.ui.tui.** and the extension-ABI injection) must not require the
    terminal/Tk front ends or the interactive mode, and the front-end layers
    (kmet.agent.modes.**, kmet.agent.ui.**) drive the engine only through
-   kmet.agent.session.runtime."
+   kmet.app.session.runtime."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -137,7 +137,7 @@
    - `:ui` (the app-UI widgets alone): the session driver. It starts work —
      prompts, turns, session switching, disposal — and a mode owns a run and may
      drive it, while a widget reads the engine instead
-     (`kmet.agent.session.runtime`, one rank below the driver). The TUI mode
+     (`kmet.app.session.runtime`, one rank below the driver). The TUI mode
      entry and its interactive cluster are front ends that *are* a mode: 5l-iii
      moved them under `ui`, so they keep the `:front-ends` rule and this one
      skips them (`ui-mode-files`)."
@@ -145,7 +145,7 @@
     :prefixes ["kmet.agent.loop" "kmet.agent.compaction.stage"]
     :why "front ends reach the engine through the session runtime"}
    {:scope :ui
-    :prefixes ["kmet.agent.session.driver"]
+    :prefixes ["kmet.app.session.driver"]
     :why "the UI layer reads the engine; the driver starts work, and a mode owns a run"}])
 
 (deftest front-ends-drive-the-runtime-not-the-loop

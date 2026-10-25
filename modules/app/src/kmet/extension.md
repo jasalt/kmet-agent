@@ -866,7 +866,7 @@ pair (extension runtime UI port), not through the event stream: the runtime deli
 `{:type :ui-request :id ... :kind ...}` to the port's `:request` capability,
 and the front end either returns the answer in-process (blocking dialogs are
 allowed inside extension handlers) or forwards it to its client and answers
-later with `kmet.agent.session.runtime/respond!`. Kinds without a dedicated
+later with `kmet.app.session.runtime/respond!`. Kinds without a dedicated
 surface auto-answer — `:select` → nil, `:confirm` → false,
 `:input`/`:editor`/`:custom` → nil — and `dispose!` resolves any request still
 pending with the request's default. No built-in capability routes through

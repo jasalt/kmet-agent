@@ -1,13 +1,13 @@
-(ns kmet.agent.session.listing
+(ns kmet.app.session.listing
   "On-disk session discovery: file candidates, header-only scans, the
    session list/metadata projection, and delete/import. Everything here reads
    and writes the files directly; entry values and durability live in
-   kmet.agent.session.store."
+   kmet.app.session.store."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [kmet.agent.session.store :as store]
+            [kmet.app.session.store :as store]
             [kmet.libs.edn-store :as eds])
   (:import [java.io InputStreamReader]))
 

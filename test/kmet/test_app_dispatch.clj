@@ -93,7 +93,7 @@
                           (println "dispatched" sym
                                    "app-ns" (some? (find-ns 'kmet.app.core))
                                    "cli-ns" (some? (find-ns 'kmet.agent.cli))
-                                   "runtime-ns" (some? (find-ns 'kmet.agent.session.runtime)))
+                                   "runtime-ns" (some? (find-ns 'kmet.app.session.runtime)))
                           v))]
                     (list 'apply 'core/-main (vec args))))))
 
@@ -120,7 +120,7 @@
       (is (str/includes? new-out "dispatched kmet.app.core/-main app-ns true cli-ns false")
           new-out)
       (is (str/includes? new-out "runtime-ns false")
-          (str "kmet.agent.session.runtime loaded for --app new:\n" new-out)))
+          (str "kmet.app.session.runtime loaded for --app new:\n" new-out)))
     (testing "one version string"
       (is (some? (version-line old-out)))
       (is (= (version-line old-out) (version-line new-out))))))

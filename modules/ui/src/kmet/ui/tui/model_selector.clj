@@ -8,7 +8,7 @@
             [kmet.agent.keybindings :as app-kb]
             [kmet.ai.models :as models]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.footer-data-provider :as fdp]

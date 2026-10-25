@@ -11,7 +11,7 @@
 ;; the harness perf.md §10/§12's tables were measured with, not a test.
 (ns kmet-render-bench
   (:require [clojure.string :as str]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.agent.modes.interactive :as inter]

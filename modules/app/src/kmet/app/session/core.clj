@@ -1,4 +1,4 @@
-(ns kmet.agent.session.core
+(ns kmet.app.session.core
   "Public API for session storage: EDNL sessions — line-delimited EDN with
    parent-child ids for tree branching (pi: @earendil-works/pi-agent session
    storage).
@@ -7,11 +7,11 @@
    this namespace re-exports it so its dependents keep one require. The
    re-exports capture values at load time: after redefining an
    implementation var, reload this namespace (or the whole tree) too."
-  (:require [kmet.agent.session.context :as context]
-            [kmet.agent.session.listing :as listing]
-            [kmet.agent.session.stats :as stats]
-            [kmet.agent.session.store :as store]
-            [kmet.agent.session.tree :as tree]))
+  (:require [kmet.app.session.context :as context]
+            [kmet.app.session.listing :as listing]
+            [kmet.app.session.stats :as stats]
+            [kmet.app.session.store :as store]
+            [kmet.app.session.tree :as tree]))
 
 ;; ─── store: entries, ids, durable I/O, append journal ────────────────────
 (def append-custom-entry! store/append-custom-entry!)

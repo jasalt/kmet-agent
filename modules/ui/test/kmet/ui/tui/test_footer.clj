@@ -4,7 +4,7 @@
             [babashka.fs :as fs]
             [kmet.tui.core :as core]
             [kmet.libs.host :as host]
-            [kmet.agent.session.core :as s]
+            [kmet.app.session.core :as s]
             [kmet.ui.tui.footer :as ft]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.tui.theme :as theme]))

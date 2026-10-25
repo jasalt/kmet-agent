@@ -14,7 +14,7 @@
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.tui.components.editor :as editor]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.ui.tui.interactive.test-handle-support :as hs]))

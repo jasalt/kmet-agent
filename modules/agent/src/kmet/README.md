@@ -77,7 +77,7 @@ The app module (`modules/agent/src/kmet/agent`). Several `kmet.agent.*`
 namespaces live in `modules/app` instead — the two-axes rule: the file moves,
 its namespace does not — so this tree is what remains. `kmet.agent.version`
 (landing 1), `kmet.agent.registry` (landing 3), the session log
-(`kmet.agent.session.*`, 4c-i), the extension host's leaf dependencies
+(`kmet.app.session.*`, 4c-i), the extension host's leaf dependencies
 (`kmet.agent.debug`, `.config-schema`, `.event-bus`, `.tools.util`, 4b-ii's
 prep), and since 4f the whole tool layer — `kmet.agent.tools.*` and
 `kmet.agent.config` — which is app's now, handle-parameterized, with kmet1's
@@ -146,7 +146,7 @@ kmet/agent/
 │                         UI requests, disposal). The log itself — core,
 │                         store, listing, context, stats, tree, schema,
 │                         export, backend — lives in `modules/app`
-│                         (`kmet.agent.session.*`, moved at 4c-i)
+│                         (`kmet.app.session.*`, moved at 4c-i)
 ├── tools/              — only the façade is left: core.clj keeps kmet1's
 │   │                     arity-less tool API over
 │   └── core.clj        — `(app-runtime/registry)`, adding no state and no
@@ -290,7 +290,7 @@ now: `bootstrap` installs the live session, its sinks and the headless UI port,
 The session-runtime split puts one session runtime behind every
 front end:
 
-- `kmet.agent.session.runtime` owns the agent state, the session lifecycle
+- `kmet.app.session.runtime` owns the agent state, the session lifecycle
   (`new-session!`, `resume!`, `fork!`, `clone!`, `switch-session!`), the
   submission chain, the steer/follow-up queues, compaction (a manual request
   arriving mid-turn is deferred until the turn settles —
@@ -327,7 +327,7 @@ The GUI live milestone remains the final GUI-dependent work.
 
 ### Session storage façade
 
-`kmet.agent.session.core` re-exports the storage API (`store`, `listing`,
+`kmet.app.session.core` re-exports the storage API (`store`, `listing`,
 `context`, `stats`, `tree`) as `(def name impl/name)` aliases; dependents
 require the façade, and `modules/agent/test/kmet/agent/session/test_facade.clj`
 pins its exact public surface. Two consequences for tests and REPL work:

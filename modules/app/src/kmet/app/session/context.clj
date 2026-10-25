@@ -1,9 +1,9 @@
-(ns kmet.agent.session.context
+(ns kmet.app.session.context
   "Context projection: the session's linear message context, append-only
    context edits (K), and cache-miss detection. Reads and appends through
-   kmet.agent.session.store."
+   kmet.app.session.store."
   (:require [clojure.string :as str]
-            [kmet.agent.session.store :as store]
+            [kmet.app.session.store :as store]
             [kmet.ai.usage :as usage]))
 
 (defn derive-context-settings

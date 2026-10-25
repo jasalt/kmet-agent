@@ -1,11 +1,11 @@
-(ns kmet.agent.session.test-context
+(ns kmet.app.session.test-context
   "Message context: the compaction projection, append-only context
    edits (K), cache-miss detection, and the context settings derived
    from the branch."
   (:require [clojure.test :as t]
             [clojure.string :as str]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.test-support :as support]))
+            [kmet.app.session.core :as s]
+            [kmet.app.session.test-support :as support]))
 
 (t/use-fixtures :once support/with-clean-test-dir)
 

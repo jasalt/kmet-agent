@@ -1,11 +1,11 @@
-(ns kmet.agent.session.driver
+(ns kmet.app.session.driver
   "The session driver: what builds an engine and runs it.
 
    `bootstrap` constructs the engine (agent state, session, config-derived run
    options, system prompt, extension runtime handle) and the operations here
    drive it: prompts and steering, cancellation, session switching, compaction
    dispatch, extension commands, and disposal. The value itself — and what a
-   front end may read — is `kmet.agent.session.runtime`, one rank below this.
+   front end may read — is `kmet.app.session.runtime`, one rank below this.
 
    Design rules:
 
@@ -39,13 +39,13 @@
    [kmet.agent.extensions.core :as extensions]
    [kmet.agent.loop :as agent]
    [kmet.agent.loop.state :as loop-state]
-   [kmet.agent.session.compaction :as manual]
-   [kmet.agent.session.core :as session]
-   [kmet.agent.session.lifecycle :as lifecycle]
+   [kmet.app.session.compaction :as manual]
+   [kmet.app.session.core :as session]
+   [kmet.app.session.lifecycle :as lifecycle]
    [kmet.ai.models :as models]
-   [kmet.agent.session.runtime :refer [agent-state ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
-   [kmet.agent.session.submission :as submission]
-   [kmet.agent.session.summary :as summary]
+   [kmet.app.session.runtime :refer [agent-state ensure-cwd-session-dir extension-context find-recent-session map->Engine switch-model! turn-running?]]
+   [kmet.app.session.submission :as submission]
+   [kmet.app.session.summary :as summary]
    [kmet.agent.skills :as skills]
    [kmet.app.loop.driver :as driver]
    [kmet.libs.concurrent :as concurrent]
@@ -218,7 +218,7 @@
         (session/load-session path)
         (session/create-session (ensure-cwd-session-dir base-dir cwd))))))
 
-;; The lifecycle itself lives below both drivers (`kmet.agent.session.lifecycle`),
+;; The lifecycle itself lives below both drivers (`kmet.app.session.lifecycle`),
 ;; because kmet2's handle runs the same switch without a process-wide extension
 ;; slot. These wrappers keep kmet1's contract: the switch installs the session
 ;; into the process's extension slot, which the front end reads outside a run.
@@ -495,7 +495,7 @@
 
 (defn generate-branch-summary
   "LLM summary of abandoned branch entries for tree navigation (see
-   `kmet.agent.session.summary/generate-branch-summary`). Returns
+   `kmet.app.session.summary/generate-branch-summary`). Returns
    {:summary str :usage map} | {:aborted true} | {:error msg}; SIGNAL
    aborts the call."
   [engine entries custom-instructions signal replace-instructions?]

@@ -1,4 +1,4 @@
-(ns kmet.agent.session.export
+(ns kmet.app.session.export
   "Standalone HTML export of a kmet session (pi: export-html — G22 /export).
    EDN entries render to a self-contained dark page: user/assistant/tool/
    bash messages, thinking, tool calls, compaction and branch summaries,
@@ -7,7 +7,7 @@
    is deliberately not built (no pi interop, §0 of the session plan)."
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.session.core :as session]))
+            [kmet.app.session.core :as session]))
 
 (defn parse-path-argument
   "Pi: getPathCommandArgument — strip surrounding quotes, else take the

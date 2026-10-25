@@ -19,7 +19,7 @@
      (`kmet.ai.usage/entry-usage`'s normalized shape).
 
    **The fold is incremental, and the cache's key is the prefix.** A projection
-   is built over the branch root→leaf (`kmet.agent.session.store/get-branch`),
+   is built over the branch root→leaf (`kmet.app.session.store/get-branch`),
    and the cache for a session remembers the entry it stopped at and how many it
    consumed. A branch that still *begins* with that fold continues from there —
    an append moves the leaf forward and keeps the prefix — while anything else
@@ -31,11 +31,11 @@
    **The two entry conventions are in this namespace, both directions.** An
    enqueue and a deliver are `:custom` entries with
    `:custom-type :queued-message` and an `:op` in `:data`; `:custom` is
-   metadata to the context projection (`kmet.agent.session.context`) and never
+   metadata to the context projection (`kmet.app.session.context`) and never
    reaches the model, so the queue cannot leak into a prompt. The loop's own
    append of the delivered user message stays what it always was — the queue is
    the intent, the user entry is the delivery."
-  (:require [kmet.agent.session.store :as store]
+  (:require [kmet.app.session.store :as store]
             [kmet.ai.usage :as usage]
             [kmet.srce.core :as srce]))
 

@@ -1,4 +1,4 @@
-(ns kmet.agent.session.test-support
+(ns kmet.app.session.test-support
   "Fixtures and helpers shared by the session tests: one scratch sessions dir
    per namespace run, quiet stderr for deliberately corrupt files, and a fast
    repeated-character builder for the large-payload cases."

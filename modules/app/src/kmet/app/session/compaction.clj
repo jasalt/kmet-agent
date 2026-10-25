@@ -1,4 +1,4 @@
-(ns kmet.agent.session.compaction
+(ns kmet.app.session.compaction
   "The manual compaction queue: a `/compact` or a wire `compact` request, and
    the deferred ones that wait for a running prompt to settle.
 
@@ -16,7 +16,7 @@
    deferred-completion rule has one copy."
   (:require [kmet.agent.compaction.stage :as agent-compact]
             [kmet.agent.debug :as debug]
-            [kmet.agent.session.runtime :as runtime]))
+            [kmet.app.session.runtime :as runtime]))
 
 (defn- run-manual-compaction!
   "Run one queued manual compaction request and report it through the

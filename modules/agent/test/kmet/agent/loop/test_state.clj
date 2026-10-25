@@ -10,7 +10,7 @@
             [kmet.agent.skills :as skills]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.tools.registry :as tools-registry]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.system-prompt :as system-prompt]
             [kmet.agent.loop :as loop]

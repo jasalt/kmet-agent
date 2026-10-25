@@ -1,4 +1,4 @@
-(ns kmet.agent.session.summary
+(ns kmet.app.session.summary
   "The one-shot LLM work a front end runs *about* a session rather than inside
    a turn: the branch summary `/tree` shows after a navigation.
 
@@ -7,7 +7,7 @@
    guard forbids a mode reaching the stage directly, and the driver that used to
    be the only caller goes with kmet1's entry at retirement."
   (:require [kmet.agent.compaction.stage :as agent-compact]
-            [kmet.agent.session.runtime :as runtime]))
+            [kmet.app.session.runtime :as runtime]))
 
 (defn generate-branch-summary
   "LLM summary of abandoned branch entries for tree navigation, over ENGINE's

@@ -10,7 +10,7 @@
             [kmet.agent.modes.print :as print-mode]
             [kmet.ai.models :as m]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.extensions.core :as extensions]
             [kmet.test-utils :as tu]))
 

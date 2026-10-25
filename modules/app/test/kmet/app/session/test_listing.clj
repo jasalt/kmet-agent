@@ -1,13 +1,13 @@
-(ns kmet.agent.session.test-listing
+(ns kmet.app.session.test-listing
   "On-disk discovery: list-sessions and the session-info projection,
    cwd-encoded directories, candidate ordering, delete, and import."
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.session.listing :as listing]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.test-support :as support]
+            [kmet.app.session.listing :as listing]
+            [kmet.app.session.core :as s]
+            [kmet.app.session.test-support :as support]
             [kmet.test-utils :refer [slash]]))
 
 (t/use-fixtures :once support/with-clean-test-dir)

@@ -8,8 +8,8 @@
             [kmet.ai.models :as m]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.driver :as session-driver]
             [kmet.agent.config :as cfg]
             [kmet.test-utils :as tu]))
 

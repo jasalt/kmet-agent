@@ -10,7 +10,7 @@
   (:require [babashka.fs :as fs]
             [clojure.test :as t :refer [deftest is testing]]
             [kmet.agent.config :as cfg]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]

@@ -7,7 +7,7 @@
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
             [kmet.agent.app-runtime :as app-runtime]

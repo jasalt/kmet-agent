@@ -3,8 +3,8 @@
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.export :as se]
+            [kmet.app.session.core :as s]
+            [kmet.app.session.export :as se]
             [kmet.test-utils :refer [slash]]))
 
 (def test-dir "target/test-session-export")

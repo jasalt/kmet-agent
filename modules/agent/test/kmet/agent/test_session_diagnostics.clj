@@ -8,8 +8,8 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [kmet.agent.debug :as debug]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.store :as store]))
+            [kmet.app.session.core :as s]
+            [kmet.app.session.store :as store]))
 
 (defn- scratch []
   (str (fs/create-temp-dir {:dir (System/getenv "TMPDIR")})))

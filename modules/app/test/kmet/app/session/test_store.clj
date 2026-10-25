@@ -1,14 +1,14 @@
-(ns kmet.agent.session.test-store
+(ns kmet.app.session.test-store
   "Storage: honest round-trips (ids, parent chains, UTF-8), the append
    journal, torn-tail repair, session names, bash results, and custom
-   entries. Every case drives the façade (kmet.agent.session.core)."
+   entries. Every case drives the façade (kmet.app.session.core)."
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.test-support :as support]
+            [kmet.app.session.core :as s]
+            [kmet.app.session.test-support :as support]
             [kmet.test-utils :refer [slash]]))
 
 (t/use-fixtures :once support/with-clean-test-dir)

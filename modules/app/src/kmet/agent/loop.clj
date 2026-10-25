@@ -74,7 +74,7 @@
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.tools.run-code :as run-code-tool]
             [kmet.ai.auth :as auth]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.ai.models :as models]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]

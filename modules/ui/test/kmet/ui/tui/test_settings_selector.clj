@@ -12,7 +12,7 @@
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.core :as core]
             [kmet.tui.theme :as th]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.interactive.test-handle-support :as hs]))
 
 ;; The settings panel reads a handle's run options; the fixture installs the

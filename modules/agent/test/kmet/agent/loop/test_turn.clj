@@ -11,7 +11,7 @@
             [kmet.agent.tools.util :as tool-util]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.config :as cfg]

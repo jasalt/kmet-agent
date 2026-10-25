@@ -1,8 +1,8 @@
-(ns kmet.agent.session.lifecycle
+(ns kmet.app.session.lifecycle
   "The session lifecycle on an engine: new, resume, switch, fork, clone and
    branch, with the settle/event sequence around them.
 
-   Below both drivers. `kmet.agent.session.driver` (kmet1's engine) and
+   Below both drivers. `kmet.app.session.driver` (kmet1's engine) and
    `kmet.app.loop.driver`'s handle (kmet2's agent) run these same fns; what a
    front end does *around* a switch — its UI cleanup, its extension install —
    stays the front end's.
@@ -24,8 +24,8 @@
    [kmet.agent.extensions.core :as extensions]
    [kmet.agent.loop :as agent]
    [kmet.agent.loop.state :as loop-state]
-   [kmet.agent.session.core :as session]
-   [kmet.agent.session.runtime :as runtime]
+   [kmet.app.session.core :as session]
+   [kmet.app.session.runtime :as runtime]
    [kmet.agent.skills :as skills]
    [kmet.libs.concurrent :as concurrent]))
 

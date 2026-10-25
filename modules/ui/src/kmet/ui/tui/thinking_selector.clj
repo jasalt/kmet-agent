@@ -9,7 +9,7 @@
   (:require [clojure.string :as str]
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]

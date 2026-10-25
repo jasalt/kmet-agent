@@ -2,7 +2,7 @@
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.ui.tui.footer-data-provider :as fdp]))
 
 (defn- with-session

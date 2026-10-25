@@ -3,7 +3,7 @@
 
    The compaction stage of the agent loop (owner: kmet.agent.compaction.core
    is what compaction is — algorithms, cut point, prompts; this namespace is
-   when the loop runs it; kmet.agent.session.core owns the append-only
+   when the loop runs it; kmet.app.session.core owns the append-only
    compact-with-summary! entry). The session is compacted proactively
    (measured usage vs. the model's context window) and reactively after a
    context-overflow error (compact once, then retry). Compaction summarizes
@@ -22,7 +22,7 @@
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop.completion :as completion]
             [kmet.app.loop.stages :as loop-stages]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.extensions.core :as extensions]
             [kmet.ai.api.shared :as shared]
             [kmet.ai.models :as models]

@@ -21,11 +21,11 @@
             [kmet.agent.packages :as packages]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.project-context :as context]
-            [kmet.agent.session.compaction :as manual]
-            [kmet.agent.session.lifecycle :as lifecycle]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as runtime]
-            [kmet.agent.session.submission :as submission]
+            [kmet.app.session.compaction :as manual]
+            [kmet.app.session.lifecycle :as lifecycle]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.runtime :as runtime]
+            [kmet.app.session.submission :as submission]
             [kmet.agent.tools.registry :as tools]
             [kmet.ai.models :as models]
             [kmet.srce.core :as srce]))
@@ -220,7 +220,7 @@
    reads, the run it owns, and the control surface
    `kmet.app.agents/handle-contract` requires.
 
-   The value is `kmet.agent.session.runtime`'s shape — `:agent-state`,
+   The value is `kmet.app.session.runtime`'s shape — `:agent-state`,
    `:session`, `:config`, `:cwd`, `:turn-running?` — so a front end that reads
    a handle through that namespace's accessors (`model`, `session`,
    `thinking-level`, `compacting?`, `queues`, …) needs no second accessor set.
@@ -266,7 +266,7 @@
         last-run (atom nil)
         disposed? (atom false)
         ;; the front end's value over the agent state: the same field atoms a
-        ;; session engine holds, so `kmet.agent.session.runtime` reads it and
+        ;; session engine holds, so `kmet.app.session.runtime` reads it and
         ;; the settings ops below write it without a second derivation
         engine (runtime/map->Engine
                 {:agent-state live

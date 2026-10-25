@@ -15,9 +15,9 @@
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.test-utils :as tu]))

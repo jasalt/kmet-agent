@@ -5,9 +5,9 @@
             [kmet.agent.commands :as commands]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session.driver :as session-driver]
-            [kmet.agent.session.lifecycle :as lifecycle]
-            [kmet.agent.session.runtime :as rt]
+            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.lifecycle :as lifecycle]
+            [kmet.app.session.runtime :as rt]
             [kmet.agent.skills :as skills]
             [kmet.tui.utils :as u]))
 

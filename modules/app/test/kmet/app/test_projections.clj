@@ -3,8 +3,8 @@
    fact, a delivery consumes it), the turn boundaries, the token meter, and the
    incremental fold behind all three."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.session.context :as context]
-            [kmet.agent.session.stats :as stats]
+            [kmet.app.session.context :as context]
+            [kmet.app.session.stats :as stats]
             [kmet.app.projections :as projections]
             [kmet.app.sessions :as sessions]
             [kmet.srce.core :as srce]))

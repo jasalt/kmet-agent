@@ -7,7 +7,7 @@
 
 (defn- persistence-row
   "A `:sessionPersistence` row over the in-process backend, provided into the
-   mount site's scope — what `kmet.agent.session.backend/ednl`'s row does for
+   mount site's scope — what `kmet.app.session.backend/ednl`'s row does for
    real files."
   []
   {:name :sessionPersistence

@@ -1,4 +1,4 @@
-(ns kmet.agent.session.submission
+(ns kmet.app.session.submission
   "The front end's submission chain, below both drivers.
 
    pi: `session.prompt`'s input event — a submitted text runs the extension
@@ -8,15 +8,15 @@
    answer the same way; what differs is *how* a delivery happens, so that is
    the parameter (`:deliver!` for a submit, `:start!` for a queue flush).
  
-   Nothing here requires `kmet.agent.session.driver` or the loop driver: the
+   Nothing here requires `kmet.app.session.driver` or the loop driver: the
    driver and the handle both call it, and it must stay below both."
   (:require [clojure.string :as str]
             [kmet.agent.commands :as commands]
             [kmet.agent.debug :as debug]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.session.compaction :as manual]
-            [kmet.agent.session.runtime :as runtime]))
+            [kmet.app.session.compaction :as manual]
+            [kmet.app.session.runtime :as runtime]))
 
 (defn- split-command
   "Split a slash-command line into [name args]. Non-command text returns

@@ -7,7 +7,7 @@
       :get-argument-completions optional (fn [arg-prefix] -> items)
       :handler (fn [ctx args] ...)}
    Handlers receive the command context: :runtime (the
-   kmet.agent.session.runtime engine), :ui (the front end's command-UI value)
+   kmet.app.session.runtime engine), :ui (the front end's command-UI value)
    and :frontend (the front-end kind). Engine work calls the runtime; output
    and view work go through the UI value: the shared capabilities are
    :message (assistant transcript line), :info (fn [label content]),

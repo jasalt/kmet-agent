@@ -1,5 +1,5 @@
 (ns kmet.agent.test-session-runtime
-  "Tests for kmet.agent.session.runtime: the engine front ends drive, and
+  "Tests for kmet.app.session.runtime: the engine front ends drive, and
    the front-end surface (state accessors + operations) modes and app UI
    use to read and drive it."
   (:require [babashka.fs :as fs]
@@ -13,10 +13,10 @@
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
             [kmet.agent.app-runtime :as app]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.skills :as skills]
-            [kmet.agent.session.driver :as session-driver]
-            [kmet.agent.session.runtime :as rt]
+            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.runtime :as rt]
             [kmet.agent.tools.invoke :as invoke]
             [kmet.agent.tools.registry :as tools-reg]
             [kmet.ai.models :as models]

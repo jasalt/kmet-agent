@@ -9,10 +9,10 @@
    log with no storage layer is not a second thing, it is a bug.
 
    The **handle is the backend's** and the app never looks inside it. That is
-   what lets the EDNL store (today `kmet.agent.session.*`, rank 4, so the row
+   what lets the EDNL store (today `kmet.app.session.*`, rank 4, so the row
    that mounts it ships from `agent`) and the in-process `memory-backend` here
-   answer one contract; `kmet.agent.session.backend` is the EDNL one and
-   `kmet.agent.session.test-contract` runs one set of assertions against both.
+   answer one contract; `kmet.app.session.backend` is the EDNL one and
+   `kmet.app.session.test-contract` runs one set of assertions against both.
    The ops are values, not a protocol, for the reason `new-app.md` gives for
    `:sessions`: a backend is a plugin that provides this key.
 
@@ -29,7 +29,7 @@
      file exists), so a session that never got an answer leaves no litter.
 
    One delta is deliberate and temporary: the EDNL backend stamps
-   `:result-tokens` on tool entries (it is `kmet.agent.session.store`'s append
+   `:result-tokens` on tool entries (it is `kmet.app.session.store`'s append
    policy today). The contract does not assert on tool entries, so the two
    backends agree on everything the contract covers; the stamping moves into
    this namespace with the layer itself (4c-i), where derived state over the log

@@ -10,7 +10,7 @@
    (settings.edn :loop-guard — enabled / threshold, plus the thinking
    repeat guard toggle), the HTTP transport row (:platform http-client vs
    :curl, applied live to kmet.libs.http), and a theme row."
-  (:require [kmet.agent.session.runtime :as runtime]
+  (:require [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ai.models :as models]
             [kmet.ui.tui.chat-history :as chat-history]

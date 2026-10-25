@@ -7,7 +7,7 @@
             [babashka.fs :as fs]
             [kmet.agent.compaction.stage :as stage]
             [kmet.agent.loop :as loop]
-            [kmet.agent.session.core :as session]))
+            [kmet.app.session.core :as session]))
 
 (defn- with-session-agent
   "Run F with a fresh session and an agent over it that keeps a tiny recent

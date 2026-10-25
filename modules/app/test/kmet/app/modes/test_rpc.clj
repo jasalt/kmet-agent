@@ -12,7 +12,7 @@
             [clojure.test :refer [deftest is]]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.ai.models :as models]
             [kmet.app.modes.rpc :as rpc]
             [kmet.app.test-support :as support :refer [answering

@@ -1,4 +1,4 @@
-(ns kmet.agent.session.backend
+(ns kmet.app.session.backend
   "The EDNL session backend — `kmet.app.sessions`' `:sessionPersistence`
    contract over kmet1's store.
 
@@ -6,7 +6,7 @@
    answers it (`store/create-session`, `store/load-session`, `store/append-entry`,
    `listing/list-sessions`, `listing/delete-session!`), so the file format,
    the torn-tail repair, the lazy first write and the branch chain stay where
-   they are implemented. The handle is `kmet.agent.session.store/Session`; the
+   they are implemented. The handle is `kmet.app.session.store/Session`; the
    app never looks inside it.
 
    The file moved into `app` with the session layer it names — the module
@@ -17,8 +17,8 @@
    site's scope, where the `:sessions` row next to it injects it. A second
    backend is a second row providing the same key, never a change to `:sessions`
    (`new-app.md` § Service catalog)."
-  (:require [kmet.agent.session.listing :as listing]
-            [kmet.agent.session.store :as store]
+  (:require [kmet.app.session.listing :as listing]
+            [kmet.app.session.store :as store]
             [kmet.srce.core :as srce]))
 
 (defn ednl

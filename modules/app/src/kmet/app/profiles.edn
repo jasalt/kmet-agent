@@ -30,7 +30,7 @@
           ;; The session log and its storage backend: EDNL files, one log per
           ;; context. :sessions injects :sessionPersistence, so the pair is
           ;; active whichever order the rows mount in.
-          {:id :session-persistence :plugin kmet.agent.session.backend/plugin}
+          {:id :session-persistence :plugin kmet.app.session.backend/plugin}
           {:id :sessions :plugin kmet.app.sessions/plugin}
           ;; Derived state over the log: the durable inbox (a queued message is
           ;; a log fact, not a second in-memory list), the turn boundaries and

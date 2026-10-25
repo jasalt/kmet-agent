@@ -4,10 +4,10 @@
    kmet.error.log is always written on unhandled errors.
 
    The switch means *all* diagnostics, not just the log file: it also turns on
-   the session loader's wrong-shape reporting (`kmet.agent.session.store`),
+   the session loader's wrong-shape reporting (`kmet.app.session.store`),
    which is why this namespace names that layer. One switch owned in one place,
    rather than every `--debug` consumer remembering to flip its own."
-  (:require [kmet.agent.session.store :as session-store]))
+  (:require [kmet.app.session.store :as session-store]))
 
 (defonce ^:private log-path "debug.log")
 (defonce ^:private error-path "kmet.error.log")

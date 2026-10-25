@@ -1,6 +1,6 @@
 (ns kmet.agent.test-session-schema
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.session.schema :as ss]))
+            [kmet.app.session.schema :as ss]))
 
 (deftest valid-session-role-passes
   (testing "a representative user entry validates"

@@ -4,7 +4,7 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]
             [kmet.agent.loop.test-support :as support]

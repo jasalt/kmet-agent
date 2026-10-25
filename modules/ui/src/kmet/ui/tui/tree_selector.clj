@@ -17,8 +17,8 @@
    the chosen entry — the caller performs the branch."
   (:require [clojure.string :as str]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.agent.config :as cfg]

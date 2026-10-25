@@ -76,7 +76,7 @@ a time, snapshotting render output.
 
 ## Carry-overs
 
-1. ~~**Façade stubbing is not universal.**~~ Landed: `kmet.agent.session.core`
+1. ~~**Façade stubbing is not universal.**~~ Landed: `kmet.app.session.core`
    re-exports 63 vars as `(def name impl/name)`; `modules/agent/src/kmet/README.md`
    § Session storage façade now records that the aliases capture values at load
    time and that a `with-redefs` on a façade alias cannot intercept the

@@ -9,7 +9,7 @@
             [kmet.ai.models :as models]
             [kmet.agent.keybindings :as app-kb]
             [kmet.agent.model-resolver :as resolver]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.model-catalog :as model-catalog]

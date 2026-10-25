@@ -14,8 +14,8 @@
    replaces and `find-command` will not see it."
   (:require [babashka.fs :as fs]
             [kmet.agent.extensions.core :as extensions]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.runtime :as runtime]
             [kmet.app.core :as core]
             [kmet.app.runtime :as runtime-app]
             [kmet.srce.core :as srce]

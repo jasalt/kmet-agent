@@ -8,10 +8,10 @@
             [kmet.agent.debug :as debug]
             [kmet.agent.commands :as commands]
             [kmet.agent.loop.state :as loop-state]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.export :as session-export]
-            [kmet.agent.session.driver :as session-driver]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.export :as session-export]
+            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.runtime :as runtime]
             [kmet.app.inspect :as inspect]))
 
 (defn- out

@@ -1,12 +1,12 @@
-(ns kmet.agent.session.test-facade
-  "Guard: kmet.agent.session.core is the public API its dependents require.
+(ns kmet.app.session.test-facade
+  "Guard: kmet.app.session.core is the public API its dependents require.
 
    The implementation is split across session.{store,listing,context,stats,tree}
    with core as a compatibility façade; this pins the façade exactly, so an
    extraction cannot silently drop a function callers still use (or leak an
    implementation var into the public surface)."
   (:require [clojure.test :refer [deftest is testing]]
-            [kmet.agent.session.core :as session]))
+            [kmet.app.session.core :as session]))
 
 (def ^:private public-fns
   '#{append-context-edit! append-custom-entry! append-custom-message-entry!
@@ -32,4 +32,4 @@
 
 (deftest public-surface-is-pinned
   (testing "the façade exposes exactly the functions dependents require"
-    (is (= public-fns (set (keys (ns-publics 'kmet.agent.session.core)))))))
+    (is (= public-fns (set (keys (ns-publics 'kmet.app.session.core)))))))

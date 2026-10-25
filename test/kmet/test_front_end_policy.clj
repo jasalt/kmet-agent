@@ -102,7 +102,7 @@
     (t/is (some #(str/includes? % "/interactive/layout.clj") files)
           "and the interactive cluster is scanned")
     (doseq [path files]
-      (t/is (not (contains? (ns-requires path) 'kmet.agent.session.driver))
+      (t/is (not (contains? (ns-requires path) 'kmet.app.session.driver))
             (str path " requires kmet1's session driver — the TUI reads a"
                  " handle and the shared lifecycle, not the engine constructor"
                  " that dies with kmet1's entry (T-4)")))))

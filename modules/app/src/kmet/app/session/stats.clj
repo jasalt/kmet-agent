@@ -1,11 +1,11 @@
-(ns kmet.agent.session.stats
+(ns kmet.app.session.stats
   "Session statistics: usage and token attribution, message counts, prompt
    history, last activity, and the per-session summary. Read-only over
-   kmet.agent.session.store and kmet.agent.session.context."
+   kmet.app.session.store and kmet.app.session.context."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.session.context :as context]
-            [kmet.agent.session.store :as store]
+            [kmet.app.session.context :as context]
+            [kmet.app.session.store :as store]
             [kmet.ai.usage :as usage]))
 
 (defn tool-usage

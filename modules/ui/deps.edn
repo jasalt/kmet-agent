@@ -6,7 +6,7 @@
  ;; mode (`kmet.ui.tui.interactive`), the mode row and terminal `:ui` provider
  ;; (`kmet.ui.tui`), and the config command. The interactive cluster owns a run
  ;; and therefore drives the session driver; every widget reads the engine value
- ;; (`kmet.agent.session.runtime`) and never the machinery that starts work (the
+ ;; (`kmet.app.session.runtime`) and never the machinery that starts work (the
  ;; layer guard's `:ui` rule holds that split, and skips the cluster's files by
  ;; path).
  ;;

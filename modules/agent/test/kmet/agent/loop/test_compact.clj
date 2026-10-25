@@ -8,7 +8,7 @@
             [kmet.ai.models :as models]
             [kmet.ai.usage :as usage]
             [kmet.agent.event-bus :as event-bus]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.compaction.stage :as compact]
             [kmet.agent.loop.state :as state]
             [kmet.agent.loop :as loop]

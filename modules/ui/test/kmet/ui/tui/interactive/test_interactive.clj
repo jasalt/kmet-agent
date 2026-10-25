@@ -21,7 +21,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.loop.state :as loop-state]
             [kmet.agent.loop :as agent]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.agent.tools.core :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
@@ -53,9 +53,9 @@
             [kmet.tui.timers :as timers]
             [babashka.fs :as fs]
             [babashka.process :as proc]
-            [kmet.agent.session.export :as session-export]
+            [kmet.app.session.export :as session-export]
             [clojure.string :as str]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.test-utils :as tu]))
 

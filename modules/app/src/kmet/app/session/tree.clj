@@ -1,10 +1,10 @@
-(ns kmet.agent.session.tree
+(ns kmet.app.session.tree
   "Session tree operations: branch summaries, labels, the tree projection
    the UI renders, and fork/clone/fork-from."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.session.context :as context]
-            [kmet.agent.session.store :as store]))
+            [kmet.app.session.context :as context]
+            [kmet.app.session.store :as store]))
 
 (defn common-ancestor-id
   "The deepest entry on both the OLD-LEAF-ID and TARGET-ID paths (pi:

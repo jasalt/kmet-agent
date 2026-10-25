@@ -1,11 +1,11 @@
-(ns kmet.agent.session.test-stats
+(ns kmet.app.session.test-stats
   "Statistics: prompt history, message counts, usage totals, and per-tool
    token attribution."
   (:require [clojure.test :as t]
             [clojure.string :as str]
             [babashka.fs :as fs]
-            [kmet.agent.session.core :as s]
-            [kmet.agent.session.test-support :as support]))
+            [kmet.app.session.core :as s]
+            [kmet.app.session.test-support :as support]))
 
 (t/use-fixtures :once support/with-clean-test-dir)
 

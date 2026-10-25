@@ -8,8 +8,8 @@
    fork (pi: the component emits the selection, interactive-mode forks)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.subs :as s]

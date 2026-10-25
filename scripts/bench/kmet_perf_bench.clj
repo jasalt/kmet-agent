@@ -197,9 +197,9 @@
                      label (count texts) chars blocks ms (/ (* ms 1000.0) (max 1 chars))))))
 
 (defn md-session [file]
-  (require 'kmet.agent.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive
+  (require 'kmet.app.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive
            'kmet.agent.tools.core)
-  (let [session ((resolve 'kmet.agent.session.core/load-session) file)
+  (let [session ((resolve 'kmet.app.session.core/load-session) file)
         ch ((resolve 'kmet.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded
                                                     :tool-fn (resolve 'kmet.agent.tools.core/get-tool))
         cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})]
@@ -213,9 +213,9 @@
 ;; ─── Kitty-image whole-document scan cost (the diff hot path) ───────────────
 
 (defn kitty-scan [file]
-  (require 'kmet.agent.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive 'kmet.tui.core
+  (require 'kmet.app.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive 'kmet.tui.core
            'kmet.libs.terminal-image)
-  (let [session ((resolve 'kmet.agent.session.core/load-session) file)
+  (let [session ((resolve 'kmet.app.session.core/load-session) file)
         ch ((resolve 'kmet.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded
                                                     :tool-fn (resolve 'kmet.agent.tools.core/get-tool))
         cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})

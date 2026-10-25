@@ -18,9 +18,9 @@
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]
             [kmet.agent.prompts :as prompts]
-            [kmet.agent.session.core :as session]
-            [kmet.agent.session.driver :as session-driver]
-            [kmet.agent.session.runtime :as runtime]
+            [kmet.app.session.core :as session]
+            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.runtime :as runtime]
             [kmet.agent.app-runtime :as app-runtime]
             [kmet.agent.skills :as skills]
             [kmet.agent.config :as cfg]))

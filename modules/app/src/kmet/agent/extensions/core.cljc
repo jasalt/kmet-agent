@@ -63,7 +63,7 @@
             [kmet.agent.event-bus :as event-bus]
             [kmet.agent.extensions.context :as context]
             [kmet.agent.registry :as registry]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.agent.tools.registry :as tools]
             [kmet.agent.tools.bash :as bash-tool]
             [kmet.agent.config :as cfg]
@@ -196,7 +196,7 @@
      :session  — a thunk returning the run's live session (a session switch
                  replaces the record behind it)
      :runtime  — the runtime capabilities this agent answers (see
-                 `runtime-capabilities` in `kmet.agent.session.driver`); a
+                 `runtime-capabilities` in `kmet.app.session.driver`); a
                  missing key falls back to the process binding
      :context  — a thunk of the ExtensionContext keys the run owns (:model,
                  :scoped-models, :thinking-level, :cwd, :is-idle, :abort,
@@ -693,7 +693,7 @@
 (def request-pending
   "Port return marker: the request was forwarded to an asynchronous client
    (or an in-process dialog that has not resolved yet) and is answered
-   later with kmet.agent.session.driver/respond!."
+   later with kmet.app.session.driver/respond!."
   ::pending)
 
 (defn ui-request-default

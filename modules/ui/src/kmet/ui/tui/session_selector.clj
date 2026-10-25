@@ -24,7 +24,7 @@
             [babashka.process :as proc]
             [clojure.string :as str]
             [kmet.agent.keybindings :as app-kb]
-            [kmet.agent.session.core :as session]
+            [kmet.app.session.core :as session]
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.subs :as s]
