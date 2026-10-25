@@ -225,8 +225,10 @@
                                  " :streaming-behavior :steer or :follow-up"))
 
             running?
-            (do (enqueue! state behavior (packages/expand-input text))
-                (ok :prompt {:disposition :queued}))
+            ;; the answer is what the enqueue did: the flag was read a moment
+            ;; ago, and a run that settled since then starts the message instead
+            (ok :prompt {:disposition (enqueue! state behavior
+                                                (packages/expand-input text))})
 
             :else
             (let [{:keys [action]}
@@ -241,10 +243,8 @@
                                       :record? true
                                       :run-opts (when (seq (:images command))
                                                   {:images (:images command)})})]
-              (ok :prompt {:disposition (case action
-                                          :started :started
-                                          :handled :handled
-                                          :queued)}))))
+              ;; the chain's action is the wire's disposition
+              (ok :prompt {:disposition action}))))
       (failed :prompt "prompt requires a non-empty :message string"))))
 
 (defn- command-queue
@@ -813,5 +813,5 @@
 
 (srce/defplugin plugin
   {:name :mode-rpc
-   :inject [:agents :sessions :ui]
+   :inject [:agents :ui]
    :apply serve})

@@ -323,13 +323,11 @@
   [ctx config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
-        sessions (srce/get ctx :sessions)
         {:keys [on-result port]} config]
     (when on-result
       (let [q (concurrent/queue)
             server {:q q
                     :agents agents
-                    :sessions sessions
                     :scope scope
                     :config config
                     ;; the connection table and the dialogs it owes live here,
@@ -361,5 +359,5 @@
 
 (srce/defplugin plugin
   {:name :mode-server
-   :inject [:agents :sessions]
+   :inject [:agents]
    :apply serve})

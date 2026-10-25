@@ -61,8 +61,10 @@ consumers watch `:message-update` deltas and stop at `:agent-settled`, whose
 - **A command failure is a response, a run failure is an event.** A rejected
   command answers `:success false :error "..."`; a crashing run settles with
   `outcome :error` and its error reaches the stream (and the session).
-- **Commands are served serially.** A blocking command (`abort`,
-  `new-session`) delays the next line; run work streams on its own thread.
+- **Commands are served serially.** A command that settles a run
+  (`new-session`, `switch-session`) delays the next line until it has;
+  `abort` does not — it answers a read and the client waits for
+  `:agent-settled`. Run work streams on its own thread.
 - **stdin EOF requests shutdown.** The engine cancels an in-flight run,
   streams its terminal `:agent-settled` (`:aborted`), then disposes and
   exits 0. The session file is appended as entries stream, so an abrupt exit
@@ -303,8 +305,8 @@ Known differences to account for in a client:
   the submit path) and reject `:images` until the queues carry image blocks.
 - `get_state`'s model is the id plus provider, not a full model object;
   `get_available_models` fills that in.
-- Commands are served serially, so a blocking `abort`/`new_session` delays
-  the next line.
+- Commands are served serially: `new_session`/`switch_session` wait for the
+  run they settle, while `abort` answers immediately and reports `:idle`.
 - `compact` answers `:accepted` and reports the outcome via events rather
   than awaiting a `CompactionResult` in the response.
 - No SIGTERM/SIGHUP handlers; end with stdin EOF.
