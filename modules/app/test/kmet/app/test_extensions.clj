@@ -10,13 +10,17 @@
             [kmet.srce.core :as srce]))
 
 (defn- with-restored-host
-  "Run F with the host unbound, restoring whatever was bound before: the
-   binding is process-wide and one owner at a time, so a test that leaves it
-   unbound hands the next owner a host that refuses to work."
+  "Run F with the host unbound and no process handle published, restoring both
+   afterwards: the binding and the published handle are process-wide and one
+   owner at a time, so a test that leaves either behind hands the next owner a
+   stale tree."
   [f]
-  (let [previous (extensions/bind-services! nil)]
+  (let [previous (extensions/bind-services! nil)
+        published (registry/publish-process-handle! nil)]
     (try (f)
-         (finally (extensions/bind-services! previous)))))
+         (finally
+           (extensions/bind-services! previous)
+           (registry/publish-process-handle! published)))))
 
 (defn- mounted
   "A root with the host's row mounted, as the composition mounts it."

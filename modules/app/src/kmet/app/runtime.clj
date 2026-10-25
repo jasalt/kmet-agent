@@ -189,8 +189,7 @@
         (srce/log! ctx :error "two plugins declare one event differently" c))
       (throw (ex-info (str "kmet2 boot failed: conflicting event declarations "
                            (str/join ", " (map (comp pr-str :event) conflicts)))
-                      {:type :kmet.app/event-conflict :conflicts conflicts}))))
-  true)
+                      {:type :kmet.app/event-conflict :conflicts conflicts})))))
 
 (defn boot
   "Mount COMPOSED's rows under a fresh root ctx and return `{:ctx :fibers

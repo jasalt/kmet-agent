@@ -3504,7 +3504,7 @@ five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
 
-`modules/agent/src` is 21 files and 7,340 lines, and every one of them is
+`modules/agent/src` is 21 files and 7,327 lines, and every one of them is
 either kmet1's to delete or blocked on an edge that is now one call deep:
 
 | Block | Files | Lines | Edges that hold it | Cut |
@@ -3513,7 +3513,7 @@ either kmet1's to delete or blocked on an edge that is now one call deep:
 | kmet2's TUI row (`modes/tui.clj`) | 1 | 100 | none — the process world the entry loaded arrives as the row's `:config` | the file moves to `ui` at 5l-iii |
 | the `config` front end (`modes/config_command.clj`) | 1 | 57 | — | moves to `ui`: `kmet config` is a shared command, not kmet1's — the screen it hosts is already `kmet.ui.tui.resource-config`, and kmet2's entry resolves the command by name |
 | kmet1's own modes (`print`, `rpc`, `rpc_client`) | 3 | 1,150 | — | deleted at retirement, untouched until then |
-| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `extensions/services`, `tools/core`) | 6 | 887 | — | deleted at retirement; both successors landed at 5l-ii: `kmet.app.root` for the process root, `kmet.app.registries/process-handle` for the registry routing |
+| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `extensions/services`, `tools/core`) | 6 | 813 | — | deleted at retirement; both successors landed at 5l-ii: `kmet.app.root` for the process root, `kmet.app.registries/process-handle` for the registry routing |
 
 Three things are missing rather than blocked, and they are the rest of the plan:
 
@@ -3654,9 +3654,9 @@ so every profile has extensions, themes and the loaded catalogs the way kmet1's
 
 **Landed so far (5l-ii-a) — the body, and the root it publishes onto.**
 `kmet.app.world/load!` owns the load; `cli/load-world!` is a one-line delegate,
-so kmet1's call sites and the TUI row are unchanged while the entry wiring
-follows. The move needed two supporting pieces, and each is a leak the old
-location was hiding:
+so kmet1's call sites and the TUI row stayed unchanged until 5l-ii-b rewired
+them. The move needed two supporting pieces, and each is a leak the old location
+was hiding:
 
 - `kmet.tui.theme` moved to `libs`, its name kept. The load (in `app`, rank 2)
   reads `load-theme-paths!`, and the components that style themselves (`tui`,
@@ -3695,16 +3695,14 @@ The gate: a pty capture on `--app new` lists the extensions in the startup block
 first model call can only come after the load, and the load sees the tree's
 `:agents` row already mounted.
 
-**The entry owns the load order, and the flags bracket it.**
-`kmet.app.core/run-process` loads the provider catalogs *before* `main` parses,
-and the TUI row loads them again inside `load-world!`; 5l-ii leaves **one**
-load, on the entry side — `load-catalog!` retires into it, because a second copy
-is what makes the order ambiguous. The flags that surround it keep their sides:
-`-d`/`--debug` is applied before it (5n's gate: the catalog trail has to be in
-the log), `--generate-models` writes both user caches and exits before it, and
-`--list-models` prints after it, since the table it prints includes the
-extension providers the load installed. `run-process` stays the seam a test can
-call: flags first, then the world, then the run.
+**The entry owns the load order, and the flags bracket it.** There is **one**
+load now: `world/load!` runs inside `run-mode`, after the boot and before the
+mode mounts; `load-catalog!` retired into it, and `run-process` has no pre-load
+work. 5n puts the flags around it: `-d`/`--debug` applied on the `run-process`
+side (so the catalog trail is in the log), `--generate-models` writing both user
+caches and exiting there, and `--list-models` printing after the load — its
+table includes the extension providers the load installed. `run-process` stays
+the seam a test can call: flags first, then the world, then the run.
 
 **Landed (5l-ii-c) — one publisher.** `kmet.app.registries` now owns the
 tag→service table (`registry-tags`) and `process-handle`, a router over the
@@ -3737,7 +3735,7 @@ run has (an extension's hook fires in both — the pty captures of `--app old` a
 extension suites).
 
 **5l-iii: the cluster moves.** The 10 interactive files (5,207) and `tui.clj`
-(63) become `kmet.ui.tui.interactive.*` and `kmet.ui.tui` (the provider and the
+(100) become `kmet.ui.tui.interactive.*` and `kmet.ui.tui` (the provider and the
 mode row, one namespace), and `modes/config_command.clj` (57) becomes
 `kmet.ui.tui.config-command` with `kmet.app.core/run-config` resolving the new
 name; the seams land in the same commit as the move because they are the edits

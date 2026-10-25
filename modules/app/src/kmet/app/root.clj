@@ -6,8 +6,8 @@
    itself (`--app new`) publishes *its* root here, so a process has one tree —
    the one it mounted — instead of a shim booting a second one behind it. The
    first root wins; a test that publishes its own puts the previous one back
-   (`reset-root!`/`restore-root!`) rather than clearing it, because the root carries the
-   process's registrations.")
+   (`reset-root!`/`restore-root!`) rather than clearing it, because the root
+   carries the process's registrations.")
 
 (defonce ^:private app-root (atom nil))
 
@@ -33,12 +33,12 @@
 
 (defn boot!
   "The process root, booting and publishing one when the process has none
-   yet: BOOT! is called at most once, under the atom's lock, so two readers
+   yet: BOOT-FN is called at most once, under the atom's lock, so two readers
    racing the first read mount one tree."
-  [boot!]
+  [boot-fn]
   (or (ctx)
       (locking app-root
-        (or (ctx) (publish! (boot!))))))
+        (or (ctx) (publish! (boot-fn))))))
 
 (defn reset-root!
   "Clear the process root and return what it was.

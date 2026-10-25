@@ -6,10 +6,11 @@
    An entry loads it **once**, after the composition that hosts the registries
    is mounted and before a mode mounts, so every profile has the extensions,
    themes and catalogs kmet1's `-main` gives every mode. The order inside is
-   load-bearing: providers before config (so `--model` and settings.edn can
-   select an extension-registered provider), extensions before themes (the
-   packages resolve the theme paths), and the flags last (their registrations
-   are the ones the parse collected)."
+   load-bearing: the provider catalogs and models.edn come first, so the model
+   patterns the run resolves afterwards see both the built-ins and the user's
+   providers; extensions load before the themes (the packages resolve the theme
+   paths); and the CLI flags are last, because their registrations are the ones
+   the parse collected."
   (:require [kmet.agent.config :as cfg]
             [kmet.agent.extensions.core :as extensions]
             [kmet.agent.packages :as packages]

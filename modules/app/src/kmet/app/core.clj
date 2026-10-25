@@ -359,9 +359,11 @@
    (`:models`), its prompt and session-dir overrides (`:system-prompt`,
    `:append-system-prompt`, `:session-dir`), the socket `:port`, and the session
    the run opens (`:session`, `:resume`, `:continue`, in kmet1's spelling
-   because the TUI row hands them to kmet1's `interactive/run`). A value the
-   invocation did not give stays absent (`select-keys`), so a mode sees what was
-   asked for rather than a map of every option it could have been told."
+   because the TUI row hands them to kmet1's `interactive/run`), and the process
+   world's loaded config (`:config`, which the TUI drives `interactive/run`
+   with). A value the invocation did not give stays absent (`select-keys`), so a
+   mode sees what was asked for rather than a map of every option it could have
+   been told."
   [opts config prompt on-result]
   (cond-> (assoc (select-keys opts [:format :model :provider :thinking :models
                                     :system-prompt :append-system-prompt

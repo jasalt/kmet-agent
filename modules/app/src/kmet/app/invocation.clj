@@ -7,9 +7,10 @@
    flags — thinking, the system prompt, the session dir — to the loaded config
    (`cfg/apply-cli-overrides`, which every front end calls). kmet2 keeps the
    same split, one namespace down: `resolve-overrides` is the entry's half —
-   patterns become the catalog's ids before anything boots — and `create-opts`
-   is a mode's, the map `create!` takes so the driver applies the overrides to
-   the settings it loads.
+   patterns become the catalog's ids after the process world loads (an
+   extension provider is a catalog entry only then) and before the mode mounts —
+   and `create-opts` is a mode's, the map `create!` takes so the driver applies
+   the overrides to the settings it loads.
 
    Both are pure over their inputs; the catalog is `kmet.ai.models`', as it is
    for kmet1. The session-lifecycle flags are absent on purpose: which session a
@@ -38,8 +39,9 @@
     (println "Warning:" message)))
 
 (defn resolve-overrides
-  "OPTS with kmet1's two model flags resolved against the catalog, before
-   anything boots.
+  "OPTS with kmet1's two model flags resolved against the catalog — after the
+   process world loads, so an extension-registered provider is a catalog entry,
+   and before the mode mounts.
 
    `--model` is a pattern (`provider/model[:thinking]`, the provider inferred
    when absent) and becomes the provider it names, the catalog's model id, and

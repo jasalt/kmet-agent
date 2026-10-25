@@ -1,38 +1,38 @@
 (ns kmet.app.extensions
-  "The extension host as a plugin: what a run's hooks resolve through.
+  "The extension host as a plugin: what a run's hooks resolve through, and the
+   process's registry handle.
 
    The host lives in `modules/app/src/kmet/agent/extensions` and may not
    require what owns its registries, so it takes them as a value
    (`kmet.agent.extensions.core/bind-services!`): a registry handle for its own
    tags — hooks, renderers, flags, the UI port — and the ctx an extension's
    `:inject` mounts under. This row binds both from the composition it runs in.
-   It provides no service: the binding *is* the effect, and the handle becomes a
-   service when something reads it (the modes' UI at landing 5), not before.
 
-   The binding **overlays** what it replaces: this row's `:registry` and `:ctx`
-   win, and every other key the previous owner bound carries over. That is what
-   keeps a process host working — kmet1 binds the host at load with the resource
-   registries its extension installers write to, and it boots this same
-   composition as its root, so a row that replaced the whole binding would take
-   commands, prompts and skills away from every extension loaded afterwards
-   (`:kmet/no-resource-registries`, reported as a failed extension).
+   **It owns the process handle.** The row publishes
+   `(kmet.app.registries/process-handle scope)` as
+   `kmet.agent.registry/current` and binds the complete service map the host
+   reads — the handle, the ctx, the three resource operations and the owner
+   sweep — so an extension's command is the `:commands` service the run reads,
+   and unloading it sweeps the same handle it registered through. It provides no
+   ctx service: the binding and the publication are the effect.
 
-   A composition that inherits no resource registries has none: in a kmet2
-   process installing an extension is still kmet1's, and those registries'
-   loaders are policy the modes take with them (landing 5). A contribution with
-   nowhere to go is refused by name instead of dropped.
+   Before 5l-ii the host bound one handle and kmet1's shim built another over
+   two remainders, so a registration made through one was invisible to a reader
+   of the other. The row replaces the binding it finds (kmet1's process host
+   included) rather than overlaying it: it supplies every key the host reads, and
+   kmet1's base binding remains only for the window before the root mounts.
 
-   **Tool registrations are routed, not held.** A tool — or a run_code-only
-   tool source — an extension registers is read through the composition's
-   `:tools` service (the loop's tool table, the `/tools` selector, run_code's
-   surface). The row's own handle would hold them where no reader looks, so the
-   host's `:registry` is a tag router: `:kmet/tool` and `:kmet/tool-source` go
-   to the composition's `:tools` service, every other host tag (hooks,
-   renderers, flags, the UI port, themes) stays in this row's handle.
+   **Every registration is routed, not held.** Tools and run_code-only tool
+   sources go to the composition's `:tools` service (the loop's tool table, the
+   `/tools` selector, run_code's surface), commands, prompts and skills to their
+   services, and every other host tag (hooks, renderers, flags, the UI port,
+   themes) stays in the handle's remainder. The routing table is
+   `kmet.app.registries/registry-tags`, one place for both the host and the
+   shim.
 
    The binding is process-wide and one owner at a time, so disposing this row
-   puts back what it replaced — a second composition (or a test) cannot leave
-   the host pointing at a dead root."
+   puts back both what it bound and what it published — a second composition
+   (or a test) cannot leave the host pointing at a dead root."
   (:require [kmet.agent.extensions.core :as extensions]
             [kmet.agent.registry :as registry]
             [kmet.app.registries :as registries]

@@ -263,11 +263,11 @@
    sweeps. The resources an extension contributes (commands, prompts, skills)
    live in its owner's registries, not here: those go through the bound
    :deregister-owner! (see `unload-extension!`), whose list is
-   `kmet.agent.extensions.services/resource-tags`.
+   `kmet.app.registries/resource-tags`.
 
-   Public because the two lists plus that one must equal the tags kmet1 routes
-   (`kmet.agent.app-runtime/registry-tags`); a test holds them to it, since a
-   forgotten tag leaks silently."
+   Public because the two lists plus that one must equal the tags the process
+   handle routes (`kmet.app.registries/registry-tags`); a test holds them to
+   it, since a forgotten tag leaks silently."
   [:kmet/hook :kmet/entry-renderer :kmet/message-renderer :kmet/flag
    :kmet/ui-port :kmet/theme :kmet/tool :kmet/tool-source])
 
