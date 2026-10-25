@@ -881,7 +881,7 @@ Each is independently shippable and gated.
 | 7b-ii | **landed** — presets are bundles: one composition language, two mount points. `runtime/mount-rows!` is the mount loop `boot` and a preset share, `kmet.app.presets` mounts a *bundle* under an agent's child ctx, and `:agents/create!` gained the `:setup` seam that runs between the child ctx and the factory — so per-agent composition happens before an agent exists, and a setup that throws rolls the ctx back the way a failing factory does. `:bundle/gated` (the policy row) is a bundle a profile stacks and a preset mounts; `:rpc-ask` is the profile that stacks it | pi-alignment green (no pi feature line moves: this is composition machinery); a tool swaps mid-session at the turn boundary — met by `a-tool-swaps-at-the-turn-boundary`; a profile stacking a preset bundle boots — met by `a-profile-may-stack-a-preset-bundle` + `a-preset-composes-one-agents-world`; see § "Landing 7b-ii" |
 | 5k | **landed** — the `:ui` capability contract and its headless provider: `kmet.app.ui` (four required keys, checked at the mount, plus the ABI `:port` a mode binds), `kmet.ui.headless`, `:bundle/headless`, and print/rpc binding the port (the server stacks the bundle but binds none until 8's per-agent surface); § "The remaining plan" | every shipped provider answers `:kind :render-tree :request! :capabilities`; a mode's `(ui :request {:kind :confirm})` answers the kind's default (`false`) *from the row* and nil without it |
 | 5l | **landed** — the TUI library is `ui`'s: the driver and the builtin command table (5l-i, namespaces kept), the process world's body, the rank-2 root publisher, the load at the entry and one registry publisher (5l-ii), and the interactive cluster, the mode row and the config command (5l-iii) — so a TUI run is kmet2's own front end, with the terminal `:ui` provider and the approval seam a terminal needs; § "The remaining plan" | pty capture parity on `--app new` **met** (same header, resources, extensions, footer); `modules/agent/src/kmet/agent/modes` holds only kmet1's three; an extension's command registered under `--app new` is in the ctx's `:commands`; a TUI profile's ctx provides `:ui` (`:kind :terminal`) and `:approvals` |
-| 5n | **in progress** — the invocation surface: kmet1's run flags on kmet2's entry (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) and their hand-off — **landed**, model patterns resolved by the entry so every mode, the TUI included, applies them; `@file` **landed** (read at parse time); its maintenance flags (`-d`/`--debug`, `--generate-models`, `--list-models`), extension `--flag` values, the skill/prompt expansion chain for every mode, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) — **landed** for the TUI row, refused by name by the modes whose factory opens no session until 10a; § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:` expands, `--list-models` diffs clean against `--app old`, `(get-flag …)` answers, `--debug`/`--generate-models`/`--session-dir` behave, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run |
+| 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **planned** — the TUI reads an agent handle: `create!`/`send!`/`steer!`/`inbox`/`when-idle`/`cancel!` instead of the `Engine` and the driver, the handle grows the settings a front end changes, and a mode's listeners scope to its agent | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises |
 | 5m | **planned** — `ui-tk`: `kmet.ui.tk` over `kmet.tk` and the `:ui/transcript` skeleton; the second toolkit provider, no app change | one profile patch swaps `:ui/terminal` for `:ui/tk` and the same session paints on bb and Jolt; JVM refuses the row by name |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
@@ -3499,7 +3499,7 @@ own, not a tweak.
 ## The remaining plan
 
 The ledger above ends at 7b-ii. This is the work that is left, in the order the
-dependencies allow, with the measurement that decided each cut. Eight landings,
+dependencies allow, with the measurement that decided each cut. Five landings,
 five decisions, and an explicit list of what the plan does *not* reopen.
 
 ### What is left, measured
@@ -3539,7 +3539,7 @@ Three things are missing rather than blocked, and they are the rest of the plan:
 |---|---|---|---|---|
 | 5k | `app` (+1 ns), `ui` (+1 ns), `profiles.edn`, two modes | ~250 src, ~150 test | — | every provider answers the four required keys; `(ui :request {:kind :confirm})` answers from the row and nil without it |
 | 5l | **landed** — `agent` → `app` (two moves + the world load), `agent` → `ui` (12 moves) | ~5,300 moved, ~120 changed | 5k | pty parity; `agent/modes` holds only kmet1's three; a kmet2 extension's command is in the ctx's `:commands`; a print run has extensions loaded; the TUI profile's ctx provides a terminal `:ui` and an approver |
-| 5n | `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
+| 5n | **landed** — `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | 5m | `ui` (+ one module tree) | ~900 new | 8 | one patch swaps the provider; the same session paints on bb and Jolt |
 | 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
@@ -3804,7 +3804,22 @@ modes that create through `:agents`.
 | unknown `--flag`, `--flag value`, `--flag=value` | `unknown option`, exit 1 | collected as `:ext-flags` and installed by the world load, so `(get-flag …)` answers — all three forms, as kmet1: `=` splits, a following non-`-` token is the value, nothing follows means `true` |
 | `@file` (repeatable) | refused by name | **landed**: the entry reads the file at parse time, as kmet1 does, so each file's text is a message **in the argument's place** (not ahead of the positionals). An unreadable file is a warning and an empty message, an empty path a warning and no message — kmet1's three outcomes |
 | `-c`/`--continue`, `-r`/`--resume`, `--session <id\|prefix\|path>` | refused as `unknown option` | **landed**: parsed by the entry, applied by the TUI row (its mode resolves the session from those keys already, and its row declares `:session-lifecycle`), and refused by name by every mode that opens no session until 10a gives the factory one |
-| `config` | works, but resolves a rank-4 namespace | 5l-iii's `kmet.ui.tui.config-command` |
+| `config` | works, but resolves a rank-4 namespace | **landed**: `kmet.app.core/run-config` resolves `kmet.ui.tui.config-command` when the command runs (5l-iii's move), so no rank-4 namespace loads for a process that never runs it |
+
+**Landed** (`kmet.app.maintenance` for the two table/cache flags): `-d`,
+`--generate-models` and `--list-models` are the entry's, in kmet1's order —
+`--debug` on before any load (so the catalog trail is in the log),
+`--generate-models` before the world (the run reads the caches it just wrote),
+and `--list-models` after the load, inside `run-mode`, because extension
+providers are catalog entries only then; it prints and returns without mounting
+the mode. The parser collects an unsupported `--flag` in kmet1's three forms
+(`=` splits, a following non-`-` token is the value, nothing is `true`) under
+`get-flag`'s dash-less name, and `world/load!` installs them. The expansion
+chain is each mode's, before its agent sees the text — `packages/expand-input`
+in print's send and rpc's prompt/queue — so `/skill:` and prompt templates
+expand on both entries. `kmet.tui.fuzzy` moved to `libs` for the table's search
+(the `--list-models` output was already byte-identical; app and tui are peers,
+so the shared helper lives below both).
 
 **`--model` and `--provider` are not rows above.** The entry parses them (5b)
 and now resolves a `--model` pattern itself, before the boot

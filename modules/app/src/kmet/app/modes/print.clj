@@ -32,6 +32,7 @@
    entry point owns the process and prints its own errors."
   (:require [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.packages :as packages]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
             [kmet.app.invocation :as invocation]
@@ -79,7 +80,10 @@
         (when (= :edn format)
           (prn (:header ((:session handle))))
           (flush))
-        ((:send! agents) handle prompt {:target :next-turn})
+        ;; the mode expands the invocation's text before the agent sees it:
+        ;; `/skill:` and prompt templates are the front end's chain (kmet1's
+        ;; print mode does the same one layer down)
+        ((:send! agents) handle (packages/expand-input prompt) {:target :next-turn})
         (exit-code format (:outcome (deref settled)) @error)
         (finally
           ((:dispose! agents) handle))))

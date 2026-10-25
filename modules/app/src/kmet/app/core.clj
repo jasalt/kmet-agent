@@ -31,7 +31,9 @@
    command's output and status without forking a process."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [kmet.agent.debug :as debug]
             [kmet.agent.packages-cli :as packages-cli]
+            [kmet.app.maintenance :as maintenance]
             [kmet.agent.version :as version]
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
@@ -54,7 +56,11 @@
    "-c" :continue?
    "--continue" :continue?
    "-r" :resume?
-   "--resume" :resume?})
+   "--resume" :resume?
+   ;; kmet1's maintenance switches: neither runs a mode.
+   "-d" :debug
+   "--debug" :debug
+   "--generate-models" :generate-models})
 
 (def ^:private value-flags
   {"--profile" :profile
@@ -145,14 +151,17 @@
    :help? :dump-config? :dump-state? :format kw :model str :provider kw
    :thinking kw :models [pattern …] :system-prompt str
    :append-system-prompt [str …] :session-dir path :continue? :resume?
-   :session str}`.
+   :session str :debug? :generate-models? :list-models str-or-true
+   :ext-flags {name value-or-true}}`.
    `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
    of it (`resolve-mode`), and the run flags are kmet1's: `--model`/`--provider`
    are the agent's overrides, `--thinking`/`--system-prompt`/
    `--append-system-prompt`/`--models`/`--session-dir` the run's (resolved and
    then applied by the mode — `kmet.app.invocation`). An `@file` argument is
-   read into `:args` as kmet1 reads it. The two dumps are different views of one
-   composition, so asking for both is a usage error rather than a silent pick."
+   read into `:args` as kmet1 reads it. An unsupported `--flag` is an extension
+   flag (`:ext-flags`), kmet1's three forms; a single-dash unknown flag stays a
+   usage error. The two dumps are different views of one composition, so asking
+   for both is a usage error rather than a silent pick."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
     (if-not in
@@ -168,6 +177,19 @@
           (if (= ::missing value)
             (recur (next in) (assoc opts (bool-flags flag) true))
             (throw (bad-args (str flag " takes no value"))))
+
+          ;; kmet1's maintenance flag: the filter is the next argument unless
+          ;; it starts with `-` or `@`, and a bare flag lists everything
+          (= flag "--list-models")
+          (let [[v in] (if (= ::missing value)
+                         (let [nxt (second in)]
+                           (if (and nxt
+                                    (not (str/starts-with? nxt "-"))
+                                    (not (str/starts-with? nxt "@")))
+                             [nxt (nnext in)]
+                             [true (next in)]))
+                         [value (next in)])]
+            (recur in (assoc opts :list-models v)))
 
           (contains? value-flags flag)
           (let [k (value-flags flag)
@@ -207,6 +229,25 @@
                 (recur (next in) (update opts :args conj text)))
               (do (binding [*out* *err*] (println "Warning: empty path after @"))
                   (recur (next in) opts))))
+
+          (and (str/starts-with? arg "--")
+               (not (str/blank? (subs flag 2))))
+          ;; kmet1's extension-flag rule: an unsupported `--flag` is data for
+          ;; the extension host, not a usage error — `=` splits, a following
+          ;; token that does not start with `-` is the value, and nothing
+          ;; following is `true`. The key drops the dashes, as `get-flag` reads
+          ;; it.
+          (let [name (subs flag 2)]
+            (cond
+              (not= ::missing value)
+              (recur (next in) (assoc-in opts [:ext-flags name] value))
+
+              (and (seq (next in))
+                   (not (str/starts-with? (second in) "-")))
+              (recur (nnext in) (assoc-in opts [:ext-flags name] (second in)))
+
+              :else
+              (recur (next in) (assoc-in opts [:ext-flags name] true))))
 
           (str/starts-with? arg "-")
           (throw (bad-args (str "unknown option " arg)))
@@ -288,6 +329,9 @@
   (println)
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server")
+  (println "  -d, --debug        Log to debug.log")
+  (println "  --list-models [search]  List available models (optional fuzzy search)")
+  (println "  --generate-models  Fetch provider and image-model catalogs into ~/.kmet/agent/ and exit")
   (println "  -p, --print        Run one prompt and exit (kmet1's spelling of --mode text)")
   (println "  --mode <name>      kmet1's spelling of --profile; text|edn run the print")
   (println "                     profile and choose its output")
@@ -392,10 +436,16 @@
         booted (runtime/boot composed {:defer #(= (:id mode) (:id %))})]
     (try
       (let [config (world/load! opts (:ctx booted))
-            opts (invocation/resolve-overrides opts)
-            input (mode-input opts config prompt #(deliver result %))]
-        (runtime/mount-deferred! booted (fn [row] (update row :config merge input)))
-        (:exit (deref result) 1))
+            opts (invocation/resolve-overrides opts)]
+        (if (:list-models opts)
+          ;; after the load: the table includes the providers the catalogs and
+          ;; the extensions installed, which is kmet1's order too
+          (do (maintenance/list-models (when (string? (:list-models opts))
+                                         (:list-models opts)))
+              0)
+          (let [input (mode-input opts config prompt #(deliver result %))]
+            (runtime/mount-deferred! booted (fn [row] (update row :config merge input)))
+            (:exit (deref result) 1))))
       (finally
         (runtime/shutdown! booted)))))
 
@@ -461,6 +511,11 @@
       (let [prompt (str/join " " args)
             flag (session-flag opts)]
         (cond
+          ;; the maintenance flag is the entry's: it needs the loaded world
+          ;; (extension providers) and no mode, and a print profile without a
+          ;; prompt is a legal invocation for it
+          (:list-models opts) (run-mode composed mode opts prompt)
+
           (and flag (not (:session-lifecycle mode)))
           (no-session-lifecycle (:profile opts) flag)
 
@@ -485,9 +540,20 @@
         (cond
           version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
           help? (do (print-usage) (flush) 0)
-          dump-config? (do (print (dump-config opts)) (flush) 0)
-          dump-state? (do (print (dump-state opts)) (flush) 0)
-          :else (run-composed opts leftover))))
+          ;; the model-cache pipeline needs no registry, config or world — and
+          ;; the run afterwards reads the caches it just wrote
+          (:generate-models opts) (do (flush) (maintenance/generate-models!))
+          :else
+          (do
+            ;; before any load of any kind, so the catalog trail is in the log
+            ;; too (kmet1's order)
+            (when (:debug opts)
+              (debug/enable!)
+              (debug/log "kmet started with --debug"))
+            (cond
+              dump-config? (do (print (dump-config opts)) (flush) 0)
+              dump-state? (do (print (dump-state opts)) (flush) 0)
+              :else (run-composed opts leftover))))))
     (catch Exception e
       (cond
         (= :kmet.app/bad-args (:type (ex-data e)))

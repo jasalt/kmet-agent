@@ -33,6 +33,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.agent.event-bus :as event-bus]
+            [kmet.agent.packages :as packages]
             [kmet.ai.models :as models]
             [kmet.app.events :as events]
             [kmet.app.front-end :as front-end]
@@ -128,7 +129,10 @@
    deliver it at the wrong boundary."
   [state command]
   (let [{:keys [agents handle]} state
-        text (message-of command)
+        ;; the mode expands the client's text before the agent sees it:
+        ;; `/skill:` and prompt templates are the front end's chain (kmet1's
+        ;; rpc expands on enqueue one layer down)
+        text (some-> (message-of command) packages/expand-input)
         behavior (:streaming-behavior command)
         running? (running? agents handle)]
     (cond
@@ -161,7 +165,7 @@
    disposition. The command's own `:type` is the behavior it queues for."
   [state command]
   (let [type (:type command)
-        text (message-of command)]
+        text (some-> (message-of command) packages/expand-input)]
     (cond
       (:images command)
       (failed type (str (name type) " does not support :images yet"))

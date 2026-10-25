@@ -12,6 +12,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.packages :as packages]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support :refer [answering
                                                        sessions-dir
@@ -112,6 +113,32 @@
             "the settle follows the message that ended, so a consumer can stop")
         (is (not (str/includes? out "hello from the model\nhello from the model"))
             "the text is not printed twice: edn mode prints events, not the answer")))))
+
+(deftest the-invocations-text-is-expanded-before-the-agent-sees-it
+  ;; new-app.md 5n's gate: `/skill:` and prompt templates are the front end's
+  ;; chain, not the model's prompt. The expansion itself is
+  ;; `packages/expand-input`'s (tested where it lives); this pins that the mode
+  ;; calls it, on the invocation's text, before sending.
+  (let [request (atom nil)
+        seen (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [f (:on-text opts)] (f "ok"))
+          (when-let [f (:on-done opts)] (f :stop))
+          :done))
+      (fn []
+        (with-redefs [packages/expand-input
+                      (fn [text] (reset! seen text) "expanded text")]
+          (let [{:keys [code err]} (support/run-main ["-p" "hello"])]
+            (is (= 0 code) err)
+            (is (= "hello" @seen) "the mode expands the invocation's text")
+            (is (= "expanded text"
+                   (->> (:messages @request)
+                        (some #(when (= :user (:role %)) %))
+                        :content first :text))
+                "and the agent reads the expansion")))))))
 
 (deftest a-model-override-reaches-the-run
   ;; `--model` is kmet1's pattern — provider/model[:thinking], the provider

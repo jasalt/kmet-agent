@@ -10,15 +10,12 @@
             [kmet.agent.modes.print :as print-mode]
             [kmet.agent.modes.rpc :as rpc-mode]
             [kmet.agent.packages-cli :as package-manager]
-            [kmet.ai.image-models :as image-models]
-            [kmet.ai.image-model-gen :as image-gen]
-            [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as models]
+            [kmet.app.maintenance :as maintenance]
             [kmet.app.world :as world]
             [kmet.agent.model-resolver :as resolver]
             [kmet.agent.debug :as debug]
             [kmet.agent.version :as version]
-            [kmet.tui.fuzzy :as fuzzy]
             [clojure.string :as str]))
 
 ;; ─── CLI argument parsing ──────────────────────────────────────────────────
@@ -185,58 +182,6 @@
 
 ;; ─── Main ──────────────────────────────────────────────────────────────────
 
-(defn- format-token-count
-  "pi formatTokenCount — 200000 → \"200K\", 1000000 → \"1M\", 1500000 →
-   \"1.5M\", else the plain number."
-  [n]
-  (let [fmt (fn [div]
-              (let [s (format "%.1f" (/ n div))]
-                (if (str/ends-with? s ".0")
-                  (subs s 0 (- (count s) 2))
-                  s)))]
-    (cond
-      (>= n 1000000) (str (fmt 1000000.0) "M")
-      (>= n 1000) (str (fmt 1000.0) "K")
-      :else (str n))))
-
-(defn- list-models
-  "pi cli/list-models.ts — print available models (provider | model | context
-   | max-out | thinking | images), optional fuzzy search over provider + id."
-  [search-pattern]
-  (when-let [err (models/get-model-config-error)]
-    (binding [*out* *err*]
-      (println "Warning: errors loading models.edn:" err)))
-  (let [available (models/get-available)]
-    (if (empty? available)
-      (println "No models available. Use /login to configure a provider.")
-      (let [filtered (fuzzy/fuzzy-filter available (or search-pattern "")
-                                         #(str (name (:provider %)) " " (:id %)))]
-        (if (empty? filtered)
-          (println (str "No models matching \"" search-pattern "\""))
-          (let [rows (mapv (fn [m]
-                             {:provider (name (:provider m))
-                              :model (:id m)
-                              :context (format-token-count (or (:context-window m) 0))
-                              :max-out (format-token-count (or (:max-tokens m) 0))
-                              :thinking (if (:reasoning m) "yes" "no")
-                              :images (if (some #{:image} (:input m)) "yes" "no")})
-                           (sort-by (juxt :provider :id) filtered))
-                headers {:provider "provider" :model "model" :context "context"
-                         :max-out "max-out" :thinking "thinking" :images "images"}
-                cols (keys headers)
-                widths (into {}
-                             (for [k cols]
-                               [k (reduce max (count (get headers k))
-                                          (map (comp count k) rows))]))
-                line (fn [row]
-                       (str/join "  " (for [k cols]
-                                        (str (get row k)
-                                             (apply str (repeat (max 0 (- (get widths k)
-                                                                          (count (get row k))))
-                                                                \space))))))]
-            (println (line headers))
-            (doseq [r rows] (println (line r)))))))))
-
 (defn- resolve-cli-model-opts
   "Resolve CLI --model/--models against the catalog registry (pi
    resolveCliModel wired at dispatch): patterns resolve with provider
@@ -314,19 +259,7 @@
     ;; load-catalogs! / load-image-catalogs! prefer each cache over the
     ;; built-in data whenever it is strictly newer.
     (when (:generate-models opts)
-      (let [run (fn [generate target]
-                  (try (:ok (generate target))
-                       (catch Exception e
-                         (binding [*out* *err*]
-                           (println "Error:" (ex-message e)))
-                         false)))
-            models-ok (run model-gen/generate-and-write!
-                           (or models/*models-cache-dir*
-                               (models/default-models-cache-dir)))
-            images-ok (run image-gen/generate-and-write!
-                           (or image-models/*image-models-cache-dir*
-                               (image-models/default-image-models-cache-dir)))]
-        (System/exit (if (and models-ok images-ok) 0 1))))
+      (System/exit (maintenance/generate-models!)))
 
     ;; --debug turns on debug.log before any startup work loads, so the
     ;; catalog/extension load trail is in the log too (the extension loader
@@ -341,7 +274,7 @@
       ;; listModels — after catalogs, models.edn, and extensions load so
       ;; custom providers appear)
       (when (:list-models opts)
-        (list-models (when (string? (:list-models opts)) (:list-models opts)))
+        (maintenance/list-models (when (string? (:list-models opts)) (:list-models opts)))
         (System/exit 0))
 
       ;; CLI --model/--models patterns resolve against the registry (pi

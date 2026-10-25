@@ -6,14 +6,15 @@
             [clojure.test :as t]
             [kmet.agent.cli :as cli]
             [kmet.ai.models :as models]
+            [kmet.app.maintenance :as maintenance]
             [kmet.agent.version :as version]))
 
 (t/deftest test-format-token-count
-  (t/is (= "200K" (@#'cli/format-token-count 200000)))
-  (t/is (= "1M" (@#'cli/format-token-count 1000000)))
-  (t/is (= "1.5M" (@#'cli/format-token-count 1500000)))
-  (t/is (= "128K" (@#'cli/format-token-count 128000)))
-  (t/is (= "4.1K" (@#'cli/format-token-count 4096)) "pi toFixed(1)"))
+  (t/is (= "200K" (@#'maintenance/format-token-count 200000)))
+  (t/is (= "1M" (@#'maintenance/format-token-count 1000000)))
+  (t/is (= "1.5M" (@#'maintenance/format-token-count 1500000)))
+  (t/is (= "128K" (@#'maintenance/format-token-count 128000)))
+  (t/is (= "4.1K" (@#'maintenance/format-token-count 4096)) "pi toFixed(1)"))
 
 (defn- tmodel [provider id context max-out reasoning]
   (models/map->Model {:id id :name id :provider provider
@@ -29,7 +30,7 @@
                             (fn [] [(tmodel :alpha "zeta" 1000000 8192 true)
                                     (tmodel :alpha "alpha-1" 128000 4096 false)
                                     (tmodel :beta "beta-1" 200000 16384 true)])]
-                (@#'cli/list-models nil)))]
+                (maintenance/list-models nil)))]
     (t/is (str/includes? out "provider  model") "header row")
     (t/is (str/includes? out "alpha     alpha-1") "two-space aligned columns")
     (t/is (str/includes? out "1M") "context formatted")
@@ -47,7 +48,7 @@
                             models/get-available
                             (fn [] [(tmodel :alpha "zeta" 1000 100 true)
                                     (tmodel :beta "beta-1" 1000 100 false)])]
-                (@#'cli/list-models "beta")))]
+                (maintenance/list-models "beta")))]
     (t/is (str/includes? out "beta-1"))
     (t/is (not (str/includes? out "zeta")) "fuzzy search filters"))
 
@@ -55,14 +56,14 @@
               (with-redefs [models/get-model-config-error (fn [] nil)
                             models/get-available
                             (fn [] [(tmodel :alpha "zeta" 1000 100 true)])]
-                (@#'cli/list-models "nope")))]
+                (maintenance/list-models "nope")))]
     (t/is (str/includes? out "No models matching \"nope\""))))
 
 (t/deftest test-list-models-no-available
   (let [out (with-out-str
               (with-redefs [models/get-model-config-error (fn [] nil)
                             models/get-available (fn [] [])]
-                (@#'cli/list-models nil)))]
+                (maintenance/list-models nil)))]
     (t/is (str/includes? out "No models available"))))
 
 (t/deftest test-parse-args-ext-flags

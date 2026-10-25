@@ -10,6 +10,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.agent.extensions.core :as extensions]
+            [kmet.agent.packages :as packages]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support :refer [answering
                                                        with-mode-run
@@ -96,6 +97,28 @@
              mode prints")
         (is (some #(= :agent-settled (:type %)) records)
             "and the settle is the end a client waits for")))))
+
+(deftest rpc-expands-a-clients-text-before-the-agent-sees-it
+  ;; 5n's expansion chain is the front end's in rpc too: a prompt's text is
+  ;; expanded (`/skill:`, templates) before the run, never by the model.
+  (let [request (atom nil)]
+    (with-mode-run
+      (fn [opts]
+        (reset! request opts)
+        (future
+          (when-let [f (:on-text opts)] (f "ok"))
+          (when-let [f (:on-done opts)] (f :stop))
+          :done))
+      (fn []
+        (with-redefs [packages/expand-input (fn [text] (str "expanded:" text))]
+          (let [{:keys [code]} (run-rpc {:lines ["{:type :prompt :id \"p\" :message \"/greet world\"}"]
+                                         :until ":agent-settled"})]
+            (is (= 0 code))
+            (is (= "expanded:/greet world"
+                   (->> (:messages @request)
+                        (some #(when (= :user (:role %)) %))
+                        :content first :text))
+                "the run's message is the expansion, not the command")))))))
 
 (deftest rpc-mode-answers-a-malformed-line-and-an-unknown-command
   (with-mode-run

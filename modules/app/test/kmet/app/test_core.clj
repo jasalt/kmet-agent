@@ -105,13 +105,12 @@
     (is (str/includes? (str err) "Warning: could not read target/does-not-exist.md"))))
 
 (deftest parse-args-rejects-bad-flags
-  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--nope"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--version=1"]))))
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--print=1"])))
       "a one-shot flag takes no value either")
-  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--p"])))
-      "kmet1's flags are not kmet2's, but for the ones it takes")
+  (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-x"])))
+      "a single-dash unknown flag is a usage error (there are no short ext flags)")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["--profile="])))
       "an empty value is no value")
   (is (= :kmet.app/bad-args (error-type #(core/parse-args ["-p" "--profile" "print"])))
@@ -119,6 +118,36 @@
   (is (= :kmet.app/bad-args
          (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
       "the two dumps are different views; asking for both is a usage error"))
+
+(deftest parse-args-takes-kmet1s-maintenance-flags
+  ;; `-d` and `--generate-models` run before the process world, `--list-models`
+  ;; after it; the entry owns all three (kmet.app.maintenance).
+  (is (true? (:debug (core/parse-args ["-d"]))))
+  (is (true? (:debug (core/parse-args ["--debug"]))))
+  (is (true? (:generate-models (core/parse-args ["--generate-models"]))))
+  (is (true? (:list-models (core/parse-args ["--list-models"]))))
+  (is (= "flash" (:list-models (core/parse-args ["--list-models" "flash"])))
+      "a following non-flag argument is the filter")
+  (is (= "flash" (:list-models (core/parse-args ["--list-models=flash"])))
+      "the --flag=value form")
+  (is (true? (:list-models (core/parse-args ["--list-models" "--profile" "print"])))
+      "a following flag is not a filter")
+  (is (= :print (:profile (core/parse-args ["--list-models" "--profile" "print"]))))
+  (is (= [] (:args (core/parse-args ["--list-models" "flash"])))
+      "the filter does not become a prompt"))
+
+(deftest parse-args-collects-extension-flags
+  ;; kmet1's three forms: `=` splits, a following non-`-` token is the value,
+  ;; and nothing following is true. The key drops the dashes — the name
+  ;; `get-flag` reads.
+  (is (= {"my-ext-flag" true} (:ext-flags (core/parse-args ["--my-ext-flag"]))))
+  (is (= {"my-ext-flag" "v"} (:ext-flags (core/parse-args ["--my-ext-flag" "v"]))))
+  (is (= {"my-ext-flag" "v"} (:ext-flags (core/parse-args ["--my-ext-flag=v"]))))
+  (is (= {"my-ext-flag" true}
+         (:ext-flags (core/parse-args ["--my-ext-flag" "--profile" "print"])))
+      "a following flag is not a value")
+  (is (= {"p" true} (:ext-flags (core/parse-args ["--p"])))
+      "an unsupported flag is data, not a usage error — kmet1's rule"))
 
 (deftest parse-args-takes-kmet1s-session-lifecycle-flags
   ;; Which session a run opens is the mode's, but the flags are the command
