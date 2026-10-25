@@ -4272,7 +4272,22 @@ new run order reaches them before anything else published a handle. The gate's
 first half is a test now — `kmet.test-retirement` refuses any `kmet.agent.*`
 namespace outside `modules/agent/src` except the two the ABI and a shipped
 extension's require make contracts — and the four docstrings that still named
-the old prefix follow. What is left: the `agent` module's ~14k-line test tree (most of it tests app code), the
+the old prefix follow.
+
+The test tree moves in slices. The loop cluster is the first: 13 namespaces
+(everything under `kmet/agent/loop/`, including the shared support) moved to
+`modules/app/test/kmet/app/loop` and renamed, and its three shim uses went with
+them — the tool table is the ctx's `:tools` service (`support/tool-table`), a
+run's own stage map is `support/test-ctx`, and the extension host is
+`support/with-host`, a scoped binding over a fresh registry handle rather than
+the load side effect of requiring kmet1's shim. `test_tools`' stand-ins register
+through that handle; `test_tool_policy` keeps a booted composition as its base
+because a policy turn needs the real tool table and the ask route. What is left:
+22 more test namespaces (the `extensions/*` five still use the shim's registry
+names, `test_app_ctx`/`test_runtime` test the shim itself and die with it, the
+four `modes/*` are kmet1's and die with it, and `test_ui_port`/
+`test_runtime_capabilities` reach the composition through `tu/test-engine`, which
+an app test cannot require — they need the handle fixture instead), the
 `kmet.agent.tools.core` façade collapse, the deletion and the flag flip, and the
 documents.
 
