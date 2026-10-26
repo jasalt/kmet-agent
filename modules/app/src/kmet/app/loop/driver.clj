@@ -19,6 +19,7 @@
             [kmet.app.loop :as loop]
             [kmet.app.loop.state :as loop-state]
             [kmet.app.packages :as packages]
+            [kmet.app.permissions :as permissions]
             [kmet.app.model-resolver :as resolver]
             [kmet.app.project-context :as context]
             [kmet.app.sandbox :as sandbox]
@@ -265,7 +266,7 @@
    running inside, not another agent's front end or the process's; outside a
    run a command handler or an extension's own fiber still reads the process
    binding."
-  [child {:keys [id session config prompt-fn projections]}]
+  [child {:keys [id session config prompt-fn projections approvals-memory]}]
   (let [;; The shell settings are this agent's, on this agent's ctx: a per-agent
         ;; value has to be the only provider on its chain (the kernel forbids a
         ;; child shadowing an ancestor's service), which is why this is not a
@@ -278,6 +279,14 @@
         ;; default for every agent that did not (kmet.app.sandbox).
         _ (when-not (srce/get child :sandbox)
             (srce/provide! child :sandbox sandbox/default-value))
+        ;; What a human already allowed for this agent (`:agent`) and for this
+        ;; workspace, which every agent of the composition shares: the permission
+        ;; row's remembering policy reads and writes it, and it is a service for
+        ;; the same reason :shell is — one provider on this agent's chain, so two
+        ;; agents remember separately while one workspace remembers together.
+        _ (srce/provide! child permissions/memory-key
+                         (or approvals-memory
+                             (permissions/memory (atom #{}))))
         engine-ref (atom nil)
         {:keys [state] runtime-cwd :cwd}
         (agent-state config child
@@ -569,7 +578,10 @@
         log (srce/get ctx :sessions)
         projections (srce/get ctx :projections)
         prompt-fn (srce/get ctx :system-prompt)
-        cwd (str (fs/cwd))]
+        cwd (str (fs/cwd))
+        ;; the decisions that apply to everything this composition runs: one set
+        ;; per driver row, shared by every agent its factory creates
+        remembered-workspace (atom #{})]
     ((:register-factory! agents) scope
                                  (fn [child opts]
                                    (let [config (-> (or (:config opts) (cfg/load-config))
@@ -579,11 +591,15 @@
                                                               (resume-session log config))
                                                      (:session opts)
                                                      (session-for log config cwd))]
-                                     (agent-handle child {:id (:id opts)
-                                                          :config config
-                                                          :session session
-                                                          :prompt-fn prompt-fn
-                                                          :projections projections}))))))
+                                     (agent-handle child
+                                                   {:id (:id opts)
+                                                    :config config
+                                                    :session session
+                                                    :prompt-fn prompt-fn
+                                                    :projections projections
+                                                    :approvals-memory
+                                                    (permissions/memory
+                                                     remembered-workspace)}))))))
 
 (srce/defplugin plugin
   {:name :agent-loop

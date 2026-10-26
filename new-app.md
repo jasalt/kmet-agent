@@ -435,8 +435,10 @@ hooks, so a hook's argument rewrite is judged by the policy instead of sneaking
 past it; the run_code bridge composes the same gate into `*tool-hooks*`, so a
 script's `tools/call` is gated too. A policy that throws, or answers something
 that is not a verdict, is a deny: the failure mode of an approval gate must
-never be *allow*. `:remember!` is called with the scope an approver returned,
-but nothing stores the decision yet — scopes are recorded, not enforced.
+never be *allow*. `:remember!` stores an approver's scoped answer in the memory the agent's ctx
+carries (`permissions/remembering` + `permissions/memory-key`, provided by the
+driver over one workspace-wide set), so a tool a human already allowed is not
+asked again — and the TUI's dialog is what offers those answers.
 
 ## Pluggable UI
 
@@ -897,7 +899,7 @@ Each is independently shippable and gated.
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
-| 10 | **in progress — 10a, 10b and resume-by-id landed**; 10c remains. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. Resume-by-id: the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
+| 10 | **in progress — 10a, 10b and resume-by-id landed**; 10c remains. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. Resume-by-id: the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session. Remembering: an approver's scoped answer is stored in the agent's memory (one workspace set per composition), so a tool is asked once per scope, and the TUI's dialog offers the three answers. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap` | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -2943,8 +2945,8 @@ something that is not a verdict, an approver that throws, and an `:ask` with no
 seam all deny; none of them allows. The gate runs **after** the extension hooks
 (so an argument rewrite is judged, not a way around the policy) and is composed
 into run-code's `*tool-hooks*`, so a script's `tools/call` is gated like a loop
-batch. `:remember!` is called with the scope an approver returned, but nothing
-stores a decision yet — scopes are recorded, not enforced.
+batch. `:remember!` stores an approver's scoped answer in the agent's memory, so
+a tool is asked once per scope rather than once per call.
 
 What the gate does **not** cover, named so it is a decision: a `!`/`!!` bash
 line typed at the prompt is a mode action, not a tool call, so it never reaches
@@ -3529,7 +3531,7 @@ server's own transport work and two loose ends:
 
 | What | Where | Why it is left | Cut |
 |---|---|---|---|
-| transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping; `:remember!` is called and nothing stores the decision at its scope | 10c |
+| transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping | 10c |
 | `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
 | the server's user-facing page | `docs/` | `profiles.md` documents `--profile server --port` and `rpc.md` the protocol, but the connection rules — one session per connection, the approval route, the token, `--max-sessions` — belong on a page of their own | with 10c |
 | the `:config`/`:auth` half of 9 | `kmet.app.config/load-config` is process-global; `:auth` is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal) | with 10c, where a connection first has a config of its own |
@@ -4370,8 +4372,7 @@ same page. **10c, the transport hardening**: bearer token (one principal), a
 unix socket where the host has one and TCP loopback otherwise,
 `--max-sessions`, per-client queue depth, idle reaping on
 `kmet.libs.concurrent/monotonic-ms`, the fan-out `:lag` policy with a visible
-`:stream-gap`, and `:remember!` actually remembered at `:once`/`:agent`/
-`:workspace`.
+`:stream-gap`.
 
 **10b, the boundary drain — landed.** The loop calls `runtime/boundary!` at
 `:agent-settled` (`kmet.app.loop/settle-boundary!`), so the queue has a drain

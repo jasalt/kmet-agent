@@ -20,6 +20,7 @@
             [kmet.app.events :as events]
             [kmet.app.extensions :as host]
             [kmet.app.loop.driver :as driver]
+            [kmet.app.permissions :as permissions]
             [kmet.app.projections :as projections]
             [kmet.app.registries :as registries]
             [kmet.app.sessions :as sessions]
@@ -611,6 +612,26 @@
               (finally
                 ((:dispose! agents) handle)))))
         gate))))
+
+(deftest every-agent-gets-a-memory-and-shares-the-workspaces
+  ;; The permission row's remembering policy reads the memory from the tool
+  ;; call's ctx, so the driver provides one per agent — and the workspace half is
+  ;; one atom for the whole composition, or ":workspace" would mean "this agent"
+  ;; with a longer name.
+  (let [{:keys [root agents]} (mounted)
+        memory-of (fn [handle] (srce/get (:ctx handle) permissions/memory-key))
+        a (create! {:root root :agents agents})
+        b (create! {:root root :agents agents})]
+    (try
+      (is (some? (memory-of a))
+          "the driver provides the service the remembering policy writes")
+      (is (identical? (:workspace (memory-of a)) (:workspace (memory-of b)))
+          "one workspace remembers for every agent of the composition")
+      (is (not (identical? (:agent (memory-of a)) (:agent (memory-of b))))
+          "and each agent remembers its own")
+      (finally
+        ((:dispose! agents) a)
+        ((:dispose! agents) b)))))
 
 (deftest resume-binds-the-stored-session
   ;; The registry's `:resume!` creates an agent for a *stored session*: the id

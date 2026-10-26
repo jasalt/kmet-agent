@@ -219,21 +219,38 @@
         default)
       default)))
 
+(def ask-choices
+  "What a permission `:ask` can be answered with at the terminal. The labels are
+   the list order a human reads: the narrow answer first, then the two that are
+   remembered (`kmet.app.permissions/remembering`), then no."
+  ["Yes" "Always for this agent" "Always for this workspace" "No"])
+
+(defn ask-answer
+  "The approver answer CHOICE names: `:allow` for this call, `:allow` scoped to
+   the agent or the workspace, or a deny — `:once` is what an unscoped `:allow`
+   already means, so `Yes` carries no scope rather than a redundant one."
+  [choice]
+  (case choice
+    "Yes" :allow
+    "Always for this agent" {:decision :allow :scope :agent}
+    "Always for this workspace" {:decision :allow :scope :workspace}
+    {:decision :deny :reason "denied at the terminal"}))
+
 (defn ask!
-  "Answer a permission `:ask` through the live TUI: a Yes/No dialog naming the
-   tool and, when the policy gave one, its reason. `:allow` on Yes; a deny
-   otherwise — including outside a run, because nobody being able to ask is not
-   a yes. Blocks while the dialog is up, so the caller must be a run thread (the
-   gate's) and never a TUI render/input thread; a future front-end surface
-   answers extension requests asynchronously for the same reason."
+  "Answer a permission `:ask` through the live TUI: a dialog naming the tool and,
+   when the policy gave one, its reason — yes once, yes for this agent, yes for
+   this workspace, or no. The two `Always …` answers are what the permission
+   row's memory records, so a gated tool is asked once rather than per call.
+   A deny otherwise, including outside a run, because nobody being able to ask
+   is not a yes. Blocks while the dialog is up, so the caller must be a run
+   thread (the gate's) and never a TUI render/input thread; a future front-end
+   surface answers extension requests asynchronously for the same reason."
   [_ctx request]
   (if-let [cs @live-mode]
     (let [reason (str (:reason request))
           title (str "Allow " (or (:tool-name request) "this tool") "?"
                      (when-not (str/blank? reason) (str "\n" reason)))]
-      (if (= "Yes" (choose! cs title ["Yes" "No"]))
-        :allow
-        {:decision :deny :reason "denied at the terminal"}))
+      (ask-answer (choose! cs title ask-choices)))
     {:decision :deny :reason "no terminal is running — nobody can ask"}))
 
 ;; ─── Run ───────────────────────────────────────────────────────────────────

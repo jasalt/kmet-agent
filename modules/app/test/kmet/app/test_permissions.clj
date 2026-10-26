@@ -149,6 +149,101 @@
     (is (nil? (permissions/check child bash-call))
         "the child reads the ancestor's policy")))
 
+;; ── remembering an answer ─────────────────────────────────────────────────
+
+(defn- gated
+  "A root mounting a remembering policy, with APPROVE answering the ask. The
+   memory is the caller's to place — on the root for a process-wide test, on an
+   agent's ctx when the scope is the thing under test."
+  [approve]
+  (let [root (srce/root)]
+    (srce/provide! root :permissions (permissions/remembering (fn [_ _] :ask)))
+    (srce/provide! root :approvals (permissions/approver approve))
+    root))
+
+(defn- asked-count
+  "A counting approver answering SCOPE, and the atom it counts in."
+  [scope]
+  (let [asked (atom 0)]
+    [asked (fn [_ _] (swap! asked inc) {:decision :allow :scope scope})]))
+
+(deftest a-remembered-answer-is-not-asked-again
+  (let [[asked approve] (asked-count :agent)
+        root (gated approve)]
+    (srce/provide! root permissions/memory-key (permissions/memory (atom #{})))
+    (is (nil? (permissions/check root bash-call)) "the first ask is answered")
+    (is (nil? (permissions/check root bash-call))
+        "the second is allowed from the memory, without a question")
+    (is (= 1 @asked) "so the human was asked once")
+    (is (nil? (permissions/check root (assoc bash-call :tool-name "edit"))))
+    (is (= 2 @asked) "a different tool is a different question")))
+
+(deftest once-remembers-nothing
+  (let [[asked approve] (asked-count :once)
+        root (gated approve)]
+    (srce/provide! root permissions/memory-key (permissions/memory (atom #{})))
+    (is (nil? (permissions/check root bash-call)))
+    (is (nil? (permissions/check root bash-call)))
+    (is (= 2 @asked) "a :once answer is the call's, not the tool's")))
+
+(deftest an-agent-scope-stays-with-its-agent
+  (let [[asked approve] (asked-count :agent)
+        workspace (atom #{})
+        root (gated approve)
+        a (srce/extend root {:name :agent-a})
+        b (srce/extend root {:name :agent-b})]
+    (srce/provide! a permissions/memory-key (permissions/memory workspace))
+    (srce/provide! b permissions/memory-key (permissions/memory workspace))
+    (is (nil? (permissions/check a bash-call)))
+    (is (nil? (permissions/check a bash-call)) "agent a remembers its own answer")
+    (is (= 1 @asked))
+    (is (nil? (permissions/check b bash-call))
+        "and agent b is allowed too — but only because it was asked")
+    (is (= 2 @asked) "one question per agent")))
+
+(deftest a-workspace-scope-is-shared
+  (let [[asked approve] (asked-count :workspace)
+        workspace (atom #{})
+        root (gated approve)
+        a (srce/extend root {:name :agent-a})
+        b (srce/extend root {:name :agent-b})]
+    (srce/provide! a permissions/memory-key (permissions/memory workspace))
+    (srce/provide! b permissions/memory-key (permissions/memory workspace))
+    (is (nil? (permissions/check a bash-call)))
+    (is (nil? (permissions/check b bash-call)))
+    (is (= 1 @asked) "one answer covers the workspace")))
+
+(deftest a-remembered-allow-does-not-override-a-deny
+  ;; The memory answers the question the policy asked; it is not a second policy
+  ;; that can turn a deny into an allow.
+  (let [asked (atom 0)
+        root (srce/root)]
+    (srce/provide! root :permissions
+                   (permissions/remembering
+                    (fn [_ {:keys [tool-name]}]
+                      (if (= "bash" tool-name) :ask :deny))))
+    (srce/provide! root :approvals
+                   (permissions/approver
+                    (fn [_ _] (swap! asked inc) {:decision :allow :scope :workspace})))
+    (srce/provide! root permissions/memory-key (permissions/memory (atom #{})))
+    (is (nil? (permissions/check root bash-call)))
+    (is (= 1 @asked))
+    (is (nil? (permissions/check root bash-call)) "remembered: the policy still asks, the memory answers")
+    (is (= {:block true :reason "denied by the permission policy"}
+           (permissions/check root (assoc bash-call :tool-name "edit")))
+        "a tool the policy denies is denied whatever the memory holds")))
+
+(deftest a-ctx-with-no-memory-behaves-as-the-plain-policy
+  (let [asked (atom 0)
+        root (srce/root)]
+    (srce/provide! root :permissions (permissions/remembering (fn [_ _] :ask)))
+    (srce/provide! root :approvals
+                   (permissions/approver
+                    (fn [_ _] (swap! asked inc) {:decision :allow :scope :agent})))
+    (is (nil? (permissions/check root bash-call)))
+    (is (nil? (permissions/check root bash-call)))
+    (is (= 2 @asked) "nothing stores the decision, so both calls ask")))
+
 (deftest the-gate-runs-the-extension-hook-first
   (testing "the policy judges the rewritten arguments"
     (let [seen (atom nil)
@@ -199,5 +294,7 @@
     (is (= {:block true :reason "denied by the permission policy"}
            (permissions/check ctx bash-call))
         "a preset mounts the row with its policy")
-    (is (nil? (:remember! (srce/get ctx :permissions)))
-        "no remember fn unless the config names one — a decision is not recorded")))
+    (is (fn? (:remember! (srce/get ctx :permissions)))
+        "the row's policy remembers what an approver scopes")
+    (is (nil? (srce/get ctx permissions/memory-key))
+        "but the memory is the agent's: the row mounts no store of its own")))

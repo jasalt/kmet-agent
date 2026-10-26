@@ -16,6 +16,7 @@
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]
             [kmet.ui.tui :as tui-row]
+            [kmet.ui.tui.interactive :as interactive]
             [kmet.ui.tui.interactive.layout :as layout]))
 
 (def ^:private config
@@ -30,6 +31,22 @@
 (def ^:private a-call
   "A tool call the gate can be asked about."
   {:tool-name "bash" :args {:command "echo hi"} :tool-call-id "call-1"})
+
+(deftest the-terminal-answer-names-the-scope-a-human-chose
+  (is (= ["Yes" "Always for this agent" "Always for this workspace" "No"]
+         interactive/ask-choices)
+      "the order a human reads: this call, then the remembered ones, then no")
+  (is (= :allow (interactive/ask-answer "Yes"))
+      "yes once carries no scope — `:once` is what an unscoped allow means")
+  (is (= {:decision :allow :scope :agent}
+         (interactive/ask-answer "Always for this agent")))
+  (is (= {:decision :allow :scope :workspace}
+         (interactive/ask-answer "Always for this workspace")))
+  (is (= {:decision :deny :reason "denied at the terminal"}
+         (interactive/ask-answer "No")))
+  (is (= {:decision :deny :reason "denied at the terminal"}
+         (interactive/ask-answer nil))
+      "a cancelled dialog is a no, not a yes"))
 
 (deftest the-profile-names-the-gate-and-the-plain-tui-names-none
   (is (= [:bundle/gated] (get-in (mode-row :tui-ask) [:config :presets]))

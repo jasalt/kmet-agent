@@ -29,6 +29,13 @@
    whichever front end can answer. `:deny` becomes the hook result the loop
    already understands, so no tool signature changes.
 
+   **A remembered answer is asked once.** `remembering` wraps a policy so a tool
+   this agent (or this workspace) already allowed is allowed without asking
+   again, and an approver's answer at a scope is recorded in the agent's own
+   memory service (`memory-key`, provided per agent by the driver over one
+   workspace-wide set). The row mounts it by default; a `:remember!` in the row's
+   config replaces the built-in memory with the caller's.
+
    **The gate is the loop's pre-tool waterfall, and it runs last.** Extension
    tool-call hooks run first (they may rewrite the arguments), then the policy
    judges the effective call, so a rewrite cannot smuggle a call past it. A
@@ -118,6 +125,66 @@
   "The hook-shaped block result the loop settles a call with."
   [reason]
   {:block true :reason reason})
+
+;; ── remembering an answer ─────────────────────────────────────────────────
+
+(def memory-key
+  "Where an agent's remembered approvals live: a service on the agent's own ctx,
+   provided by whatever composes the agent (the driver provides one per agent,
+   over one workspace-wide set shared by the whole composition).
+
+   A service rather than a cell of this namespace's, because remembering must be
+   per agent (`:agent`) and per composition (`:workspace`) at once, and a
+   process-global set would answer for every agent in the process."
+  :approvals-memory)
+
+(defn memory
+  "A memory for `remembering`: AGENT's own decisions plus WORKSPACE, the set the
+   caller shares with every agent of one composition."
+  [workspace]
+  {:agent (atom #{}) :workspace workspace})
+
+(defn remember!
+  "Record REQUEST's tool at SCOPE in CTX's memory: `:agent` for this agent,
+   `:workspace` for the composition, `:once` for nothing. A ctx without a memory
+   service records nothing."
+  [ctx request scope]
+  (when-let [m (srce/get ctx memory-key)]
+    (let [tool (:tool-name request)]
+      (cond
+        (= :agent scope) (swap! (:agent m) conj tool)
+        (= :workspace scope) (swap! (:workspace m) conj tool)
+        :else nil))))
+
+(defn remembered?
+  "Is REQUEST's tool already allowed on CTX's chain — by this agent, or by anyone
+   in this workspace?"
+  [ctx request]
+  (when-let [m (srce/get ctx memory-key)]
+    (let [tool (:tool-name request)]
+      (or (contains? @(:workspace m) tool)
+          (contains? @(:agent m) tool)))))
+
+(defn remembering
+  "DECIDE wrapped so a human is asked once per tool per scope: a call the policy
+   would *ask* about, whose tool this agent (or this workspace) already allowed,
+   is allowed without asking — and a decision an approver gave a scope to is
+   recorded where it applies.
+
+   The memory only replaces the question, never the policy: a policy that denies
+   still denies, because a remembered `always allow` is an answer to `may this
+   run?`, not a second policy on top of it.
+
+   The tool is the key, not the call: `always allow bash` means bash with any
+   arguments, which is what a scope names. A ctx with no memory service behaves
+   exactly as DECIDE."
+  [decide]
+  (policy (fn [ctx request]
+            (let [answer (decide ctx request)]
+              (if (and (= :ask (verdict answer)) (remembered? ctx request))
+                :allow
+                answer)))
+          remember!))
 
 ;; ── the gate ──────────────────────────────────────────────────────────────
 
@@ -219,10 +286,16 @@
    policy may also be **named**: `:allow-all` and `:ask-all` are the two a
    profile can mount without code."
   [ctx config]
-  (srce/provide! ctx :permissions
-                 (policy (policy-fn (or (:policy config) :allow-all))
-                         (:remember! config))
-                 {:in (:parent ctx)}))
+  (let [decide (policy-fn (or (:policy config) :allow-all))
+        ;; a caller that supplies its own :remember! keeps the decision where it
+        ;; wants it; the default is the per-agent/per-workspace memory the
+        ;; driver provides
+        remember! (:remember! config)]
+    (srce/provide! ctx :permissions
+                   (if (fn? remember!)
+                     (policy decide remember!)
+                     (remembering decide))
+                   {:in (:parent ctx)})))
 
 (defn- serve-approvals
   "The `:approvals` row: provide the delivery seam. The default has no one to
