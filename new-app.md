@@ -4283,9 +4283,14 @@ of slicing them together:
   `read` never names `skills`. The predicted shape — the `:tools` row's config —
   would have pinned one composition's skills table onto every agent, the
   per-agent property 9a had just established; the run binds it for the same
-  reason it binds the shell. Both wirings are tested where the binding is in
-  effect (`kmet.app.loop.test-driver` observes it from inside the model call),
-  and `kmet.app.tools.test-read` holds the outside-a-run answer.
+  reason it binds the shell. Every link has a test where the value is actually
+  in effect: `kmet.app.loop.test-driver` observes the binding from inside the
+  model call (and from two compositions at once: one run resolves its own
+  registry's skill and not the other composition's), `kmet.app.tools.test-read`
+  holds the outside-a-run answer, and `kmet.app.test-run-code` calls `read` on
+  an extension locator **from inside a script**, which is the bridge worker —
+  a raw thread that conveys no bindings, so the `:bindings` threading is what
+  it proves (mutation-checked: dropping the key fails it).
 - **The key-hint theme became a derivation.** `key-hint` reads the live theme at
   call time (`theme/dim`, `theme/fg (get-current-theme)`), so the atom and both
   `layout.clj` install sites are deleted; a theme change re-renders the hint

@@ -166,6 +166,36 @@
         (is (nil? (@seen "other-ext:skills/bar/SKILL.md"))
             "a locator this registry does not hold answers nil")))))
 
+(deftest a-runs-skill-resolver-is-its-own-registrys
+  ;; Two compositions in one process, two skills tables. The resolver comes
+  ;; from the agent's own ctx, so one run cannot read the other composition's
+  ;; skills — exactly the defect the load-time push had, when whichever
+  ;; composition loaded last answered for everyone (landing 9b).
+  (let [seen (atom ::none)]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message
+                  (fn [opts]
+                    (reset! seen read-tool/*skill-resolver*)
+                    (future (when-let [done (:on-done opts)] (done :stop)) :done))]
+      (let [{root-a :root agents-a :agents} (mounted)
+            {root-b :root} (mounted)]
+        (doseq [[root owner location body] [[root-a "a-ext" "a-ext:skills/x/SKILL.md" "A body"]
+                                            [root-b "b-ext" "b-ext:skills/x/SKILL.md" "B body"]]]
+          (registry/register! (srce/get root :skills) :kmet/skill (str owner "-skill")
+                              {:name (str owner "-skill")
+                               :description "a composition's skill"
+                               :location location
+                               :body body
+                               :extension owner}
+                              [:test owner]))
+        (let [handle (create! {:root root-a :agents agents-a})]
+          ((:send! agents-a) handle "hello" {:target :next-turn})
+          ((:when-idle agents-a) handle)
+          (is (= "A body" (@seen "a-ext:skills/x/SKILL.md"))
+              "this composition's skill resolves")
+          (is (nil? (@seen "b-ext:skills/x/SKILL.md"))
+              "and the other composition's does not"))))))
+
 (deftest a-state-needs-a-prompt-builder
   ;; The builder has no default on purpose; a state without one fails here,
   ;; naming the option, rather than where the prompt would be built. The map is

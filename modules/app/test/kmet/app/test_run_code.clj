@@ -6,6 +6,7 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.read :as read-tool]
             [kmet.app.tools.registry :as tools]
             [kmet.app.tools.run-code :as run-code]
             [kmet.app.tools.util :as tool-util]
@@ -761,3 +762,16 @@
       (t/is (some? r) "the tool call returns instead of blocking on the sleep")
       (t/is (:is-error r))
       (t/is (= :aborted (get-in r [:details :error]))))))
+
+(t/deftest test-run-code-inner-read-conveys-the-skill-resolver
+  ;; A bridge worker is a raw platform thread: it conveys no dynamic bindings,
+  ;; so the run's skill resolver travels to it explicitly as the pipeline's
+  ;; :bindings (landing 9b). Without that, an extension skill's <location>
+  ;; would read as a missing file from inside a script while the model's own
+  ;; read served it — the seam working everywhere except where scripts live.
+  (binding [read-tool/*skill-resolver*
+            (fn [p] (when (= p "my-ext:skills/foo/SKILL.md") "# memory body"))]
+    (let [r (run "(emit (:content @(tools/call \"read\" {:path \"my-ext:skills/foo/SKILL.md\"})))")]
+      (t/is (not (:is-error r)) (:content r))
+      (t/is (= "# memory body" (:content r))
+            "the worker answered from the run's resolver"))))
