@@ -356,6 +356,18 @@
     (.start t1)
     (.start t2)
     (is (true? (deref entered 5000 false)) "loader initialization started")
+    ;; T2 either waits on the in-flight claim or is answered from the cache. Wait
+    ;; for it to stop running before releasing: a release that lands while T1
+    ;; still holds the claim is what the assertion is about, and a release that
+    ;; lands after T1 finished is a different (also correct) sequence, so the
+    ;; test would be measuring the scheduler. Bounded — the joins below carry
+    ;; the real timeout.
+    (let [settled? (fn [] (or (not (.isAlive t2))
+                              (not= "RUNNABLE" (str (.getState t2)))))]
+      (loop [n 0]
+        (when (and (< n 1000) (not (settled?)))
+          (Thread/sleep 5)
+          (recur (inc n)))))
     (deliver release true)
     (.join t1 5000)
     (.join t2 5000)
