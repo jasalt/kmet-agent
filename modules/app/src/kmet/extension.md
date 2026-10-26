@@ -1,8 +1,8 @@
 # The kmet.extension contract
 
 An extension is a Clojure namespace with an explicit contract: it depends on
-exactly one namespace, `kmet.extension`, and is loaded, reloaded and unloaded
-at runtime. This document is the authoritative reference for that contract —
+`kmet.extension` (and, when it names its plugin var, the kernel's public
+`kmet.srce.core`), and is loaded, reloaded and unloaded at runtime. This document is the authoritative reference for that contract —
 the `kmet.extension` function table, the `api` and context map keys, the
 allowed namespaces, and the lifecycle guarantees.
 

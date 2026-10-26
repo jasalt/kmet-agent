@@ -1,1 +1,1 @@
-{:name "clojure", :entry kmet.extensions.clojure.core, :loader [:sci :jolt]}
+{:name "clojure", :plugin kmet.extensions.clojure.core/plugin, :loader [:sci :jolt]}

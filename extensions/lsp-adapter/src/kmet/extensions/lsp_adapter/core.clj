@@ -13,6 +13,7 @@
             [kmet.extensions.lsp-adapter.runtime :as runtime]
             [kmet.extensions.lsp-adapter.tools :as tools]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.path :as path]
             [kmet.libs.edn-store :as edn-store]
@@ -272,3 +273,10 @@ errors.")
     (reset! (:reaper-stop st) true)
     (runtime/shutdown-all! st))
   nil)
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/lsp-adapter
+   :apply (fn [_ctx api] (init api) nil)})

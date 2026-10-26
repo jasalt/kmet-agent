@@ -128,3 +128,89 @@
                 "and names the offending key"))
         (finally
           (fs/delete-tree dir))))))
+
+;; ── the :plugin manifest form ─────────────────────────────────────────────
+
+(def ^:private plugin-body
+  "(srce/defplugin plugin
+     {:name  %s
+      :apply (fn [_ctx api]
+               (ext/on-input api (fn [{:keys [text]}] {:action :transform :text (str text \"+injected\")}))
+               nil)})")
+
+(defn- plugin-extension-dir!
+  "Write a directory extension whose manifest names a `:plugin` var in
+   ENTRY-NS; the file requires kmet.srce.core and defines that var."
+  [dir name manifest & [body]]
+  (let [entry (str/replace name "-" "_")
+        entry-ns (str entry ".main")]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/" entry))
+    (spit (str dir "/extension.edn") manifest)
+    (spit (str dir "/" entry "/main.clj")
+          (str "(ns " entry-ns "\n  (:require [kmet.extension :as ext]\n"
+               "            [kmet.srce.core :as srce]))\n\n"
+               (or body (format plugin-body (str ":" entry)))))
+    dir))
+
+(t/deftest a-plugin-manifest-mounts-the-var
+  (testing ":plugin names the var, the kernel mounts it, and it is active"
+    (let [name "plugin-active"
+          entry-ns (str (str/replace name "-" "_") ".main")
+          dir (plugin-extension-dir! "target/test-ext-plugin-active" name
+                                     (str "{:name \"" name "\" :plugin " entry-ns
+                                          "/plugin :loader [:sci]}\n"))]
+      (try
+        (let [result (extensions/load-extension! dir)]
+          (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+          (t/is (some #(= name (:name %)) (extensions/get-loaded-extensions)))
+          (let [loaded (some #(when (= name (:name %)) %)
+                             (extensions/get-loaded-extensions))]
+            (t/is (= :active (:fiber-state loaded))
+                  "a :plugin extension is a fiber, active once mounted")))
+        (finally
+          (extensions/clear-extensions!)
+          (fs/delete-tree dir))))))
+
+(t/deftest a-plugin-manifest-declares-its-own-inject
+  (testing "the plugin map's :inject holds the mount pending"
+    (let [name "plugin-pending"
+          entry-ns (str (str/replace name "-" "_") ".main")
+          dir (plugin-extension-dir! "target/test-ext-plugin-pending" name
+                                     (str "{:name \"" name "\" :plugin " entry-ns
+                                          "/plugin :loader [:sci]}\n")
+                                     (str "(srce/defplugin plugin\n"
+                                          "  {:name  :ext/plugin-pending\n"
+                                          "   :inject {:kmet.inject-test/never nil}\n"
+                                          "   :apply (fn [_ctx _api] nil)})"))]
+      (try
+        (let [result (extensions/load-extension! dir)]
+          (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+          (let [loaded (some #(when (= name (:name %)) %)
+                             (extensions/get-loaded-extensions))]
+            (t/is (= :pending (:fiber-state loaded)))
+            (t/is (contains? (:waiting-for loaded) :kmet.inject-test/never))))
+        (finally
+          (extensions/clear-extensions!)
+          (fs/delete-tree dir))))))
+
+(t/deftest a-malformed-plugin-manifest-is-refused-before-evaluation
+  (testing ":plugin must be a qualified var, and never accompanies :inject"
+    (doseq [[name manifest fragment]
+            [["plugin-unqualified"
+              "{:name \"plugin-unqualified\" :plugin plugin :loader [:sci]}\n"
+              ":plugin must be a qualified"]
+             ["plugin-with-inject"
+              (str "{:name \"plugin-with-inject\" "
+                   ":plugin plugin-with-inject.main/plugin\n"
+                   " :loader [:sci] :inject [:tools]}\n")
+              "names both :plugin and :inject"]]]
+      (let [dir (plugin-extension-dir! (str "target/test-ext-" name) name manifest)]
+        (try
+          (let [result (extensions/load-extension! dir)]
+            (t/is (some? (:error result)) (str name " must not load"))
+            (t/is (str/includes? (str (:error result)) fragment)
+                  (str name ": " (:error result))))
+          (finally
+            (extensions/clear-extensions!)
+            (fs/delete-tree dir)))))))

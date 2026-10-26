@@ -678,20 +678,26 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
 (defn- pack-verify!
   "Verify SRC-DIR is a packable extension artifact root; throw ex-info
    with :type ::pack-error otherwise. Checks: extension.edn present with
-   :name + symbol :entry + a :loader vector of known backend kinds; the
-   :entry ns-path file exists; every .clj/.cljc/.bb file's (ns ...) matches
-   its path (strict layout); deps.edn parses and carries only :deps.
-   Returns {:name :entry-ns}."
+   :name + a qualified :plugin var (or the legacy symbol :entry) + a :loader
+   vector of known backend kinds; the entry namespace's ns-path file exists;
+   every .clj/.cljc/.bb file's (ns ...) matches its path (strict layout);
+   deps.edn parses and carries only :deps. Returns {:name :entry-ns}."
   [src-dir]
   (let [root (fs/canonicalize src-dir)
         manifest (io/file (str root) "extension.edn")]
     (when-not (fs/regular-file? manifest)
       (throw (ex-info (str "no extension.edn in " src-dir) {:type ::pack-error})))
     (let [m (edn/read-string (slurp manifest))
-          entry-ns (:entry m)
+          plugin (:plugin m)
+          entry-ns (if plugin
+                     (symbol (namespace plugin))
+                     (:entry m))
           loaders (:loader m)]
-      (when-not (and (:name m) (symbol? entry-ns))
-        (throw (ex-info (str "extension.edn needs :name + symbol :entry, got: " (pr-str m))
+      (when-not (and (:name m)
+                     (or (and (symbol? plugin) (namespace plugin))
+                         (symbol? entry-ns)))
+        (throw (ex-info (str "extension.edn needs :name + a qualified :plugin var "
+                             "(or a legacy symbol :entry), got: " (pr-str m))
                         {:type ::pack-error :manifest m})))
       (when-not (and (sequential? loaders)
                      (seq loaders)
@@ -705,7 +711,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                                  (when (.exists f) f)))
                              [".cljc" ".clj" ".bb"])]
         (when-not entry-file
-          (throw (ex-info (str "extension.edn :entry not found: " entry-ns)
+          (throw (ex-info (str "extension.edn plugin/entry namespace not found: " entry-ns)
                           {:type ::pack-error :entry entry-ns}))))
       (doseq [f (sort-by str (mapcat #(fs/glob root (str "**." %)) ["clj" "cljc" "bb"]))]
         (let [rel (str/replace (str (fs/relativize root f)) "\\" "/")
@@ -771,20 +777,24 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
            (fs/list-dir d)))))
 
 (defn- validate-bundled-dir!
-  "D8 checks for one :dir artifact root: extension.edn with :name + symbol
-   :entry + a :loader vector that includes :sci, every source file's (ns ...)
-   matching its strict path, and a deps.edn (when present) carrying only
-   :deps with no :local/root."
+  "D8 checks for one :dir artifact root: extension.edn with :name + a qualified
+   :plugin var (or the legacy symbol :entry) + a :loader vector that includes
+   :sci, every source file's (ns ...) matching its strict path, and a deps.edn
+   (when present) carrying only :deps with no :local/root."
   [name root]
   (let [manifest-file (io/file root "extension.edn")]
     (when-not (fs/regular-file? manifest-file)
       (bundle-error! (str "bundled extension " name ": no extension.edn in " root)))
     (let [m (edn/read-string (slurp manifest-file))
-          entry-ns (:entry m)
+          plugin (:plugin m)
+          entry-ns (if plugin (symbol (namespace plugin)) (:entry m))
           loaders (:loader m)]
-      (when-not (and (:name m) (symbol? entry-ns))
+      (when-not (and (:name m)
+                     (or (and (symbol? plugin) (namespace plugin))
+                         (symbol? entry-ns)))
         (bundle-error! (str "bundled extension " name
-                            ": extension.edn needs :name + symbol :entry, got " (pr-str m))))
+                            ": extension.edn needs :name + a qualified :plugin var "
+                            "(or a legacy symbol :entry), got " (pr-str m))))
       (when-not (and (sequential? loaders) (seq loaders)
                      (every? extension-loader-kinds loaders))
         (bundle-error! (str "bundled extension " name
@@ -800,7 +810,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                                  (when (.exists f) f)))
                              [".cljc" ".clj" ".bb"])]
         (when-not entry-file
-          (bundle-error! (str "bundled extension " name ": :entry not found: " entry-ns))))
+          (bundle-error! (str "bundled extension " name
+                              ": plugin/entry namespace not found: " entry-ns))))
       (doseq [f (sort-by str (mapcat #(fs/glob root (str "**." %)) ["clj" "cljc" "bb"]))]
         (let [rel (str/replace (str (fs/relativize root f)) "\\" "/")
               expected (strict-ns-for-path rel)

@@ -3,8 +3,8 @@
 An extension customises kmet with slash commands, tools, event handlers,
 hooks, CLI flags, custom message/entry renderers, UI contributions, and more.
 It is an ordinary Clojure namespace with an explicit contract: it depends on
-exactly one namespace, `kmet.extension`, and is loaded, reloaded and unloaded
-while kmet runs.
+`kmet.extension` — plus the kernel's public `kmet.srce.core` when it names its
+plugin var — and is loaded, reloaded and unloaded while kmet runs.
 
 This guide covers authoring, packaging and testing an extension. The
 authoritative reference for what each `kmet.extension` function takes and
@@ -36,8 +36,10 @@ repo layout it uses), and [rpc.md](rpc.md) (extension UI over RPC).
 
 The loader calls `(init api)` with the capability map; everything registered
 inside `init` belongs to the extension, and unload disposes it automatically
-— `shutdown` is optional. The full contract (ownership, name conflicts,
-lifecycle guarantees) is in the
+— `shutdown` is optional. That is the **single-file** form. A directory or jar
+extension names a plugin var in `extension.edn` instead and puts the same body
+in the plugin map's `:apply` (see [Directory extensions](#directory-extensions-multi-file-extensionedn)).
+The full contract (ownership, name conflicts, lifecycle guarantees) is in the
 [contract reference](../modules/app/src/kmet/extension.md#the-contract).
 
 ## Where extensions live
@@ -99,7 +101,7 @@ ln -s "$PWD/extensions/tools.clj" ~/.kmet/agent/extensions/tools.clj
 
 Built-in extension namespaces follow the layout: a single file is
 `kmet.extensions.<name>` (the file's stem); a manifest dir namespaces its
-code `kmet.extensions.<name>.*` with the manifest `:entry` at
+code `kmet.extensions.<name>.*` with the manifest `:plugin` naming a var in
 `kmet.extensions.<name>.core`.
 
 Single-file extensions ship without tests (they must stay small and
@@ -138,7 +140,7 @@ underscores, dots → slashes; `.clj` → `.cljc` → `.bb` fallback):
 ```clojure
 ;; extension.edn
 {:name   "my-ext"
- :entry  my-ext.main
+ :plugin my-ext.main/plugin
  :loader [:jolt :sci]}
 ```
 
@@ -147,28 +149,35 @@ underscores, dots → slashes; `.clj` → `.cljc` → `.bb` fallback):
 {:deps {cheshire/cheshire {:mvn/version "11.5.3"}}} ;; or just use kmet.libs.json
 ```
 
-The manifest lists the initial namespace — `:entry`, a namespace symbol
-whose namespace must define `init` — and the loader backends the extension
-supports — `:loader` (see
-[Loader compatibility](#loader-compatibility-loader)). It may also declare
-`:inject`, the app services `init` waits for:
+The manifest names the extension's **plugin** — `:plugin`, a qualified var
+symbol holding a `srce` plugin map (`kmet.srce.core/defplugin`) — and the
+loader backends the extension supports — `:loader` (see
+[Loader compatibility](#loader-compatibility-loader)). There is no `init`
+convention beside it: the plugin map's `:apply` **is** the extension body,
+and its `:inject` declares the app services it waits for:
 
 ```clojure
-{:name "my-ext" :entry my-ext.main :loader [:jolt :sci]
- :inject [:tools :commands]}      ; or {:tools nil :ui :optional}
+;; my_ext/main.clj
+(ns my-ext.main
+  (:require [kmet.extension :as ext]
+            [kmet.srce.core :as srce]))
+
+(srce/defplugin plugin
+  {:name   :ext/my-ext
+   :inject {:tools nil :commands nil}   ; or {:ui :optional}
+   :apply  (fn [_ctx api]               ; the extension ctx, and its api map
+             (ext/register-command! api {...})
+             nil)})
 ```
 
-With `:inject`, the extension mounts as a plugin: it stays **pending** while
-a declared service is absent, `init` runs the moment the last one appears
-(and again if kmet reloads the plugin), and unloading disposes what it
-registered. Without `:inject` it loads immediately, exactly as before —
-nothing in an existing extension needs to change. A name is a service
-keyword the app provides — today `:tools`, `:commands`, `:prompts`,
-`:skills`, `:sessions` and `:sessionPersistence` — or one an app defines
-itself; `:optional` entries do not hold the mount, and a name nothing
-provides keeps the extension pending, so declare only what you need. (Each
-extension lists its state in `/extensions`: a pending one names what it
-waits for.) Everything else is
+The kernel mounts the plugin, so the extension stays **pending** while a
+declared service is absent and `:apply` runs the moment the last one appears,
+and unloading disposes what it registered. A name is a service keyword the app
+provides — today `:tools`, `:commands`, `:prompts`, `:skills`, `:sessions`
+and `:sessionPersistence` — or one an app defines itself; `:optional` entries
+do not hold the mount, and a name nothing provides keeps the extension pending,
+so declare only what you need. (Each extension lists its state in
+`/extensions`: a pending one names what it waits for.) Everything else is
 required from there:
 internal namespaces resolve by strict ns-path lookup under the extension
 root, and declared library dependencies resolve to the jars in `deps.edn`
@@ -186,11 +195,15 @@ Internal dependencies are declared in each file's `ns` form:
 ;; my_ext/main.clj
 (ns my-ext.main
   (:require [my-ext.helper :as helper]   ; internal dependency
-            [kmet.extension :as ext]))   ; kmet core, resolved normally
+            [kmet.extension :as ext]     ; kmet core, resolved normally
+            [kmet.srce.core :as srce]))
 
-(defn init [api]
-  (ext/register-tool! api {:name (helper/tool-name)
-                           :description "..."}))
+(srce/defplugin plugin
+  {:name  :ext/my-ext
+   :apply (fn [_ctx api]
+            (ext/register-tool! api {:name (helper/tool-name)
+                                     :description "..."})
+            nil)})
 ```
 
 Requires that don't resolve to a file under the extension root (kmet core
@@ -218,8 +231,8 @@ resolution, a `jar:file:…!/entry` URL). Nothing is written outside
 `~/.m2`/`~/.gitlibs`.
 Discovery picks up top-level `*.jar`/`*.zip` files
 alongside `*.clj` files and manifest dirs. Pack one with
-`bb pack-extension <src-dir> [out.jar]` (verify-then-zip: `:entry`
-resolves, every `.clj` ns matches its path, `deps.edn` carries only
+`bb pack-extension <src-dir> [out.jar]` (verify-then-zip: the `:plugin`
+namespace resolves, every `.clj` ns matches its path, `deps.edn` carries only
 `:deps`).
 
 ## Loader compatibility (`:loader`)
@@ -228,7 +241,7 @@ The manifest declares which loader backends the extension supports:
 
 ```clojure
 {:name   "my-ext"
- :entry  my-ext.main
+ :plugin my-ext.main/plugin
  :loader [:jolt :sci]}      ; both backends — see the table below
 ```
 

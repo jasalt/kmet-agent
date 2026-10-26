@@ -56,7 +56,7 @@ code, skills, merged resources — while dev-only files stay outside:
 extensions/clojure/              ; dev wrapper, never packaged
 ├── README.md  bb.edn  test/
 └── src/                         ; === artifact root: zip as-is / symlink to install ===
-    ├── extension.edn            ; {:name "clojure" :entry kmet.extensions.clojure.core}
+    ├── extension.edn            ; {:name "clojure" :plugin kmet.extensions.clojure.core/plugin}
     ├── deps.edn                 ; :deps only
     ├── kmet/extensions/clojure/
     │   ├── core.clj
@@ -83,7 +83,7 @@ never ship.
   stay small and self-contained; validate changes by loading the file
   against `kmet.extension/create-nullable-api` or the real runtime.
 - **Directory-based extensions** (a subdirectory with an `extension.edn`
-  manifest `{:name ... :entry my.ext.main :loader [:jolt :sci]}`) — separate
+  manifest `{:name ... :plugin my.ext.main/plugin :loader [:jolt :sci]}`) — separate
   projects with a **strict ns-path layout** (namespace `a.b/c` at `a/b/c.clj`
   under the root). Shipped directories namespace their code
   `kmet.extensions.<name>.*`, the manifest entry at

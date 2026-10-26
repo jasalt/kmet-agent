@@ -1,1 +1,1 @@
-{:name "mcp-adapter", :entry kmet.extensions.mcp-adapter.core, :loader [:jolt :sci]}
+{:name "mcp-adapter", :plugin kmet.extensions.mcp-adapter.core/plugin, :loader [:sci :jolt]}

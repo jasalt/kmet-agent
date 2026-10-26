@@ -9,6 +9,7 @@
 (ns kmet.extensions.clojure.core
   (:require [clojure.java.io :as io]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.extensions.clojure.edit-tool :as edit-tool]
             [kmet.extensions.clojure.eval-tool :as eval-tool]
             [kmet.extensions.clojure.nrepl :as nrepl]
@@ -28,3 +29,10 @@
 (defn shutdown [_api]
   ;; best-effort: close the nREPL sessions this process created
   (nrepl/close-sessions!))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/clojure
+   :apply (fn [_ctx api] (init api) nil)})

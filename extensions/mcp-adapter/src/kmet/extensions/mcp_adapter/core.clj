@@ -23,6 +23,7 @@
             [kmet.extensions.mcp-adapter.tool-source :as script-source]
             [kmet.extensions.mcp-adapter.setup :as setup]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.mcp.client :as mcp]
             [kmet.libs.mcp.protocol :as protocol]
@@ -1346,3 +1347,10 @@
     (disconnect-all! state)
     (auth/shutdown!)
     (reset! state-atom nil)))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/mcp-adapter
+   :apply (fn [_ctx api] (init api) nil)})

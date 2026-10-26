@@ -676,21 +676,58 @@
 
 (defn- manifest-info
   "Validate the manifest map M of the artifact at PATH (FALLBACK-NAME names
-   it when :name is absent): {:name :entry-ns :declared-loaders
-   :legacy-loader? :inject}. Throws on a non-symbol :entry, a malformed
-   :loader or a malformed :inject — all before any extension code evaluates."
+   it when :name is absent): {:name :plugin-sym :entry-ns :declared-loaders
+   :legacy-loader? :inject}. Two forms are accepted:
+
+     {:plugin my.ext.core/plugin}   ; preferred: the namespace's plugin var,
+                                    ; whose map declares :inject and :apply
+     {:entry  my.ext.core}          ; legacy: the ns defines an init fn
+
+   :plugin names a **qualified** var; its namespace is the entry namespace, so
+   the strict-layout source check, the classpath seeding and the resource
+   lookup all use it unchanged. A manifest may not declare :inject beside
+   :plugin — the plugin map is the one declaration. Throws on a bad :plugin, a
+   non-symbol :entry, a malformed :loader or a malformed :inject — all before
+   any extension code evaluates."
   [path m fallback-name]
   (let [{:keys [declared-loaders legacy?]} (manifest-loaders path m)
-        entry-ns (:entry m)]
-    (when-not (symbol? entry-ns)
-      (throw (ex-info (str "extension.edn :entry must be a namespace symbol, got: "
-                           (pr-str entry-ns))
-                      {:path path :manifest m})))
-    {:name (or (:name m) fallback-name)
-     :entry-ns entry-ns
-     :declared-loaders declared-loaders
-     :legacy-loader? legacy?
-     :inject (manifest-inject path m)}))
+        plugin-sym (:plugin m)
+        legacy-entry (:entry m)]
+    (cond
+      (some? plugin-sym)
+      (do
+        (when-not (and (symbol? plugin-sym) (namespace plugin-sym))
+          (throw (ex-info (str "extension.edn :plugin must be a qualified var symbol "
+                               "(my-ext.core/plugin), got: " (pr-str plugin-sym))
+                          {:path path :manifest m})))
+        (when (contains? m :inject)
+          (throw (ex-info (str "extension.edn names both :plugin and :inject — a "
+                               "plugin declares its own :inject, so drop the manifest key")
+                          {:path path :manifest m})))
+        {:name (or (:name m) fallback-name)
+         :plugin-sym plugin-sym
+         :entry-ns (symbol (namespace plugin-sym))
+         :declared-loaders declared-loaders
+         :legacy-loader? legacy?
+         :inject nil})
+
+      (some? legacy-entry)
+      (do
+        (when-not (symbol? legacy-entry)
+          (throw (ex-info (str "extension.edn :entry must be a namespace symbol, got: "
+                               (pr-str legacy-entry))
+                          {:path path :manifest m})))
+        {:name (or (:name m) fallback-name)
+         :plugin-sym nil
+         :entry-ns legacy-entry
+         :declared-loaders declared-loaders
+         :legacy-loader? legacy?
+         :inject (manifest-inject path m)})
+
+      :else
+      (throw (ex-info (str "extension.edn needs :plugin (a qualified var symbol) "
+                           "or :entry (a namespace symbol), got: " (pr-str m))
+                      {:path path :manifest m})))))
 
 (defn- canonical-path
   "The canonical display/identity path of a filesystem artifact root F
@@ -707,11 +744,12 @@
     (throw (ex-info (str "Extension archive " path " has no extension.edn")
                     {:path path})))
   (let [m (edn/read-string (jar-entry-source root "extension.edn"))
-        {:keys [name entry-ns declared-loaders legacy-loader? inject]}
+        {:keys [name plugin-sym entry-ns declared-loaders legacy-loader? inject]}
         (manifest-info path m (fs/file-name (io/file root)))]
     {:name name
      :kind :jar
      :artifact {:kind :jar :root root}
+     :plugin-sym plugin-sym
      :entry-ns entry-ns
      :declared-loaders declared-loaders
      :legacy-loader? legacy-loader?
@@ -726,11 +764,12 @@
       (throw (ex-info (str "Extension dir " path " has no extension.edn")
                       {:path path})))
     (let [m (edn/read-string (slurp manifest-file))
-          {:keys [name entry-ns declared-loaders legacy-loader? inject]}
+          {:keys [name plugin-sym entry-ns declared-loaders legacy-loader? inject]}
           (manifest-info path m (fs/file-name f))]
       {:name name
        :kind :dir
        :artifact {:kind :dir :root (str f)}
+       :plugin-sym plugin-sym
        :entry-ns entry-ns
        :declared-loaders declared-loaders
        :legacy-loader? legacy-loader?
@@ -743,6 +782,7 @@
   {:name (fs/file-name f)
    :kind :file
    :artifact nil
+   :plugin-sym nil
    :entry-ns nil
    :declared-loaders default-loaders
    :legacy-loader? false
@@ -751,14 +791,16 @@
 
 (defn resolve-extension
   "Resolve PATH into {:name str :kind :file/:dir/:jar :artifact map-or-nil
-   :entry-ns symbol-or-nil :declared-loaders [kw ...] :legacy-loader? bool
-   :file io.File :path str}. :artifact ({:kind :dir/:jar :root str}) is the
-   strict-layout root for manifest extensions; :entry-ns is the manifest :entry
-   symbol; :declared-loaders is the manifest's :loader declaration (defaulted
-   for legacy manifests). A directory must contain extension.edn; a jar must
-   carry it at its root. A plain file is the entry itself (:entry-ns nil — its
-   ns is read from the file at load) and implicitly supports both loaders.
-   :path is the canonicalized display/identity path."
+   :plugin-sym symbol-or-nil :entry-ns symbol-or-nil :declared-loaders [kw ...]
+   :legacy-loader? bool :file io.File :path str}. :artifact ({:kind :dir/:jar
+   :root str}) is the strict-layout root for manifest extensions; :plugin-sym
+   is the manifest's `:plugin` var (the preferred form, whose namespace is
+   :entry-ns); :entry-ns is the manifest :entry symbol for the legacy form;
+   :declared-loaders is the manifest's :loader declaration (defaulted for
+   legacy manifests). A directory must contain extension.edn; a jar must carry
+   it at its root. A plain file is the entry itself (:entry-ns nil — its ns is
+   read from the file at load) and implicitly supports both loaders. :path is
+   the canonicalized display/identity path."
   [path]
   (let [f (io/file path)]
     (cond
@@ -792,12 +834,13 @@
     (let [manifest-key (str prefix "/extension.edn")]
       (if-let [r (io/resource manifest-key)]
         (let [m (edn/read-string (slurp r))
-              {:keys [name entry-ns declared-loaders legacy-loader? inject]}
+              {:keys [name plugin-sym entry-ns declared-loaders legacy-loader? inject]}
               (manifest-info manifest-key m name)]
           {:name name
            :kind :resource-dir
            :artifact (cond-> {:kind :resource-dir :prefix prefix}
                        native (assoc :native native))
+           :plugin-sym plugin-sym
            :entry-ns entry-ns
            :declared-loaders declared-loaders
            :legacy-loader? legacy-loader?

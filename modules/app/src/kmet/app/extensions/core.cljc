@@ -1320,7 +1320,7 @@
    own copy loads first) is returned skipped, and no second context is
    built."
   [resolved path]
-  (let [{:keys [name kind artifact entry-ns file declared-loaders legacy-loader?
+  (let [{:keys [name kind artifact entry-ns plugin-sym file declared-loaders legacy-loader?
                 bundled? inject]} resolved
         loader-kind (if (context/resource-kind? kind)
                       (context/forced-loader-kind resolved declared-loaders)
@@ -1425,38 +1425,70 @@
                 (do
                   (loader/load l {:kind :ns :name (str file-ns)})
                   (reset! (:entry-ns ext) file-ns)))
-              (let [init-var (extension-var ext @(:entry-ns ext) 'init)]
-                (when-not init-var
+              (let [plugin-var (when plugin-sym
+                                 ;; the local `name` is this extension's name, so
+                                 ;; the var name needs clojure.core/name
+                                 (extension-var ext @(:entry-ns ext)
+                                                (symbol (clojure.core/name plugin-sym))))
+                    init-var (when-not plugin-sym
+                               (extension-var ext @(:entry-ns ext) 'init))]
+                (when (and plugin-sym (not plugin-var))
+                  (throw (ex-info (str "Extension " (:name ext) " manifest names "
+                                       plugin-sym " but the namespace does not define it")
+                                  {:path path})))
+                (when (and (not plugin-sym) (not init-var))
                   (throw (ex-info (str "Extension " (:name ext)
                                        " does not define an init fn")
                                   {:path path})))
-                (if inject
-                  ;; A declared dependency: mount the extension as a plugin,
-                  ;; so the kernel holds it pending until the ctx provides
-                  ;; what it waits for and runs init at activation. The
-                  ;; disposer is the fiber's, and unload still calls shutdown
-                  ;; first (unload-extension!).
-                  ;; A throwing init is the kernel's business: it marks the
-                  ;; fiber :failed rather than rethrowing, so a mount that
-                  ;; failed *now* must be turned back into a load error —
-                  ;; otherwise a broken extension reports as loaded.
-                  (let [fiber (srce/inject!
+                (let [plugin (when plugin-var (deref plugin-var))]
+                  (when (and plugin-var
+                             (not (and (map? plugin)
+                                       (keyword? (:name plugin))
+                                       (fn? (:apply plugin)))))
+                    (throw (ex-info (str "Extension " (:name ext) " :plugin must hold a "
+                                         "plugin map (a srce/defplugin var), got: "
+                                         (pr-str (type plugin)))
+                                    {:path path})))
+                  (let [inject (if plugin-var (:inject plugin) inject)
+                        mounted? (boolean (or plugin-var inject))]
+                    (if mounted?
+                      ;; The extension is a plugin: the kernel holds it pending
+                      ;; until the ctx provides what it waits for, runs its body
+                      ;; at activation, and disposes it on unload (unload still
+                      ;; calls shutdown first). A manifest `:plugin` supplies the
+                      ;; whole map; the legacy manifest `:inject` mounts the
+                      ;; `init` fn.
+                      ;; A throwing body is the kernel's business: it marks the
+                      ;; fiber :failed rather than rethrowing, so a mount that
+                      ;; failed *now* must be turned back into a load error —
+                      ;; otherwise a broken extension reports as loaded.
+                      (let [fiber
+                            (if plugin-var
+                              (srce/plugin!
+                               (:ctx (services))
+                               (assoc plugin
+                                      :apply (fn [fctx _config]
+                                               (let [api (create-extension-api ext)]
+                                                 (reset! (:api ext) api)
+                                                 ((:apply plugin) fctx api)
+                                                 (reset! (:initialized? ext) true)))))
+                              (srce/inject!
                                (:ctx (services)) (keyword name) inject
                                (fn [_fctx _config]
                                  (let [api (create-extension-api ext)]
                                    (reset! (:api ext) api)
                                    ((loader-aware ext (deref init-var)) api)
-                                   (reset! (:initialized? ext) true))))]
-                    (reset! (:fiber ext) fiber)
-                    (when (= :failed (:state @fiber))
-                      (throw (ex-info (str "Extension " name " failed: "
-                                           (or (ex-message (:error @fiber)) "init threw"))
-                                      {:path path
-                                       :cause (:error @fiber)}))))
-                  (let [api (create-extension-api ext)]
-                    (reset! (:api ext) api)
-                    ((loader-aware ext (deref init-var)) api)
-                    (reset! (:initialized? ext) true)))))
+                                   (reset! (:initialized? ext) true)))))]
+                        (reset! (:fiber ext) fiber)
+                        (when (= :failed (:state @fiber))
+                          (throw (ex-info (str "Extension " name " failed: "
+                                               (or (ex-message (:error @fiber)) "init threw"))
+                                          {:path path
+                                           :cause (:error @fiber)}))))
+                      (let [api (create-extension-api ext)]
+                        (reset! (:api ext) api)
+                        ((loader-aware ext (deref init-var)) api)
+                        (reset! (:initialized? ext) true)))))))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
@@ -1464,7 +1496,7 @@
             {:extension (:name ext) :error nil
              :loader-kind loader-kind
              :bundled (boolean bundled?)
-             :pending (boolean (and inject (not @(:initialized? ext))))}
+             :pending (= :pending (some-> @(:fiber ext) deref :state))}
             (catch Exception e
               (unload-extension! ext)
               {:extension nil
@@ -1519,8 +1551,9 @@
    dispose what it registered — the deregister fns it recorded (aliases,
    shortcuts, model providers, event subscriptions, theme removal) in reverse
    registration order, the registry entries under its
-   `[:app :extensions <name>]` owner tag by tag, and its plugin fiber when
-   `:inject` mounted one; failures are reported, not swallowed. Then its
+   `[:app :extensions <name>]` owner tag by tag, and its plugin fiber when it
+   mounted as one (`:plugin` or a manifest `:inject`); failures are reported,
+   not swallowed. Then its
    isolated context goes: namespaces and jars become unreachable, nothing
    global is touched. Expects the Extension record (from the registry /
    reload-extensions!); nil is a no-op — the load result map carries only its
@@ -1544,8 +1577,8 @@
         (registry/deregister-owner! (handle) tag owner))
       (when-let [sweep (:deregister-owner! (services))]
         (sweep owner)))
-    ;; an `:inject` extension's mount is a fiber: disposing it unwinds the
-    ;; effects the kernel holds and drops it from the tree, pending or active
+    ;; a plugin-mounted extension is a fiber: disposing it unwinds the effects
+    ;; the kernel holds and drops it from the tree, pending or active
     (when-let [fiber @(:fiber ext)]
       (srce/dispose! fiber))
     (when-let [l @(:loader ext)]

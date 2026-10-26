@@ -10,6 +10,7 @@
 (ns kmet.extensions.tree-sitter.core
   (:require [babashka.fs :as fs]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.extensions.tree-sitter.dispatch :as dispatch]
             [kmet.extensions.tree-sitter.hooks :as hooks]
             [kmet.extensions.tree-sitter.paths :as paths]
@@ -32,3 +33,10 @@
 ;; unload unregisters everything this extension added (tools + hooks)
 ;; automatically — nothing to tear down by hand
 (defn shutdown [_api] nil)
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/tree-sitter
+   :apply (fn [_ctx api] (init api) nil)})

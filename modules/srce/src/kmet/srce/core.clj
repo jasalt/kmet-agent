@@ -189,6 +189,12 @@
   "Every event name registered on CTX or an ancestor, sorted."
   event/names)
 
+(def validate-plugin!
+  "Check a plugin map and return it with `:inject` normalized; throws
+   `:srce/bad-plugin`. Public because `defplugin` expands to it, so a macro a
+   sandboxed caller uses must reach public API only."
+  fiber/validate-plugin!)
+
 ;; ── plugins as data ───────────────────────────────────────────────────────
 
 (defmacro defplugin
@@ -208,4 +214,4 @@
                                  (not (keyword? (:name plugin))) (conj :name)
                                  (not (contains? plugin :apply)) (conj :apply))})))
   `(def ~(vary-meta sym assoc :srce/plugin (:name plugin))
-     (fiber/validate-plugin! ~plugin)))
+     (validate-plugin! ~plugin)))

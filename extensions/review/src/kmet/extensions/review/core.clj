@@ -17,6 +17,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.extensions.review.dialogs :as dlg]
             [kmet.extensions.review.git :as git]
             [kmet.extensions.review.prompts :as prompts]
@@ -672,3 +673,9 @@
 
 (defn shutdown [_api] nil)
 
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/review
+   :apply (fn [_ctx api] (init api) nil)})

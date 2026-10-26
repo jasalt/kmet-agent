@@ -1,1 +1,1 @@
-{:name "review", :entry kmet.extensions.review.core, :loader [:jolt :sci]}
+{:name "review", :plugin kmet.extensions.review.core/plugin, :loader [:sci :jolt]}
