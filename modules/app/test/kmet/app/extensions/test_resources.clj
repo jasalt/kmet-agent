@@ -659,7 +659,7 @@
       (let [result (load "app" "(ns bad-app (:require [kmet.app.commands :as c]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
-                             "may depend only on kmet.extension, kmet.tui.* and kmet.libs.*"))))
+                             "may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core"))))
     (testing "the loader is host machinery — not shared, not requireable"
       (let [result (load "loader-ns"
                          (str "(ns bad-loader (:require [kmet.loader.core :as ldr]))\n"

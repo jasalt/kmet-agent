@@ -62,6 +62,10 @@ Every extension runs in its own isolated context, forked from one shared base:
 What an extension may require is a fixed, enforced list:
 
 - `kmet.extension` — the whole contract surface (every wrapper below).
+- `kmet.srce.core` — the kernel's public plugin/ctx/service surface, so an
+  extension can define plugins, provide services and use the ctx tree directly.
+  Only this one namespace is shared; the `kmet.srce.*` sub-namespaces stay
+  host machinery.
 - The shared layers `kmet.tui.*` and `kmet.libs.*`, shared by reference with
   the host (there is nothing to reimplement; the authoring guide's
   § Building UI covers the component library).
@@ -70,8 +74,9 @@ What an extension may require is a fixed, enforced list:
 - `clojure.*` and `babashka.*` builtins, and the fixed bundled set below.
 
 Any other kmet namespace — internals such as `kmet.agent.*` /
-`kmet.agent.modes.*`, and the loader `kmet.loader*` (host machinery) — fails
-the load with an explicit error.
+`kmet.agent.modes.*`, `kmet.app.*`, `kmet.srce.*` (except `kmet.srce.core`),
+and the loader `kmet.loader*` (host machinery) — fails the load with an
+explicit error.
 
 Two capabilities are routed rather than free, because they cross the host
 boundary: outbound HTTP goes through `kmet.libs.http` (requiring
@@ -192,6 +197,8 @@ the wrappers below or directly.
 (:extension-path api)   ; absolute path to the extension file/dir/jar
 (:extension-dir api)    ; the extension's own directory — nil for jars
                         ; (a jar has no directory; use io/resource)
+(:ctx api)              ; the ctx this extension's registrations land in —
+                        ; pass it to kmet.srce.core (plugins, provide!, …)
 (ext/get-agent-dir api) ; the host agent dir (KMET_CODING_AGENT_DIR-aware;
                         ; pi: getAgentDir) — keep extension state
                         ; (configs, caches) under it

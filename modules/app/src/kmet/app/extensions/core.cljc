@@ -1131,6 +1131,11 @@
      ;; = the file's parent) — nil for jar extensions, which have no
      ;; directory (use io/resource instead)
      :extension-dir (extension-dir-of ext)
+     ;; the ctx this extension's registrations land in (the bound service's
+     ;; ctx) — exposed so an extension can use kmet.srce.core directly
+     ;; (defining plugins, providing services, using the ctx tree) while
+     ;; keeping the host as the srce authority. nil when no ctx is bound.
+     :ctx (try (:ctx (services)) (catch Exception _ nil))
      ;; host agent dir (KMET_CODING_AGENT_DIR-aware; pi: getAgentDir) —
      ;; extensions keep their configs/caches under it
      :agent-dir (cfg/get-agent-dir)

@@ -311,7 +311,7 @@ reference's § Allowed namespaces and isolation):
 
 - kmet core and `clojure.*` / `babashka.*` namespaces are shared references
   (never re-evaluated), so extension registrations always reach the real
-  kmet registries. Extensions may depend only on `kmet.extension` plus the
+  kmet registries. Extensions may depend only on `kmet.extension`, `kmet.srce.core`, plus the
   shared `kmet.tui.*` / `kmet.libs.*` libraries; other kmet internals are
   not resolvable from an extension context (the load fails with an explicit
   error) — the loader, `kmet.loader*`, is one of those internals.
@@ -469,8 +469,8 @@ when a drop site forgets `dispose`. That backstop is not a contract —
 `ui-set-widget` replacement, dialog close and `/reload` dispose
 deterministically, and anything GC cannot release (timers, subprocesses,
 listeners, `with-let` cleanups) still requires `dispose`. A `kmet.tui.*` require that
-is not part of the shared set (or a `kmet.agent.*`/`kmet.agent.modes.*`/`kmet.libs.*`
-require) fails the load with an explicit error. The loader
+is not part of the shared set (or a `kmet.agent.*`/`kmet.agent.modes.*`/`kmet.libs.*`/
+`kmet.srce.*` (except `kmet.srce.core`) require) fails the load with an explicit error. The loader
 (`kmet.loader*`) is host machinery — never part of the shared set, so
 requiring it fails like any other internal.
 

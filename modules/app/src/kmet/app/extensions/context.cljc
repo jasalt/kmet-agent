@@ -504,6 +504,14 @@
   [n]
   (str/starts-with? n "kmet.libs."))
 
+(defn- srce-layer?
+  "Is namespace name N the shared srce kernel surface? Only the public
+   kmet.srce.core entry point is shared — the sub-namespaces (ctx, fiber,
+   event) stay host machinery, so an extension that needs the kernel uses
+   the single contract namespace the way every other consumer does."
+  [n]
+  (= n "kmet.srce.core"))
+
 (def ^:private bundled-extension-lib-predicate
   "Is namespace name N part of the fixed bundled extension set? The set's
    membership rule lives beside its enumeration (kmet.app.extensions.libs,
@@ -545,7 +553,8 @@
              (contains? bb-shared-namespaces (ns-name ns-obj))
              (@bundled-extension-lib-predicate n)
              (tui-layer? n)
-             (libs-layer? n)))))
+             (libs-layer? n)
+             (srce-layer? n)))))
 
 (defn- shared-namespace-names
   "The shared host namespaces' names, scanned from all-ns: the native
@@ -847,7 +856,8 @@
   "Fail fast with an actionable error when NS-FORM (the entry ns form, or
    any internal extension ns form validated by the load-fn) requires a
    kmet.* namespace outside the shared set (kmet.extension + kmet.tui.* +
-   kmet.libs.*) or the extension's own internal namespaces (OWNS-NS?, a
+   kmet.libs.* + kmet.srce.core) or the extension's own internal namespaces
+   (OWNS-NS?, a
    path-derived predicate — those resolve regardless of their prefix),
    or requires babashka.http-client directly (outbound HTTP must
    go through kmet.libs.http). Without this the error would be silent:
@@ -911,6 +921,12 @@
                        " — not part of the kmet.libs.* library shared with extensions")
                   {:extension ext-name :ns lib})))
 
+        ;; the srce kernel is shared by reference (its public entry point
+        ;; only — sub-namespaces stay host machinery), so an extension can
+        ;; define plugins, provide services and use the ctx tree directly
+        (= s "kmet.srce.core")
+        nil
+
         ;; direct outbound HTTP is not available to extensions — the
         ;; proxy-aware kmet.libs.http boundary is shared by reference
         (= s "babashka.http-client")
@@ -924,7 +940,7 @@
              (not= lib 'kmet.extension))
         (throw (ex-info
                 (str "Extension " ext-name " requires " lib
-                     " — extensions may depend only on kmet.extension, kmet.tui.* and kmet.libs.*")
+                     " — extensions may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core")
                 {:extension ext-name :ns lib}))))))
 
 (defn- shared-tui-namespaces
@@ -1165,7 +1181,7 @@
 
                   (str/starts-with? (str ns-sym) "kmet.")
                   (str "Extension " ext-name " requires " ns-sym
-                       " — extensions may depend only on kmet.extension, kmet.tui.* and kmet.libs.*")
+                       " — extensions may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core")
 
                   :else
                   (str "Extension " ext-name " requires " ns-sym
