@@ -7,6 +7,9 @@
      consumer must poll two triggers as one
    - `queue`/`put!`/`take!`/`close!` — the hand-off between a blocking reader
      thread and the owner thread that consumes what it read
+   - `bounded-queue`/`offer!`/`take-dropped!` — the same hand-off when the
+     producer may not wait: a wire's fan-out drops its oldest record under
+     pressure and tells the consumer how many it lost
 
    Extensions run in isolated SCI contexts where `future`/`pmap`/`pcalls`
    are not available — SCI is a pure interpreter with no bundled
@@ -136,6 +139,80 @@
       false
       (do (when-let [signal (:signal old)] (deliver signal true))
           true))))
+
+;; ─── a bounded lane: many producers, one consumer, drop-oldest ──────────────
+;;
+;; The hand-off queue above is unbounded because its producers are readers that
+;; are allowed to wait — a socket reader parking on a line costs one thread and
+;; nothing else. A wire's fan-out is the opposite case: a record written from a
+;; run's own thread must never park the run behind a client that stopped
+;; reading, and it must not grow without bound either. So the lane drops the
+;; oldest record, counts what it dropped, and lets the consumer report the loss.
+
+(defn bounded-queue
+  "A `queue` with a CAPACITY and the drop-oldest policy: `offer!` never blocks,
+   and a full lane drops its oldest record and counts it, so the consumer
+   learns what it missed (`take-dropped!`) instead of the producer learning
+   nothing and stalling.
+
+   It exists for a wire fan-out: a run's events are written from the run's own
+   thread, and a client that stops reading must cost its own buffer, not the
+   turn. Dropping the *oldest* is the point — dropping the newest would lose the
+   end of a message, and a gap the consumer can see is what lets it resync. One
+   consumer, like `queue`; `close!` is shared."
+  [capacity]
+  (atom {:items [] :capacity (max 1 (long capacity)) :dropped 0
+         :closed? false :signal nil}))
+
+(defn- hand-out-dropped
+  "One atomic take decision for a bounded lane: the next record, and how many
+   were dropped since the previous take. The count travels with the item, so a
+   consumer that fell behind can report the gap before it writes what survived."
+  [{:keys [items dropped closed?] :as state}]
+  (cond
+    (seq items) (assoc state
+                       :items (subvec items 1)
+                       :handed {:value (first items) :dropped dropped}
+                       :dropped 0)
+    (true? closed?) (assoc state :handed {:value closed :dropped dropped} :dropped 0)
+    :else (update state :signal #(or % (promise)))))
+
+(defn offer!
+  "Hand V to the consumer without blocking; when the lane is at capacity the
+   oldest record is dropped and counted for `take-dropped!`. False when the
+   lane is closed: the record is dropped and the caller learns it."
+  [q v]
+  (let [[old _] (swap-vals! q (fn [{:keys [closed? items capacity] :as state}]
+                                (if closed?
+                                  state
+                                  (let [items (conj items v)
+                                        full? (> (count items) capacity)]
+                                    (if full?
+                                      (-> state
+                                          (assoc :items (subvec items 1))
+                                          (update :dropped inc)
+                                          (assoc :signal nil))
+                                      (-> state
+                                          (assoc :items items)
+                                          (assoc :signal nil)))))))]
+    (if (:closed? old)
+      false
+      (do (when-let [signal (:signal old)] (deliver signal true))
+          true))))
+
+(defn take-dropped!
+  "The next value and how many records were dropped since the previous take:
+   `{:value v :dropped n}`, where `:value` is `closed` once the lane is closed
+   and drained. Single consumer (see `queue`)."
+  [q]
+  (loop []
+    (let [state (swap! q hand-out-dropped)]
+      (if-let [handed (find state :handed)]
+        (let [value (val handed)]
+          (swap! q dissoc :handed)
+          value)
+        (do (deref (:signal state))
+            (recur))))))
 
 (defn monotonic-ms
   "Elapsed-time milliseconds — the only clock for durations and deadlines:

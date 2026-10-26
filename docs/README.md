@@ -16,6 +16,8 @@ are the deliberate exception.
   how `--patch` layers edit the row list.
 - [RPC mode](rpc.md) — drive a long-lived session over EDN stdin/stdout:
   protocol, commands, and extension UI.
+- [Server mode](serve.md) — the same protocol on a socket, one agent per
+  connection: the token, the session cap, the per-wire queue, and approvals.
 - [Configuration](configuration.md) — settings files, prompts, compaction,
   HTTP, and resource locations.
 

@@ -12,6 +12,12 @@ bb start --mode rpc                      # source checkout (babashka)
 jolt start --mode rpc                    # ...or Jolt
 ```
 
+`--profile server` serves this same protocol over a socket, one agent per
+connection. The connection rules — the bearer token, the `:hello`/`:auth`/
+`:ready` handshake, the session cap, the per-wire queue and its `:stream-gap`,
+and the world a connection brings — are in [server mode](serve.md); everything
+below is the record vocabulary the two share.
+
 A mode run opens a fresh session. The session-lifecycle flags are refused by
 name (`--continue needs a mode that opens a session`, exit 1) rather than
 silently starting the fresh session they exist to prevent; a client that wants
@@ -197,7 +203,8 @@ correlates an answer (pi writes no response record for a valid one); a
 `respond` without a string `:id` fails as a response.
 
 The `:request`/`:response` pair that *is* live is the **server** row's
-approval route: a run whose policy asks sends the question on the connection
+approval route ([server mode](serve.md) has the handshake and the connection
+rules): a run whose policy asks sends the question on the connection
 that owns its agent, and the client answers it on the same records.
 
 ```clojure

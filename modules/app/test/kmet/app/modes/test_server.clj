@@ -3,17 +3,25 @@
    mode, opens a socket, and gives **each connection its own agent**. The
    command language is rpc's; what these tests add is what the socket changes —
    two agents at once, a client that stalls holding nothing but its own parked
-   thread, a closed connection releasing its agent, and every record badged with
-   the id of the agent it belongs to.
+   thread, a closed connection releasing its agent, every record badged with the
+   id of the agent it belongs to, and the transport's rules: a bearer token
+   before an agent exists, a session cap, a per-wire queue that shows its gaps,
+   an idle connection that is reaped, and the world a connection brings.
 
    The model is stubbed and the session log lives under target/
    (`kmet.app.test-support`), as for every mode test."
-  (:require [clojure.edn :as edn]
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
+            [kmet.app.modes.server :as server-mode]
+            [kmet.app.session.core :as session]
             [kmet.app.test-support :as support :refer [with-mode-run]]
-            [kmet.libs.concurrent :as concurrent]))
+            [kmet.libs.concurrent :as concurrent])
+  (:import [java.net InetSocketAddress Socket]
+           [java.net StandardProtocolFamily UnixDomainSocketAddress]
+           [java.nio.channels Channels SocketChannel]))
 
 ;; ── the client ────────────────────────────────────────────────────────────
 
@@ -43,51 +51,134 @@
               (when-let [on-done (:on-done opts)] (on-done :stop))))
         :done))))
 
-(defn- connect
-  "A client socket to PORT: a reader thread collecting records, `:send!` writing
-   one, and `:close!`. Exactly what a client of the protocol is."
-  [port]
-  (let [socket (java.net.Socket. "127.0.0.1" (int port))
-        writer (io/writer (.getOutputStream socket))
-        seen (atom [])]
-    (concurrent/spawn
-     (fn []
-       (try
-         (with-open [rdr (io/reader (.getInputStream socket))]
-           (loop []
-             (when-let [line (.readLine rdr)]
-               (swap! seen conj (edn/read-string line))
-               (recur))))
-         (catch Throwable _))))
-    {:socket socket
-     :send! (fn [record]
-              (locking writer
-                (.write writer (str (pr-str record) \newline))
-                (.flush writer)))
+(defn- flooding
+  "A `send-message` stub that streams CHUNKS text deltas and then settles,
+   delivering DONE once it has emitted them all. A wire that keeps up with this
+   would need the client reading; a client that does not must not slow the run."
+  [done chunks]
+  (fn [opts]
+    (future
+      (dotimes [i chunks]
+        (when-let [on-text (:on-text opts)]
+          (on-text (str "chunk-" i " " (apply str (repeat 40 "x"))))))
+      (when-let [on-done (:on-done opts)] (on-done :stop))
+      (deliver done :done)
+      :done)))
+
+(defn- start-reading!
+  "The reader thread: collect every record the server writes until the socket
+   closes, and mark the client closed when it does."
+  [socket seen closed]
+  (concurrent/spawn
+   (fn []
+     (try
+       (with-open [rdr (io/reader (.getInputStream socket))]
+         (loop []
+           (when-let [line (.readLine rdr)]
+             (swap! seen conj (edn/read-string line))
+             (recur))))
+       (catch Throwable _))
+     (reset! closed true))))
+
+(defn- client
+  "A test client over a transport's plumbing: SEND! writes one record, READ!
+   starts the reader over SEEN (the collected records) and CLOSED (set when the
+   socket ends), and CLOSE! ends it. Every helper a test asserts with lives
+   here, so the two transports differ only in their three functions.
+
+   `:agent-id` is the first badged record — normally `:ready`, but a test that
+   runs a one-deep lane may lose `:ready` to a gap, and every record after it
+   carries the same id."
+  [send! read! close!]
+  (let [seen (atom [])
+        closed (atom false)]
+    {:send! send!
+     :read! (fn [] (read! seen closed))
      :records (fn [] @seen)
      :of-type (fn [type] (filter #(= type (:type %)) @seen))
-     :agent-id (fn [] (:agent-id (first (filter #(= :ready (:type %)) @seen))))
-     :close! (fn [] (.close socket))}))
+     :agent-id (fn [] (:agent-id (first (filter :agent-id @seen))))
+     :closed? (fn [] @closed)
+     :close! close!}))
+
+(defn- connect-tcp
+  "A client socket to PORT with its reader, writer and the facts a client needs.
+   OPTS is `{:token :auth :auth? :read? :receive-buffer}`: the server's token,
+   extra fields on the auth record, whether to send one at all, whether to read
+   from the start, and the receive buffer a stalled-wire test wants small.
+
+   The auth record is sent by the client, never by the test, so every connection
+   starts the way the protocol says one does."
+  [port {:keys [token auth auth? read? receive-buffer]
+         :or {auth? true read? true}}]
+  (let [socket (java.net.Socket.)]
+    (when receive-buffer (.setReceiveBufferSize socket (int receive-buffer)))
+    (.connect socket (InetSocketAddress. "127.0.0.1" (int port)))
+    (let [writer (io/writer (.getOutputStream socket))
+          conn (assoc (client (fn [record]
+                                (locking writer
+                                  (.write writer (str (pr-str record) \newline))
+                                  (.flush writer)))
+                              (fn [seen closed] (start-reading! socket seen closed))
+                              (fn [] (.close socket)))
+                      :socket socket)]
+      (when read? ((:read! conn)))
+      (when auth? ((:send! conn) (merge {:type :auth :token token} auth)))
+      conn)))
+
+(defn- connect-unix
+  "CONNECT-TCP over a unix-domain socket: the same client, the same handshake."
+  [path {:keys [token auth]}]
+  (let [addr (UnixDomainSocketAddress/of (str path))
+        channel (SocketChannel/open StandardProtocolFamily/UNIX)]
+    (.connect channel addr)
+    (let [out (io/writer (Channels/newOutputStream channel))
+          conn (client (fn [record]
+                         (locking out
+                           (.write out (str (pr-str record) \newline))
+                           (.flush out)))
+                       (fn [seen closed]
+                         (concurrent/spawn
+                          (fn []
+                            (try
+                              (with-open [rdr (io/reader (Channels/newInputStream channel))]
+                                (loop []
+                                  (when-let [line (.readLine rdr)]
+                                    (swap! seen conj (edn/read-string line))
+                                    (recur))))
+                              (catch Throwable _))
+                            (reset! closed true))))
+                       (fn [] (.close channel)))]
+      ((:read! conn))
+      ((:send! conn) (merge {:type :auth :token token} auth))
+      conn)))
+
+(defn- listening-record
+  "The mode's `:listening` announcement from its own stdout."
+  [out]
+  (first (filter #(= :listening (:type %))
+                 (map edn/read-string (remove str/blank? (str/split-lines out))))))
 
 (defn- start!
-  "Boot `--profile server` with ARGS and return `{:port :records :stop!}`. The
-   mode's stdin is a loopback socket, so the test owns the supervisor signal:
-   `:stop!` closes it and answers the mode's exit code. `:records` are the
-   mode's own: the `:listening` announcement, since the protocol goes on the
-   socket."
-  [& [args]]
+  "Boot `--profile server` with ARGS and return the announcement plus `:stop!`.
+   The mode's stdin is a loopback socket, so the test owns the supervisor
+   signal: `:stop!` closes it and answers the mode's exit code. `:records` are
+   the mode's own — the protocol goes on the socket."
+  [args]
   (let [signal (java.net.ServerSocket. 0)
         accepted (future (.accept signal))
-        stdin-client (java.net.Socket. "127.0.0.1" (.getLocalPort signal))
+        stdin-client (Socket. "127.0.0.1" (.getLocalPort signal))
         stdin-peer @accepted
         out (java.io.StringWriter.)
         result (future (binding [*in* (io/reader (.getInputStream stdin-peer))]
                          (support/run-main-into (into ["--profile" "server"] args) out)))]
     (when-not (support/wait-until #(str/includes? (str out) ":listening"))
       (throw (ex-info "the server never announced a port" {:out (str out)})))
-    (let [announced (some #(when (str/includes? % ":listening") (edn/read-string %))
-                          (str/split-lines (str out)))]
+    (let [announced (listening-record (str out))]
       {:port (:port announced)
+       :socket (:socket announced)
+       :transport (:transport announced)
+       :token (:token announced)
+       :max-sessions (:max-sessions announced)
        :records (fn [] (mapv edn/read-string (remove str/blank? (str/split-lines (str out)))))
        :stop! (fn []
                 (.close stdin-client)
@@ -95,23 +186,30 @@
        :result result})))
 
 (defn- with-server
-  "Run F with a served socket. F gets `{:port :conn! :stop!}`, and every
-   connection it opened with `conn!` is closed on the way out, even when F
+  "Run F with a served socket. F gets `{:port :socket :token :conn! :stop!}`, and
+   every connection it opened with `conn!` is closed on the way out, even when F
    throws — a test never has to close what it opened, which is also what keeps
    its body one nesting deep.
 
-   OPTIONS override the two things a test may want different: `:send-message`
-   (the model stub — by default one that answers the prompt) and `:patch` (a
+   OPTIONS override the three things a test may want different: `:send-message`
+   (the model stub — by default one that answers the prompt), `:patch` (a
    composition layer file, for a profile that mounts more than the built-in
-   rows)."
+   rows), and `:args` (further server flags)."
   ([f] (with-server {} f))
-  ([{:keys [send-message patch]} f]
+  ([{:keys [send-message patch args]} f]
    (with-mode-run
      (or send-message (replying (promise)))
      (fn []
-       (let [server (start! (cond-> [] patch (conj "--patch" patch)))
+       (let [server (start! (cond-> (vec (or args []))
+                              patch (conj "--patch" patch)))
              opened (atom [])
-             conn! (fn [] (let [c (connect (:port server))] (swap! opened conj c) c))]
+             conn! (fn conn!
+                     ([] (conn! {}))
+                     ([opts]
+                      (let [c (connect-tcp (:port server)
+                                           (merge {:token (:token server)} opts))]
+                        (swap! opened conj c)
+                        c)))]
          (try
            (f (assoc server :conn! conn!))
            (finally
@@ -119,7 +217,9 @@
              ((:stop! server)))))))))
 
 (defn- ready
-  "Wait until CONN's `:ready` record has arrived."
+  "Wait until CONN's handshake has finished — the first badged record, which is
+   `:ready` unless a one-deep lane dropped it for a gap — and answer the
+   `:ready` record when it is still there."
   [conn]
   (support/wait-until #(some? ((:agent-id conn))))
   (first ((:of-type conn) :ready)))
@@ -128,6 +228,29 @@
   "Has CONN received the response for request ID?"
   [conn id]
   (support/wait-until #(some? (first (filter (fn [r] (= id (:id r))) ((:records conn)))))))
+
+(defn- verdict
+  "Wait until CONN has been answered `:ready` or refused with `:error`, then say
+   which."
+  [conn]
+  (support/wait-until #(or (some? ((:agent-id conn)))
+                           (seq ((:of-type conn) :error)))
+                      5000)
+  (if ((:agent-id conn)) :ready :refused))
+
+(defn- connect-when-accepted
+  "Open connections until one is accepted, within TIMEOUT-MS. The seat a closed
+   connection frees is released on the server thread, so a test that closes one
+   and connects again waits for the release rather than assuming it happened."
+  [conn! timeout-ms]
+  (let [deadline (+ (concurrent/monotonic-ms) (long timeout-ms))]
+    (loop []
+      (let [c (conn!)]
+        (cond
+          (= :ready (verdict c)) c
+          (< (concurrent/monotonic-ms) deadline)
+          (do ((:close! c)) (Thread/sleep 25) (recur))
+          :else nil)))))
 
 ;; ── the gate: an approval answered by a client ────────────────────────
 
@@ -161,17 +284,19 @@
               (when-let [f (:on-done opts)] (f "end_turn"))))
         :done))))
 
-;; ── tests ─────────────────────────────────────────────────────────────────
+;; ── tests: the socket ─────────────────────────────────────────────────────
 
 (deftest each-connection-is-an-agent
   ;; The socket is the boundary: two clients, two agents, and no record a client
-  ;; reads can be mistaken for its neighbour's.
+  ;; reads after `:ready` can be mistaken for its neighbour's.
   (with-server
     (fn [{:keys [conn!]}]
       (let [a (conn!)
             b (conn!)]
         (ready a)
         (ready b)
+        (is (= :tcp (:transport (first ((:of-type a) :hello))))
+            "the greeting says which transport the client is on")
         (is (not= ((:agent-id a)) ((:agent-id b)))
             "two connections hold two agents")
         ((:send! a) {:type :get-state :id "a1"})
@@ -186,9 +311,11 @@
           (is (not= (get-in state-a [:data :session :id])
                     (get-in state-b [:data :session :id]))
               "and the two agents have sessions of their own"))
-        (is (every? #(= ((:agent-id a)) (:agent-id %)) ((:records a)))
-            "every record on a connection is badged with its agent's id")
-        (is (every? #(= ((:agent-id b)) (:agent-id %)) ((:records b))))
+        (is (every? #(= ((:agent-id a)) (:agent-id %))
+                    (drop-while #(not= :ready (:type %)) ((:records a))))
+            "every record after :ready is badged with its agent's id")
+        (is (every? #(= ((:agent-id b)) (:agent-id %))
+                    (drop-while #(not= :ready (:type %)) ((:records b)))))
         ;; the command engine is rpc mode's, unshared state included: a refusal
         ;; travels the socket with the same name and the same badge
         ((:send! a) {:type :prompt :id "a2"})
@@ -199,9 +326,8 @@
           (is (= ((:agent-id a)) (:agent-id refused))))))))
 
 (deftest a-command-needs-the-surface-a-connection-lacks
-  ;; The command language is rpc's, but a connection has no command surface
-  ;; until 10b gives it a per-connection port: a slash command is refused by
-  ;; name, never run with its reply dropped.
+  ;; The command language is rpc's, but a connection has no command surface: a
+  ;; slash command is refused by name, never run with its reply dropped.
   (with-server
     (fn [{:keys [conn!]}]
       (let [c (conn!)]
@@ -221,6 +347,7 @@
     (fn [{:keys [conn!]}]
       (let [stalled (conn!)
             working (conn!)]
+        (ready stalled)
         (ready working)
         (let [w (io/writer (.getOutputStream (:socket stalled)))]
           (.write w "{:type :get-state")
@@ -228,8 +355,8 @@
         ((:send! working) {:type :get-state :id "w1"})
         (is (answered? working "w1")
             "the other client is served while the first is mid-record")
-        (is (= [:ready] (mapv :type ((:records stalled))))
-            "and the stalled client was told nothing but its own agent's id, because
+        (is (= [:hello :ready] (mapv :type ((:records stalled))))
+            "and the stalled client was told nothing but its own greeting and id, because
              it asked nothing else")))))
 
 (deftest a-stalled-run-does-not-hold-the-other-agent
@@ -363,7 +490,203 @@
         (is (nil? (first (filter #(= "r" (:id %)) ((:records c)))))
             "and nothing came back for it")))))
 
+;; ── tests: the transport's rules ──────────────────────────────────────────
+
+(deftest a-connection-must-authenticate-before-it-gets-an-agent
+  ;; The token is the door: a command before an `:auth` is refused and the socket
+  ;; closed, a wrong token is refused the same way, and only the right one gets
+  ;; `:ready` — the point being that no agent exists for a connection that has
+  ;; not authenticated.
+  (with-server
+    (fn [{:keys [conn!]}]
+      (let [unauthed (conn! {:auth? false})]
+        ((:send! unauthed) {:type :get-state :id "x"})
+        (is (support/wait-until #(seq ((:of-type unauthed) :error)))
+            "a command before authentication is answered with an error")
+        (is (str/includes? (str (:error (first ((:of-type unauthed) :error))))
+                           "authenticate first"))
+        (is (nil? ((:agent-id unauthed))) "and no agent was created")
+        (is (support/wait-until (:closed? unauthed) 5000) "the socket is closed"))
+      (let [wrong (conn! {:token "not-the-token"})]
+        (is (support/wait-until #(seq ((:of-type wrong) :error))))
+        (is (str/includes? (str (:error (first ((:of-type wrong) :error))))
+                           "authentication failed"))
+        (is (nil? ((:agent-id wrong))))
+        (is (support/wait-until (:closed? wrong) 5000)))
+      (let [right (conn!)]
+        (ready right)
+        (is (some? ((:agent-id right))) "the server's own token is the way in")))))
+
+(deftest a-supplied-token-is-the-way-in-and-is-not-echoed
+  ;; `--token` names the secret instead of the server generating one. The
+  ;; announcement carries a token only when it generated it: a secret the caller
+  ;; supplied must not be repeated into the server's log.
+  (with-server
+    {:args ["--token" "secret-token"]}
+    (fn [{:keys [conn! records]}]
+      (is (nil? (:token (first (filter #(= :listening (:type %)) (records)))))
+          "the listening record does not echo the supplied token")
+      (let [ok (conn! {:token "secret-token"})]
+        (ready ok)
+        (is (some? ((:agent-id ok))) "the supplied token authenticates")
+        (let [bad (conn! {:token "wrong-token"})]
+          (is (support/wait-until #(seq ((:of-type bad) :error))))
+          (is (str/includes? (str (:error (first ((:of-type bad) :error))))
+                             "authentication failed")
+              "and only it does"))))))
+
+(deftest a-unix-socket-never-replaces-a-file
+  ;; `--socket` removes a stale socket left by a crash, and never a regular
+  ;; file: naming somebody's file must not delete it.
+  (when (server-mode/unix-sockets?)
+    (let [path "target/test-server-occupied.sock"]
+      (spit path "not a socket")
+      (try
+        (let [{:keys [code]} (support/run-main ["--profile" "server" "--socket" path])]
+          (is (= 1 code) "the boot refuses the path")
+          (is (fs/regular-file? path) "and the file is still there")
+          (is (= "not a socket" (slurp path))))
+        (finally
+          (fs/delete-if-exists path))))))
+
+(deftest a-server-caps-its-sessions
+  ;; `--max-sessions` is a live cap on connections: the second client is refused
+  ;; while the first holds the seat, and a freed seat serves the next one.
+  (with-server
+    {:args ["--max-sessions" "1"]}
+    (fn [{:keys [conn!]}]
+      (let [a (conn!)]
+        (ready a)
+        (let [b (conn! {:auth? false})]
+          (is (support/wait-until #(seq ((:of-type b) :error)))
+              "the second connection is refused at the cap")
+          (is (str/includes? (str (:error (first ((:of-type b) :error)))) "session")
+              "and the refusal says so")
+          (is (support/wait-until (:closed? b) 5000)))
+        ((:close! a))
+        ;; the seat is released on the server thread, so the next connection may
+        ;; have to wait a moment for it
+        (is (some? (connect-when-accepted conn! 5000))
+            "a closed connection frees its seat")))))
+
+(deftest an-idle-connection-is-reaped
+  ;; `--idle-timeout` releases a connection that says nothing and has no work in
+  ;; flight. The reaper only queues the decision; the server thread closes it, so
+  ;; the client sees its socket end and the server keeps serving.
+  (with-server
+    {:args ["--idle-timeout" "1"]}
+    (fn [{:keys [conn!]}]
+      (let [c (conn!)]
+        (ready c)
+        (is (support/wait-until (:closed? c) 8000)
+            "the reaper closed a connection that stayed silent past the timeout")
+        (is (some? (connect-when-accepted conn! 5000))
+            "and the server still serves a new one")))))
+
+(deftest a-client-that-stops-reading-gets-a-gap-and-resyncs
+  ;; The fan-out's rule: a run streams to its end whether or not the client is
+  ;; reading, and a client that fell behind learns its stream has a hole
+  ;; (`:stream-gap`) instead of silently losing the middle of a message — then
+  ;; resyncs with `get-state`. The lane is one record deep and the socket's
+  ;; receive buffer is tiny, so the gap is not a matter of timing.
+  (let [done (promise)]
+    (with-server
+      {:send-message (flooding done 4000)
+       :args ["--queue-depth" "1"]}
+      (fn [{:keys [conn!]}]
+        (let [c (conn! {:read? false :receive-buffer 1024})]
+          ((:send! c) {:type :prompt :id "p1" :message "flood"})
+          (is (= :done (deref done 60000 :timeout))
+              "the run streamed to its end without waiting for the client")
+          ((:read! c))
+          (is (support/wait-until #(seq ((:of-type c) :stream-gap)) 60000)
+              "the client learns its stream has a hole")
+          (let [gap (first ((:of-type c) :stream-gap))]
+            (is (pos? (:dropped gap)) "the gap counts what it lost")
+            (is (= ((:agent-id c)) (:agent-id gap)) "and belongs to its agent"))
+          ((:send! c) {:type :get-state :id "resync"})
+          (is (answered? c "resync")
+              "and the client resyncs with get-state"))))))
+
+(deftest a-connection-brings-its-own-world
+  ;; The config half of landing 9: the auth record's `:cwd` places the agent's
+  ;; session, and its `:config` overrides the settings the agent runs on. Two
+  ;; connections of one server, two cwds and two models — no process cell moved.
+  (let [world (fn [name]
+                (let [dir (fs/absolutize (str "target/test-server-worlds/" name))]
+                  (fs/create-dirs dir)
+                  (str dir)))]
+    (with-server
+      (fn [{:keys [conn!]}]
+        (let [dir-a (world "a")
+              dir-b (world "b")
+              a (conn! {:auth {:cwd dir-a :config {:model "claude-haiku-5-5"}}})
+              b (conn! {:auth {:cwd dir-b}})]
+          (ready a) (ready b)
+          ((:send! a) {:type :get-state :id "a1"})
+          ((:send! b) {:type :get-state :id "b1"})
+          (answered? a "a1") (answered? b "b1")
+          (let [data (fn [conn id]
+                       (:data (first (filter #(= id (:id %)) ((:records conn))))))
+                a-state (data a "a1")
+                b-state (data b "b1")]
+            (is (= "claude-haiku-5-5" (:model a-state))
+                "the connection's :config is the settings its agent runs on")
+            (is (= "deepseek-v4-flash" (:model b-state))
+                "and the other connection kept the process's")
+            (is (str/starts-with? (get-in a-state [:session :file])
+                                  (str (fs/absolutize
+                                        (session/session-dir-for-cwd support/sessions-dir dir-a))))
+                "the connection's :cwd placed its session")
+            (is (str/starts-with? (get-in b-state [:session :file])
+                                  (str (fs/absolutize
+                                        (session/session-dir-for-cwd support/sessions-dir dir-b)))))
+            (is (not= (get-in a-state [:session :file])
+                      (get-in b-state [:session :file])))))))))
+
+(deftest a-connections-cwd-must-exist
+  ;; A cwd the client names has to be a directory: an agent whose `pwd` does not
+  ;; exist would fail every tool call with a filesystem error about a path the
+  ;; client never meant.
+  (with-server
+    (fn [{:keys [conn!]}]
+      (let [c (conn! {:auth {:cwd "target/test-server-worlds/does-not-exist"}})]
+        (is (support/wait-until #(seq ((:of-type c) :error)))
+            "a cwd that is not a directory never gets an agent")
+        (is (str/includes? (str (:error (first ((:of-type c) :error)))) "cwd"))))))
+
+(deftest a-unix-socket-serves-the-same-protocol
+  ;; `--socket` is the second transport: the same hello, the same handshake, the
+  ;; same command language. On a host with no unix-domain sockets (Jolt) the
+  ;; server falls back to TCP port loopback and says so on stderr, so the same
+  ;; invocation is portable.
+  (let [path "target/test-server.sock"]
+    (fs/delete-if-exists path)
+    (try
+      (with-server
+        {:args ["--socket" path]}
+        (fn [{:keys [port socket transport token]}]
+          (if (server-mode/unix-sockets?)
+            (do
+              (is (= :unix transport) "the announcement says which transport it bound")
+              (is (= (str (fs/absolutize path)) socket))
+              (let [c (connect-unix socket {:token token})]
+                (ready c)
+                ((:send! c) {:type :get-state :id "u1"})
+                (is (answered? c "u1") "the protocol is the same over a unix socket")
+                ((:close! c))))
+            (do
+              (is (= :tcp transport) "a host without unix sockets falls back to TCP")
+              (is (some? port))))))
+      (finally
+        (fs/delete-if-exists path)))))
+
 (deftest a-port-that-is-not-a-number-is-a-usage-error
   (let [{:keys [code err]} (support/run-main ["--profile" "server" "--port" "abc"])]
     (is (= 1 code))
     (is (str/includes? err "--port needs a number"))))
+
+(deftest a-session-limit-that-is-not-a-number-is-a-usage-error
+  (let [{:keys [code err]} (support/run-main ["--profile" "server" "--max-sessions" "many"])]
+    (is (= 1 code))
+    (is (str/includes? err "--max-sessions needs a number"))))

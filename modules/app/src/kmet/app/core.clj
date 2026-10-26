@@ -76,6 +76,13 @@
    "--model" :model
    "--provider" :provider
    "--port" :port
+   ;; the server's transport limits (docs/serve.md): the bearer token a client
+   ;; authenticates with, a unix-domain socket path, and the three caps
+   "--token" :token
+   "--socket" :socket
+   "--max-sessions" :max-sessions
+   "--queue-depth" :queue-depth
+   "--idle-timeout" :idle-timeout
    "--session" :session
    ;; kmet1's other run flags. `--model` is a pattern and is resolved against
    ;; the catalog before a run (`kmet.app.invocation`); the rest are config
@@ -166,7 +173,8 @@
    :thinking kw :models [pattern …] :system-prompt str
    :append-system-prompt [str …] :session-dir path :continue? :resume?
    :session str :debug :generate-models :list-models str-or-true
-   :ext-flags {name value-or-true}}`.
+   :token str :socket path :max-sessions long :queue-depth long
+   :idle-timeout long :ext-flags {name value-or-true}}`.
    `:profile` defaults to `profile/default-profile`; `--mode` is kmet1's spelling
    of it (`resolve-mode`), and the run flags are kmet1's: `--model`/`--provider`
    are the agent's overrides, `--thinking`/`--system-prompt`/
@@ -218,10 +226,13 @@
                         ;; repeatable; `cfg/get-append-system-prompt` resolves
                         ;; the pieces and joins them like pi
                         :append-system-prompt (update opts k (fnil conj []) v)
-                        ;; a socket port is a number, and a value that is not
-                        ;; one is a usage error here rather than a boot failure
-                        :port (assoc opts k (or (parse-long v)
-                                                (throw (bad-args (str "--port needs a number, got " (pr-str v))))))
+                        ;; a socket port and the server's limits are numbers: a
+                        ;; value that is not one is a usage error here rather
+                        ;; than a boot failure, and a mode that read a nil cap
+                        ;; would serve without one
+                        (:port :max-sessions :queue-depth :idle-timeout)
+                        (assoc opts k (or (parse-long v)
+                                          (throw (bad-args (str flag " needs a number, got " (pr-str v))))))
                         (assoc opts k v))))
 
           (contains? print-flags flag)
@@ -363,6 +374,11 @@
   (println "  --system-prompt <text>  Replace the system prompt (text, or a path to a file)")
   (println "  --append-system-prompt <text>  Append to the system prompt (repeatable)")
   (println "  --port <n>         --profile server's socket (0, the default, asks the OS)")
+  (println "  --socket <path>    --profile server on a unix-domain socket where the host serves one")
+  (println "  --token <secret>   --profile server's bearer token (generated and announced when absent)")
+  (println "  --max-sessions <n> --profile server's connection cap (default 8, 0 = no cap)")
+  (println "  --queue-depth <n>  --profile server's records buffered per connection (default 256)")
+  (println "  --idle-timeout <s> --profile server releases a connection silent this long (default 1800, 0 = never)")
   (println "  -c, --continue     Continue this directory's last session (the TUI)")
   (println "  -r, --resume       Pick a session to resume (the TUI)")
   (println "  --session <id>     Open a session by id, prefix or path (the TUI)")
@@ -419,17 +435,20 @@
    what the mode hands its run — the output `:format`, the agent's
    `:model`/`:provider`/`:thinking` overrides, the scope it offers
    (`:models`), its prompt and session-dir overrides (`:system-prompt`,
-   `:append-system-prompt`, `:session-dir`), the socket `:port`, and the session
-   the run opens (`:session`, `:resume`, `:continue`, in kmet1's spelling
-   because the TUI row hands them to kmet1's `interactive/run`), and the process
-   world's loaded config (`:config`, which the TUI drives `interactive/run`
-   with). A value the invocation did not give stays absent (`select-keys`), so a
-   mode sees what was asked for rather than a map of every option it could have
-   been told."
+   `:append-system-prompt`, `:session-dir`), the socket `:port`, the server's
+   transport and limits (`:socket`, `:token`, `:max-sessions`, `:queue-depth`,
+   `:idle-timeout`), the session the run opens (`:session`, `:resume`,
+   `:continue`, in kmet1's spelling because the TUI row hands them to kmet1's
+   `interactive/run`), and the process world's loaded config (`:config`, which
+   the TUI drives `interactive/run` with). A value the invocation did not give
+   stays absent (`select-keys`), so a mode sees what was asked for rather than a
+   map of every option it could have been told."
   [opts config prompt on-result]
   (cond-> (assoc (select-keys opts [:format :model :provider :thinking :models
                                     :system-prompt :append-system-prompt
-                                    :session-dir :port :session])
+                                    :session-dir :port :socket :token
+                                    :max-sessions :queue-depth :idle-timeout
+                                    :session])
                  :on-result on-result
                  ;; the process world's loaded config: the TUI runs on it, and a
                  ;; mode that reads settings itself ignores the key

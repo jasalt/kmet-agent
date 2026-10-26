@@ -38,6 +38,11 @@ bb start @tasks.md "summarize the tasks"
   --system-prompt <txt> Replace the system prompt (text, or a path to a file)
   --append-system-prompt <txt> Append to the system prompt (repeatable)
   --port <n>            --profile server's socket (0, the default, asks the OS)
+  --socket <path>       --profile server on a unix-domain socket where the host serves one
+  --token <secret>      --profile server's bearer token (generated and announced when absent)
+  --max-sessions <n>    --profile server's connection cap (default 8, 0 = no cap)
+  --queue-depth <n>     --profile server's records buffered per connection (default 256)
+  --idle-timeout <s>    --profile server releases a connection silent this long (default 1800, 0 = never)
   -c, --continue        Continue this directory's last session (the TUI)
   -r, --resume          Pick a session to resume (the TUI)
   --session <id>        Open a session by id, prefix or path (the TUI)
@@ -75,8 +80,10 @@ outcome; the exit code follows it (0 completed, 1 error or aborted).
 `--profile rpc` runs the long-lived EDN protocol instead: commands on stdin,
 responses and the same event stream on stdout, plus extension dialogs and
 output channels. `--profile server` serves the same protocol on a socket, one
-session per connection. See the [RPC guide](rpc.md) for the protocol and the
-command reference.
+agent per connection, each with the cwd and settings its client's `:auth`
+record names. See the [RPC guide](rpc.md) for the protocol and the command
+reference, and [server mode](serve.md) for the handshake, the token, the
+limits, and what happens to a client that stops reading.
 
 ### Package subcommands
 

@@ -571,7 +571,14 @@
    resolved over the composition's session dir, and the handle is bound to the
    session its file holds — entries, cwd and all, because `agent-state` takes
    its cwd from the session. An id nothing answers to is a named failure
-   (:kmet.app/unknown-session), never a fresh conversation wearing the id."
+   (:kmet.app/unknown-session), never a fresh conversation wearing the id.
+
+   `:cwd` places the new session — and so the run's working directory, its
+   shell's and every relative path it resolves — in that directory instead of
+   the process's. It is the option a front end that serves several worlds needs
+   (the server's one agent per connection, each with the cwd its client named);
+   a resumed session keeps the cwd its file holds, because that is the world
+   the conversation happened in."
   [ctx _config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
@@ -590,7 +597,8 @@
                                          session (or (some->> (:resume opts)
                                                               (resume-session log config))
                                                      (:session opts)
-                                                     (session-for log config cwd))]
+                                                     (session-for log config
+                                                                  (or (:cwd opts) cwd)))]
                                      (agent-handle child
                                                    {:id (:id opts)
                                                     :config config

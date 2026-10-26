@@ -7,7 +7,7 @@ default is `tui`.
 kmet                                   # the TUI (--profile tui)
 kmet --profile print "list the files"  # one prompt, then exit
 kmet --profile rpc                     # EDN command stream on stdin/stdout
-kmet --profile server --port 7777      # the same protocol on a socket
+kmet --profile server --port 7777      # the same protocol on a socket, one agent per connection
 ```
 
 `--mode` is the older spelling of the same switch: `--mode rpc` runs the rpc
@@ -95,7 +95,7 @@ error rather than a silent pick.
 | `tui` | the interactive terminal UI (the default) |
 | `print` | runs one prompt and exits; `--mode text` streams the answer, `--mode edn` prints the session header and events as EDN |
 | `rpc` | the long-lived EDN protocol on stdin/stdout — see [`rpc.md`](rpc.md) |
-| `server` | the same protocol on a socket, one session per connection; `--port` picks it (0 asks the OS) |
+| `server` | the same protocol on a socket, one agent per connection; `--port` (0 asks the OS) or `--socket`, a bearer token, `--max-sessions` — see [`serve.md`](serve.md) |
 
 A profile whose mode row a layer removed is not an error: the boot mounts the
 remaining rows, reports what it mounted, and exits, which is how you inspect a

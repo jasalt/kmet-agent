@@ -109,3 +109,35 @@
       (is (nil? (concurrent/take! q)))
       (concurrent/close! q)
       (is (= concurrent/closed (concurrent/take! q))))))
+
+;; ─── bounded-queue: the wire's fan-out lane ─────────────────────────────────
+
+(deftest a-bounded-lane-drops-its-oldest-record-and-counts-it
+  (let [q (concurrent/bounded-queue 2)]
+    (is (true? (concurrent/offer! q :a)))
+    (is (true? (concurrent/offer! q :b)))
+    (is (true? (concurrent/offer! q :c))
+        "a full lane still accepts: it drops rather than refuses")
+    (is (= {:value :b :dropped 1} (concurrent/take-dropped! q))
+        "the oldest record is gone and the take reports one drop")
+    (is (= {:value :c :dropped 0} (concurrent/take-dropped! q))
+        "the count is per take: the gap is announced once, not on every record")))
+
+(deftest a-bounded-lane-counts-drops-across-takes
+  (let [q (concurrent/bounded-queue 1)]
+    (dotimes [i 5] (concurrent/offer! q i))
+    (is (= {:value 4 :dropped 4} (concurrent/take-dropped! q))
+        "four of five records were dropped, and the survivor is the newest")))
+
+(deftest a-bounded-lane-wakes-a-parked-taker-and-ends-with-close
+  (let [q (concurrent/bounded-queue 4)
+        taken (promise)]
+    (concurrent/spawn #(deliver taken (concurrent/take-dropped! q)))
+    (is (parked? q) "the taker parked on the lane's own signal")
+    (concurrent/offer! q :only)
+    (is (= {:value :only :dropped 0} (deref taken 2000 :timeout)))
+    (concurrent/close! q)
+    (is (false? (concurrent/offer! q :late)) "an offer after close is refused")
+    (is (= {:value concurrent/closed :dropped 0}
+           (concurrent/take-dropped! q))
+        "and the closed marker is the value, as on the unbounded queue")))

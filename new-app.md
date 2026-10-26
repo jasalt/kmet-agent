@@ -608,8 +608,9 @@ on the emitting thread and requires them not to block; a stalled socket client
 would stall the agent. Each client gets a bounded queue, **`:lag` by default**:
 drop oldest, emit `{:type :stream-gap :dropped n}`, and let the client resync
 with `:get-state`. Dropping the newest would corrupt message assembly silently,
-and "the event stream is the API" means a gap has to be visible. The attach
-record may override the policy per client.
+and "the event stream is the API" means a gap has to be visible. The capacity is
+the server's (`--queue-depth`, 10c); a per-client override would be an attach
+record the protocol does not have yet.
 
 **Process-state audit before claiming multi-session** — these are the
 difference between "two sessions" and "two isolated sessions":
@@ -634,12 +635,12 @@ own bindings, the debug switch, the caches, and the one published root.
 Already per-session and safe: `Engine/:cwd`, tool `:cwd` resolution,
 `subscribe!` delivery, session files (EDNL on disk).
 
-**Phase-1 remote scope:** token auth (bearer, one principal), a unix socket
-where the host has one and TCP loopback otherwise, `--max-sessions`,
-per-client queue depth, idle reaping on
-`kmet.libs.concurrent/monotonic-ms`, and resume-by-id (the session store
-already supports it). Durability: sessions are already EDN files; the server
-adds no new store.
+**Phase-1 remote scope — landed at 10c** ([`docs/serve.md`](docs/serve.md)):
+token auth (bearer, one principal), a unix socket where the host has one and TCP
+loopback otherwise, `--max-sessions`, per-wire queue depth with the visible
+`:stream-gap`, idle reaping on `kmet.libs.concurrent/monotonic-ms`, and
+resume-by-id (the session store already supports it). Durability: sessions are
+already EDN files; the server adds no new store.
 
 ## Reusing `kmet.agent`
 
@@ -899,7 +900,7 @@ Each is independently shippable and gated.
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
-| 10 | **in progress — 10a, 10b and resume-by-id landed**; 10c remains. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. Resume-by-id: the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session. Remembering: an approver's scoped answer is stored in the agent's memory (one workspace set per composition), so a tool is asked once per scope, and the TUI's dialog offers the three answers. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap` | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
+| 10 | **landed** — 10a (the whole wire table), 10b (the boundary drain at `:agent-settled`, one boundary at a time per root, `kmet.app.test-submit-guard` holding the call sites to the owner's), resume-by-id (the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session), remembering (an approver's scoped answer kept in the agent's memory, one workspace set per composition), and 10c (the bearer token, the unix socket, `--max-sessions`, the per-wire bounded queue with `:lag`/`:stream-gap`, idle reaping, and the config a connection brings); § "Landing 10c settled" | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model (**met**, `kmet.app.modes.test-server`); a connection authenticates before it gets an agent, and a client that stops reading gets a `:stream-gap` and resyncs (**met**, the same suite) |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -3526,15 +3527,15 @@ measurement behind each cut.
 Everything kmet1 carried is gone, and 9's execution seams are in: `:shell`,
 `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models` and `:modes` are services or
 verifications now, and `kmet.app.test-process-state` is the ledger of the
-process cells that remain, each with a written reason. What is left is the
-server's own transport work and two loose ends:
+process cells that remain, each with a written reason. 10c closed the server's
+transport: the bearer token, `--socket`/`--max-sessions`/`--queue-depth`/
+`--idle-timeout`, the `:lag` policy with its `:stream-gap`, and the config a
+connection brings (its own page is [`docs/serve.md`](docs/serve.md)). What is
+left is one loose end:
 
 | What | Where | Why it is left | Cut |
 |---|---|---|---|
-| transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping | 10c |
 | `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
-| the server's user-facing page | `docs/` | `profiles.md` documents `--profile server --port` and `rpc.md` the protocol, but the connection rules — one session per connection, the approval route, the token, `--max-sessions` — belong on a page of their own | with 10c |
-| the `:config`/`:auth` half of 9 | `kmet.app.config/load-config` is process-global; `:auth` is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal) | with 10c, where a connection first has a config of its own |
 
 ### The interactive front end first
 
@@ -3633,19 +3634,19 @@ row's docstring describes the handle path a reader will find.
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | T | **landed** — `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
 | 9 | **landed** — `app` (`:shell`, `:sandbox`, the tool context's `:srce-ctx`), `libs` (verified) | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) |
-| 10 | **10a, 10b and resume-by-id landed** — `app` | ~1,100 | 10c is the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; an agent resumed by id answers in its stored session; two sessions isolated |
+| 10 | **landed** — 10a (the whole wire table), 10b (the boundary drain), resume-by-id, and 10c (the transport) — `app`; 10c also `libs` (the bounded lane) | ~1,700 | — | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; an agent resumed by id answers in its stored session; two sessions isolated; a connection authenticates before it gets an agent; a client that stops reading gets a `:stream-gap` and resyncs with `:get-state` |
 | 11 | **landed** — all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
-**The execution order was T → 10a → 11 → 9 → 10b/10c, and all but the last
-have landed.** The interactive front end went first because it is what the app
+**The execution order was T → 10a → 11 → 9 → 10b/10c, and all of it has
+landed.** The interactive front end went first because it is what the app
 is used through; 10a's table is invisible to a TUI user. Retirement followed as
 soon as it could be taken: its hard prerequisites were a complete 8 (the TUI
 reads a handle, so `session.driver`'s engine path could go — T-4 took the last
 TUI call out) and 10a (kmet1's rpc modes were deleted by 11, and kmet2 must
 already answer the whole `docs/rpc.md` table, or the protocol regresses). 9's
 isolation seams landed after the rename pass, which kept that pass out of the
-files 9 would touch. 10b and 10c are kmet2's own boundary and transport work —
-the old app has no server to compare against — so they are what remains.
+files 9 would touch. 10b and 10c were kmet2's own boundary and transport work —
+the old app has no server to compare against — and 10c closed them.
 
 `ui-tk` is not scheduled here: it is its own development, and when it resumes
 it lands over the handle-based front end 8 produces — a second toolkit is worth
@@ -4206,7 +4207,7 @@ stale and one was already true):
 | `:workspace` / `:fs` | **already true**: `kmet.libs.path` resolves against `(:cwd ctx)`, the tool layer threads `*cwd*`, `execute-bash` takes `:cwd` | a verification, not a refactor — **9d** proves two agents in two cwds touch no common file; the remaining `System/getProperty "user.dir"` reads are *defaults* (a temp-file dir, a UI's base path) and get a written reason or a `:cwd` |
 | `:sandbox` | nothing: `srce/isolate` exists in the kernel and no app code calls it | **landed at 9c**: `run_code`'s tool bridge mounts in an isolated realm, so the script cannot see the host's `:tools`/`:shell`/`:workspace`; the realm boundary is the `:sandbox` value |
 | `:llm` / `:models` | the catalog is data, and a run's model lives on its handle | verification only: two agents on two models, no cell to move — asserted by `kmet.app.test-isolation` |
-| `:config` / `:auth` | `config/load-config` is process-global (and is what writes the shell cell); auth is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal, documented) |
+| `:config` / `:auth` | `config/load-config` is process-global (and is what writes the shell cell); auth is one token cache for one principal | **landed at 10c for the agent's half**: a connection's `:auth` record carries `:cwd` and `:config`, and `create!` takes a `:cwd`, so the config a connection brings belongs to the agent that connection created. `:auth` stays process-wide **by decision** (one principal, documented); the "process-global `load-config`" that remains is the default a context-free caller gets, which is what a process without a front end should have |
 | `:modes` | a row since 5j | the server row creates one mode per connection (6b) — nothing to move |
 
 **Three loose cells**, each measured to its setter's callers:
@@ -4353,8 +4354,8 @@ service (`kmet.app.test-sandbox`).
 ### 10 — the server's phase 1
 
 **10a landed before retirement** (it is the rpc parity kmet1's deletion must
-not lose); **10b landed and 10c is left**, both of them after it, because they
-are kmet2's own server work and nothing in the old app waits on them.
+not lose); **10b and 10c landed after it**, because they are kmet2's own server
+work and nothing in the old app waits on them.
 
 Three commits. **10a, the protocol's whole table**: kmet1's `docs/rpc.md`
 declares ~30 commands and kmet2 serves seven, so "the protocol is served" is a
@@ -4368,11 +4369,11 @@ id, cwd, model, preset — which is the log, per 4c-iii-b); `set-model`,
 `get-available-thinking-levels`, `set-steering-mode`, `set-follow-up-mode`
 (8's handle ops); `clear-queue` and the compaction pair. Return an image on a
 *queue* and stay refused: that is kmet1's own limitation, documented on the
-same page. **10c, the transport hardening**: bearer token (one principal), a
-unix socket where the host has one and TCP loopback otherwise,
-`--max-sessions`, per-client queue depth, idle reaping on
+same page. **10c, the transport hardening — landed**: the bearer token (one
+principal), a unix socket where the host has one and TCP loopback otherwise,
+`--max-sessions`, the per-wire queue depth, idle reaping on
 `kmet.libs.concurrent/monotonic-ms`, the fan-out `:lag` policy with a visible
-`:stream-gap`.
+`:stream-gap`, and the config a connection brings (§ "Landing 10c settled").
 
 **10b, the boundary drain — landed.** The loop calls `runtime/boundary!` at
 `:agent-settled` (`kmet.app.loop/settle-boundary!`), so the queue has a drain
@@ -4406,8 +4407,58 @@ Gate: every command in `docs/rpc.md` either answers or is one of the two
 documented refusals (queue images, a token-less connection); an agent disposed,
 resumed by id and answered; a mount submitted from a tool thread absent
 mid-turn and present after it (**met**, `kmet.app.test-composition-run`); two
-connections with different cwds, shells and models; a client that stops reading
-gets a `:stream-gap` and resyncs with `:get-state`.
+connections with different cwds, shells and models (**met**,
+`kmet.app.modes.test-server`); a client that stops reading gets a `:stream-gap`
+and resyncs with `:get-state` (**met**, the same suite); a connection that has
+not authenticated never gets an agent (**met**).
+
+### Landing 10c settled
+
+The transport is the row's, and the decisions it made are the ones a client
+sees; `docs/serve.md` is the user-facing half.
+
+- **One token, one principal, always.** `--token` names it; absent, the server
+generates one and announces it with the port in the `:listening` record on its
+own stdout. The hello/`:auth`/`:ready` handshake is the connection's first
+three records, and nothing else is served before it: a command first is refused
+by name, a wrong token is refused, and either refusal closes the socket. No
+agent exists for an unauthenticated connection, so the cap and the reaper
+bound even a client that connects and says nothing. `:auth` (the credentials)
+stays the process's, which is the phase-1 single-principal decision landing 9's
+audit named — not a leftover.
+- **The config a connection brings is its agent's.** The auth record may carry
+`:cwd`, `:config` (settings merged over the process's) and the run overrides
+(`:model`, `:provider`, `:thinking`, …). `:cwd` is a `create!` option now — one
+line in the driver's factory, `(or (:cwd opts) cwd)` — and a cwd that is not an
+existing directory is refused by name rather than creating an agent whose every
+tool call resolves against a path nobody meant. Two connections of one server
+run two worlds; the gate's "different cwds, shells and models" is
+`a-connection-brings-its-own-world`.
+- **The socket is where phase 1 says it is.** TCP is bound to loopback
+explicitly (`127.0.0.1`, never every interface), and `--socket` serves the same
+protocol on a unix-domain socket. The unix side lives in its own namespace
+(`kmet.app.modes.server-unix`) because **loading it is the capability check**:
+Jolt has no NIO unix API, so a static require would take the row down there;
+the server resolves it at open time and falls back to TCP with a warning.
+- **The fan-out is a bounded lane, in the shared layer.**
+`kmet.libs.concurrent/bounded-queue` (with `offer!` and `take-dropped!`) is a
+new primitive beside `queue`: `offer!` never blocks and drops the **oldest**
+record when full, and each take reports how many were dropped since the last
+one. The server's `send!` only offers; one writer thread per connection writes,
+and emits `{:type :stream-gap :dropped n}` before the next record. Dropping the
+newest would corrupt a message silently, and a visible gap is what lets a
+client resync with `:get-state` (the gate sentence, pinned by
+`a-client-that-stops-reading-gets-a-gap-and-resyncs` with a one-deep lane and a
+tiny receive buffer, so the gap is not a timing coincidence).
+- **The reaper only asks.** A connection silent past `--idle-timeout` (default
+1800s, `0` disables) with no run or compaction in flight is released; the
+reaper thread enqueues `{:op :reap}` and the server thread does the closing, so
+no second thread ever touches the kernel. `--max-sessions` (default 8, `0` no
+cap) refuses at `:open`, before an agent exists.
+- **The row is still the row.** `--dump-state` mounts it inert (no `:on-result`,
+no socket), the command language is still `kmet.app.modes.rpc`'s, and the
+approvals route is unchanged. The `:hello`/`:ready`/`:stream-gap` records are
+this row's vocabulary; `docs/rpc.md` keeps the command table the two share.
 
 ### 11 — retirement
 
@@ -4716,6 +4767,12 @@ files and cuts two seams, it does not restructure the interactive loop.
   `modules/srce/test/kmet/srce/test_kernel.clj`.
 - The kernel's own gates — the contract tests, srce self-containment, and the
   no-`scope` require ban — are in [`srce.md`](modules/srce/src/kmet/srce/srce.md).
+- The server's transport rules are a test, not a promise
+  (10c): `kmet.app.modes.test-server` holds the token handshake, the session
+  cap, the idle reaper, the `:stream-gap` a stalled client sees, the unix/TCP
+  transports, and two connections running two worlds (`:cwd`/`:config`);
+  `kmet.libs.test-concurrent` holds the drop-oldest lane's contract (capacity,
+  drop-oldest, the dropped count per take, close).
 - New: a profile test — layers patch by row id, `--dump-config` resolves to
   the same rows the boot uses, and an unknown plugin source fails at load.
 - New: the two-direction load test — `kmet --app new --version` loads kmet2
