@@ -14,21 +14,10 @@
             [kmet.app.skills :as skills]
             [kmet.app.config :as cfg]
             [kmet.tui.theme :as theme]
-            [kmet.test-utils :as tu :refer [slash]]))
+            [kmet.test-utils :as tu :refer [slash spit-plugin]]))
 
 (defn- tmp-dir []
   (str (fs/create-temp-dir {:dir (System/getenv "TMPDIR")})))
-
-(defn- spit-plugin
-  "Write an extension source to PATH and append the plugin var the loader
-   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
-   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
-  [path source]
-  (spit path source)
-  (spit path (str "\n(def plugin {:name :ext/fixture"
-                  " :apply (fn [_ctx api] (init api) nil)})\n")
-        :append true)
-  path)
 
 (defn- make-package
   "A conventional kmet package directory: extensions/, skills/ (a SKILL.md

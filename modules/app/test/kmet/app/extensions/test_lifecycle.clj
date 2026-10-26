@@ -17,23 +17,13 @@
             [kmet.libs.hikap.alias :as alias]
             [kmet.tui.theme :as theme]
             [kmet.app.test-support :as support]
+            [kmet.test-utils :refer [spit-plugin]]
             [kmet.app.tools.registry :as tools-registry]))
 
 ;; The extension host is the composition's: boot one for the namespace.
 (t/use-fixtures :once support/with-composition)
 
 ;; ─── Load / unload / reload lifecycle (real runtime) ─────────────────────
-
-(defn- spit-plugin
-  "Write an extension source to PATH and append the plugin var the loader
-   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
-   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
-  [path source]
-  (spit path source)
-  (spit path (str "\n(def plugin {:name :ext/fixture"
-                  " :apply (fn [_ctx api] (init api) nil)})\n")
-        :append true)
-  path)
 
 (t/deftest a-single-file-without-a-plugin-is-a-load-error
   ;; a single file has no manifest to name the var, so the namespace defines it

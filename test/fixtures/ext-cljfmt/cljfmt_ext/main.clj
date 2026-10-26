@@ -16,7 +16,7 @@
                        :execute     (fn [{:keys [code]}]
                                       {:content (fmt/reformat-string code config/default-config)})}))
 
-;; The plugin the loader mounts: the extension body stays `init` above.
+;; the plugin the loader mounts; its body is `init` above
 (def plugin
   {:name :ext/cljfmt-ext
    :apply (fn [_ctx api] (init api) nil)})

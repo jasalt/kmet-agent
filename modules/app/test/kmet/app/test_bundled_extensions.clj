@@ -11,7 +11,7 @@
             [kmet.app.packages :as pkgs]
             [kmet.app.config :as cfg]
             [kmet.tasks.build :as build]
-            [kmet.test-utils :refer [slash]]))
+            [kmet.test-utils :refer [slash spit-plugin]]))
 
 (defn- tmp-dir []
   (str (fs/create-temp-dir {:dir (System/getenv "TMPDIR")})))
@@ -40,17 +40,6 @@
     (with-redefs [io/resource mapped] (f))))
 
 ;; ─── Manifest and the bundle gate ─────────────────────────────────────────
-
-(defn- spit-plugin
-  "Write an extension source to PATH and append the plugin var the loader
-   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
-   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
-  [path source]
-  (spit path source)
-  (spit path (str "\n(def plugin {:name :ext/fixture"
-                  " :apply (fn [_ctx api] (init api) nil)})\n")
-        :append true)
-  path)
 
 (t/deftest test-manifest-is-complete-and-well-formed
   (let [m (bundled/manifest)]

@@ -773,9 +773,9 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                        :else nil))))
            (fs/list-dir d)))))
 
-(defn- form-symbols
+(defn- file-forms
   "Every top-level form of the Clojure file at PATH, read with reader
-   conditionals allowed. Throws nothing: an unreadable file reports as nil."
+   conditionals allowed; nil when the file cannot be read."
   [path]
   (try
     (with-open [r (java.io.PushbackReader. (io/reader (fs/file path)))]
@@ -785,18 +785,17 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
     (catch Exception _ nil)))
 
 (defn- defines-var?
-  "Does the Clojure file at PATH define VAR-NAME, either as `(def name …)` or
-   as `(<alias>/defplugin name …)`? The static half of the loader's `:plugin`
-   requirement."
-  [path var-name]
+  "Does FORMS define VAR-NAME — as `(def name …)` or `(<alias>/defplugin name
+   …)`? The static half of the loader's `:plugin` requirement."
+  [forms var-name]
   (boolean
    (some (fn [form]
-           (and (list? form)
-                (let [head (first form)
-                      head-name (when (symbol? head) (clojure.core/name head))]
-                  (and (contains? #{"def" "defplugin"} head-name)
-                       (= var-name (second form))))))
-         (form-symbols path))))
+           (when (list? form)
+             (let [head (first form)]
+               (and (symbol? head)
+                    (contains? #{"def" "defplugin"} (clojure.core/name head))
+                    (= var-name (second form))))))
+         forms)))
 
 (defn- validate-bundled-dir!
   "D8 checks for one :dir artifact root: extension.edn with :name + a qualified
@@ -833,7 +832,8 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
         (when-not entry-file
           (bundle-error! (str "bundled extension " name
                               ": plugin/entry namespace not found: " entry-ns)))
-        (when-not (defines-var? entry-file (symbol (clojure.core/name plugin)))
+        (when-not (defines-var? (file-forms entry-file)
+                    (symbol (clojure.core/name plugin)))
           (bundle-error! (str "bundled extension " name ": " entry-file
                               " does not define " (clojure.core/name plugin)
                               " — the manifest's :plugin must name a var the "
@@ -870,14 +870,14 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
   [name root]
   (when-not (fs/regular-file? (io/file root))
     (bundle-error! (str "bundled extension " name ": missing file " root)))
-  (let [form (with-open [r (java.io.PushbackReader. (io/reader (fs/file root)))]
-               (read {:read-cond :allow :features #{:bb}} r))]
-    (when-not (and (list? form) (= 'ns (first form)))
+  (let [forms (file-forms root)
+        first-form (first forms)]
+    (when-not (and (list? first-form) (= 'ns (first first-form)))
       (bundle-error! (str "bundled extension " name ": " root
-                          " does not start with an (ns ...) form"))))
-  (when-not (defines-var? root 'plugin)
-    (bundle-error! (str "bundled extension " name ": " root
-                        " does not define a plugin var (def plugin {…})"))))
+                          " does not start with an (ns ...) form")))
+    (when-not (defines-var? forms 'plugin)
+      (bundle-error! (str "bundled extension " name ": " root
+                          " does not define a plugin var (def plugin {…})")))))
 
 (defn validate-bundled-extensions!
   "Validate the committed bundled-extensions manifest against the checkout:

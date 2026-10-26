@@ -708,17 +708,11 @@
   (when-not (contains? (jar-entry-names root) "extension.edn")
     (throw (ex-info (str "Extension archive " path " has no extension.edn")
                     {:path path})))
-  (let [m (edn/read-string (jar-entry-source root "extension.edn"))
-        {:keys [name plugin-sym entry-ns declared-loaders legacy-loader?]}
-        (manifest-info path m (fs/file-name (io/file root)))]
-    {:name name
-     :kind :jar
-     :artifact {:kind :jar :root root}
-     :plugin-sym plugin-sym
-     :entry-ns entry-ns
-     :declared-loaders declared-loaders
-     :legacy-loader? legacy-loader?
-     :path (canonical-path (io/file root))}))
+  (merge (manifest-info path (edn/read-string (jar-entry-source root "extension.edn"))
+                        (fs/file-name (io/file root)))
+         {:kind :jar
+          :artifact {:kind :jar :root root}
+          :path (canonical-path (io/file root))}))
 
 (defn- dir-extension
   "Resolve a directory artifact at F (PATH names it for errors)."
@@ -727,17 +721,11 @@
     (when-not (.exists manifest-file)
       (throw (ex-info (str "Extension dir " path " has no extension.edn")
                       {:path path})))
-    (let [m (edn/read-string (slurp manifest-file))
-          {:keys [name plugin-sym entry-ns declared-loaders legacy-loader?]}
-          (manifest-info path m (fs/file-name f))]
-      {:name name
-       :kind :dir
-       :artifact {:kind :dir :root (str f)}
-       :plugin-sym plugin-sym
-       :entry-ns entry-ns
-       :declared-loaders declared-loaders
-       :legacy-loader? legacy-loader?
-       :path (canonical-path f)})))
+    (merge (manifest-info path (edn/read-string (slurp manifest-file))
+                          (fs/file-name f))
+           {:kind :dir
+            :artifact {:kind :dir :root (str f)}
+            :path (canonical-path f)})))
 
 (defn- file-extension
   "Resolve a single-file extension at F. It has no manifest: the file's own
@@ -796,19 +784,12 @@
     :resource-dir
     (let [manifest-key (str prefix "/extension.edn")]
       (if-let [r (io/resource manifest-key)]
-        (let [m (edn/read-string (slurp r))
-              {:keys [name plugin-sym entry-ns declared-loaders legacy-loader?]}
-              (manifest-info manifest-key m name)]
-          {:name name
-           :kind :resource-dir
-           :artifact (cond-> {:kind :resource-dir :prefix prefix}
-                       native (assoc :native native))
-           :plugin-sym plugin-sym
-           :entry-ns entry-ns
-           :declared-loaders declared-loaders
-           :legacy-loader? legacy-loader?
-           :path path
-           :bundled? true})
+        (merge (manifest-info manifest-key (edn/read-string (slurp r)) name)
+               {:kind :resource-dir
+                :artifact (cond-> {:kind :resource-dir :prefix prefix}
+                            native (assoc :native native))
+                :path path
+                :bundled? true})
         (throw (ex-info (str "Bundled extension resource missing: " manifest-key)
                         {:path path :resource manifest-key}))))
 

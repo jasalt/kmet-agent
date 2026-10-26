@@ -10,6 +10,7 @@
             [kmet.app.registry :as registry]
             [kmet.app.skills :as skills]
             [kmet.app.test-support :as support]
+            [kmet.test-utils :refer [spit-plugin]]
             [kmet.app.tools.registry :as tools]))
 
 ;; The extension host is the composition's: boot one for the namespace.
@@ -60,17 +61,6 @@
                          (concat (fs/glob dir "*.{clj,cljc,jolt,bb}")
                                  (fs/glob dir "**/*.{clj,cljc,jolt,bb}")))))
           roots)))
-
-(defn- spit-plugin
-  "Write an extension source to PATH and append the plugin var the loader
-   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
-   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
-  [path source]
-  (spit path source)
-  (spit path (str "\n(def plugin {:name :ext/fixture"
-                  " :apply (fn [_ctx api] (init api) nil)})\n")
-        :append true)
-  path)
 
 (t/deftest test-shared-library-lists-match-the-source-trees
   (testing "the extension shared-library lists and the source trees agree:

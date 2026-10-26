@@ -160,6 +160,17 @@
            (extensions/bind-services! base)
            (srce/dispose-subtree! ctx)))))
 
+(defn spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts: a fixture keeps writing a plain `(defn init [api] …)` body, and the
+   mount is still a plugin. Returns PATH."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (defn with-clean-app-registries
   "clojure.test :each fixture: clear the app tree's process-global
    registrations before and after each test (see clear-app-registries!)."

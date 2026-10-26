@@ -16,6 +16,7 @@
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
             [kmet.app.test-support :as support]
+            [kmet.test-utils :refer [spit-plugin]]
             [kmet.tui.theme :as theme]
             [kmet.app.tools.registry :as tools-registry]))
 
@@ -23,17 +24,6 @@
 (t/use-fixtures :once support/with-composition)
 
 ;; ─── Session facades through the api ──────────────────────────────────────
-
-(defn- spit-plugin
-  "Write an extension source to PATH and append the plugin var the loader
-   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
-   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
-  [path source]
-  (spit path source)
-  (spit path (str "\n(def plugin {:name :ext/fixture"
-                  " :apply (fn [_ctx api] (init api) nil)})\n")
-        :append true)
-  path)
 
 (t/deftest test-session-api-facades
   (let [dir (str "target/test-ext-sess-" (System/currentTimeMillis))

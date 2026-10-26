@@ -34,9 +34,7 @@
 ;; automatically — nothing to tear down by hand
 (defn shutdown [_api] nil)
 
-;; The extension's plugin: the loader mounts this var, so the kernel owns the
-;; extension's lifecycle (pending on a declared :inject, disposed on unload)
-;; and hands the ABI map to `init`.
+;; the plugin the loader mounts; its body is `init` above
 (srce/defplugin plugin
   {:name :ext/tree-sitter
    :apply (fn [_ctx api] (init api) nil)})

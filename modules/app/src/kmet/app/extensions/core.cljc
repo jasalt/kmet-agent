@@ -1315,6 +1315,51 @@
       (loader/load l {:kind :var :name (str entry-ns "/" var-name)})
       (catch Throwable _ nil))))
 
+(defn- mount-plugin!
+  "Mount EXT under the host ctx and return its fiber.
+
+   An extension IS a plugin: `extension.edn` names its var (a single-file
+   extension defines `plugin` in its own namespace), `:apply` is the extension
+   body, and it receives the extension's ctx and its ABI map. A throwing body
+   is the kernel's business — the fiber goes :failed rather than rethrowing —
+   so a mount that failed *now* is turned back into a load error, or a broken
+   extension would report as loaded."
+  [ext plugin-sym path]
+  (let [var-name (if plugin-sym (symbol (clojure.core/name plugin-sym)) 'plugin)
+        plugin-var (extension-var ext @(:entry-ns ext) var-name)]
+    (when-not plugin-var
+      (throw (ex-info (str "Extension " (:name ext) " does not define " var-name
+                           (if plugin-sym
+                             " — the var its extension.edn :plugin names"
+                             (str " — a single file has no extension.edn, so its"
+                                  " namespace defines (def plugin {:name …"
+                                  " :apply …}) itself")))
+                      {:path path})))
+    (let [plugin (deref plugin-var)]
+      (when-not (and (map? plugin)
+                     (keyword? (:name plugin))
+                     (fn? (:apply plugin)))
+        (throw (ex-info (str "Extension " (:name ext) " plugin must be a map with a"
+                             " keyword :name and an :apply fn (a srce/defplugin"
+                             " var), got: " (pr-str (type plugin)))
+                        {:path path})))
+      (let [fiber (srce/plugin!
+                   (:ctx (services))
+                   (assoc plugin
+                          :apply (fn [fctx _config]
+                                   (let [api (create-extension-api ext)]
+                                     (reset! (:api ext) api)
+                                     ((:apply plugin) fctx api)
+                                     (reset! (:initialized? ext) true)))))]
+        (reset! (:fiber ext) fiber)
+        (when (= :failed (:state @fiber))
+          (throw (ex-info (str "Extension " (:name ext) " failed: "
+                               (or (ex-message (:error @fiber))
+                                   "its plugin body threw"))
+                          {:path path
+                           :cause (:error @fiber)})))
+        fiber))))
+
 (defn- load-extension*
   "Load RESOLVED — the map resolve-extension / resolve-extension-descriptor
    answers — with PATH naming it in results and errors. See load-extension!
@@ -1428,51 +1473,7 @@
                 (do
                   (loader/load l {:kind :ns :name (str file-ns)})
                   (reset! (:entry-ns ext) file-ns)))
-              ;; An extension IS a plugin: `extension.edn` names its var (a
-              ;; single-file extension defines it in its own namespace), the
-              ;; kernel mounts that map, and `:apply` is the extension body —
-              ;; it receives the extension's ctx and its ABI map. A throwing
-              ;; body is the kernel's business: the fiber goes :failed rather
-              ;; than rethrowing, so a mount that failed *now* is turned back
-              ;; into a load error — otherwise a broken extension reports as
-              ;; loaded.
-              (let [plugin-var (extension-var ext @(:entry-ns ext)
-                                              (if plugin-sym
-                                                (symbol (clojure.core/name plugin-sym))
-                                                'plugin))]
-                (when-not plugin-var
-                  (throw (ex-info (str "Extension " (:name ext) " does not define "
-                                       (if plugin-sym
-                                         (str plugin-sym " — that is the var its "
-                                              "extension.edn :plugin names")
-                                         (str "plugin — a single file has no "
-                                              "extension.edn, so its namespace "
-                                              "defines (def plugin {:name … "
-                                              ":apply …}) itself")))
-                                  {:path path})))
-                (let [plugin (deref plugin-var)]
-                  (when-not (and (map? plugin)
-                                 (keyword? (:name plugin))
-                                 (fn? (:apply plugin)))
-                    (throw (ex-info (str "Extension " (:name ext) " plugin must be a "
-                                         "map with a keyword :name and an :apply fn "
-                                         "(a srce/defplugin var), got: "
-                                         (pr-str (type plugin)))
-                                    {:path path})))
-                  (let [fiber (srce/plugin!
-                               (:ctx (services))
-                               (assoc plugin
-                                      :apply (fn [fctx _config]
-                                               (let [api (create-extension-api ext)]
-                                                 (reset! (:api ext) api)
-                                                 ((:apply plugin) fctx api)
-                                                 (reset! (:initialized? ext) true)))))]
-                    (reset! (:fiber ext) fiber)
-                    (when (= :failed (:state @fiber))
-                      (throw (ex-info (str "Extension " name " failed: "
-                                           (or (ex-message (:error @fiber)) "its plugin body threw"))
-                                      {:path path
-                                       :cause (:error @fiber)})))))))
+              (mount-plugin! ext plugin-sym path))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
