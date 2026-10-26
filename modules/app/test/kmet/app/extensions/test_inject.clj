@@ -136,8 +136,10 @@
   (testing ":entry is gone — the manifest names a plugin var"
     (let [name "legacy-entry"
           entry-ns (str (str/replace name "-" "_") ".main")
+          ;; a manifest being migrated: :entry and no :plugin at all
           dir (extension-dir! "target/test-ext-legacy-entry" name
-                              :manifest-extra (str " :entry " entry-ns)
+                              :manifest (str "{:name \"" name "\" :entry "
+                                             entry-ns " :loader [:sci]}\n")
                               :body hook-body)]
       (try
         (let [result (extensions/load-extension! dir)]

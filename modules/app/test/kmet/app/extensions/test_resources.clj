@@ -472,7 +472,7 @@
       (fs/delete-tree dir))))
 
 (t/deftest test-a-failed-init-rolls-back-what-it-registered
-  ;; The rollback runs the same unload path, so what init(api) registered
+  ;; The rollback runs the same unload path, so what the plugin body registered
   ;; before throwing is disposed with the extension's owner —
   ;; no command, tool or skill outlives a failed load.
   (extensions/clear-extensions!)

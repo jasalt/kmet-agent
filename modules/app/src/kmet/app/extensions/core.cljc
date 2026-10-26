@@ -48,8 +48,8 @@
    `[:app :extensions <name>]` (one `deregister-owner!` per tag), what lives
    outside any registry — event subscriptions, aliases, shortcuts, model
    providers, a contributed theme's removal — deregisters through the fns the
-   extension recorded, and an `:inject` mount's fiber is disposed by the
-   kernel.
+   extension recorded, and the plugin fiber the mount created is disposed by
+   the kernel.
 
    Extensions load at startup (core.clj), are re-loaded by /reload, and can
    be unloaded/reloaded at runtime via unload-extension! /
@@ -218,7 +218,7 @@
 
 ;; ─── Services (what this file may not require, bound by its owner) ───────
 ;; The host lives in `app` and cannot require the process above it: its
-;; registry handle, the ctx an `:inject` mount lands under, and the
+;; registry handle, the ctx an extension's plugin mounts under, and the
 ;; commands/prompts/skills registries are all the process's. It takes them as a
 ;; value instead — a composition's `:extensions` row binds its own
 ;; (`kmet.app.registries/host-services`), kmet1's shim binds the same map as the
@@ -233,7 +233,7 @@
   "Bind what the host may not require. F is called on every use and returns
 
      {:registry <Registry handle>     ; the handle the host's own tags live in
-      :ctx      <ctx>                 ; where an extension's :inject mounts
+      :ctx      <ctx>                 ; where an extension's plugin mounts
       :commands {:register!    (fn [cmd owner])
                  :unregister!  (fn [cmd-name owner])
                  :all          (fn [])}
@@ -309,9 +309,9 @@
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
 
 (defn extension-owner
-  "The owner path an extension's registrations belong to — what its
-   `init(api)` installs. A registration is disposed with its owner, and unload
-   deregisters what the extension added."
+  "The owner path an extension's registrations belong to — what its plugin
+   body installs through `api`. A registration is disposed with its owner, and
+   unload deregisters what the extension added."
   [extension-name]
   [:app :extensions extension-name])
 
@@ -1134,7 +1134,10 @@
      ;; the ctx this extension's registrations land in (the bound service's
      ;; ctx) — exposed so an extension can use kmet.srce.core directly
      ;; (defining plugins, providing services, using the ctx tree) while
-     ;; keeping the host as the srce authority. nil when no ctx is bound.
+     ;; keeping the host as the srce authority. This is the app root the
+     ;; extension's plugin mounts under — app-wide by construction; the
+     ;; plugin's own ctx is `:apply`'s first argument. nil when no ctx is
+     ;; bound.
      :ctx (try (:ctx (services)) (catch Exception _ nil))
      ;; host agent dir (KMET_CODING_AGENT_DIR-aware; pi: getAgentDir) —
      ;; extensions keep their configs/caches under it
@@ -1467,7 +1470,7 @@
                     (reset! (:fiber ext) fiber)
                     (when (= :failed (:state @fiber))
                       (throw (ex-info (str "Extension " name " failed: "
-                                           (or (ex-message (:error @fiber)) "init threw"))
+                                           (or (ex-message (:error @fiber)) "its plugin body threw"))
                                       {:path path
                                        :cause (:error @fiber)})))))))
             (swap! extensions conj ext)
@@ -1599,8 +1602,8 @@
    :loader-kind :sci/:jolt :entry-ns symbol :extension-dir str-or-nil
    :bundled bool :fiber-state :pending/:active/:failed-or-nil
    :waiting-for #{service …} :error throwable-or-nil} maps (extension-dir = the extension's own
-   directory; nil for jar and bundled resource extensions). An `:inject`
-   extension that has not activated is `:pending`; one whose init threw while
+   directory; nil for jar and bundled resource extensions). A plugin mount
+   that has not activated yet is `:pending`; one whose body threw while
    activating later is `:failed` with the throwable — the host reported the
    load, the kernel owns the activation."
   []
@@ -1740,7 +1743,7 @@
   "Print the warning/note for a load RESULT (the load functions write
    nothing themselves); returns RESULT. A :duplicate-name skip names the
    earlier copy; an :unsupported-loader skip names the declared and
-   available backends; a pending `:inject` mount says what it waits for; an
+   available backends; a pending plugin mount says what it waits for; an
    error is a warning."
   [label result]
   (when (and result (:error result))

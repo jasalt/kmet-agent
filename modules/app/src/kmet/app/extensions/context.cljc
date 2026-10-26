@@ -673,17 +673,20 @@
   [path m fallback-name]
   (let [{:keys [declared-loaders legacy?]} (manifest-loaders path m)
         plugin-sym (:plugin m)]
-    (when-not (and (symbol? plugin-sym) (namespace plugin-sym))
-      (throw (ex-info (str "extension.edn :plugin must be a qualified var symbol "
-                           "(my-ext.core/plugin), got: " (pr-str plugin-sym))
-                      {:path path :manifest m})))
+    ;; the two removals first: a manifest being migrated has one of these and
+    ;; no valid :plugin, and "got: nil" would not say what to write instead
     (when (contains? m :entry)
       (throw (ex-info (str "extension.edn has :entry — name the extension's plugin "
                            "var instead (:plugin my-ext.core/plugin)")
                       {:path path :manifest m})))
     (when (contains? m :inject)
       (throw (ex-info (str "extension.edn has :inject — the plugin map declares its "
-                           "own :inject, so drop the manifest key")
+                           "own :inject: drop the manifest key and name the var "
+                           "(:plugin my-ext.core/plugin)")
+                      {:path path :manifest m})))
+    (when-not (and (symbol? plugin-sym) (namespace plugin-sym))
+      (throw (ex-info (str "extension.edn :plugin must be a qualified var symbol "
+                           "(my-ext.core/plugin), got: " (pr-str plugin-sym))
                       {:path path :manifest m})))
     {:name (or (:name m) fallback-name)
      :plugin-sym plugin-sym

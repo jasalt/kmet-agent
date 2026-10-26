@@ -203,8 +203,10 @@ the wrappers below or directly.
 (:extension-path api)   ; absolute path to the extension file/dir/jar
 (:extension-dir api)    ; the extension's own directory — nil for jars
                         ; (a jar has no directory; use io/resource)
-(:ctx api)              ; the ctx this extension's registrations land in —
-                        ; pass it to kmet.srce.core (plugins, provide!, …)
+(:ctx api)              ; the app root ctx the extension's plugin mounts
+                        ; under — pass it to kmet.srce.core for app-wide
+                        ; `provide!`/`plugin!`; the plugin's own ctx arrives
+                        ; as `:apply`'s first argument
 (ext/get-agent-dir api) ; the host agent dir (KMET_CODING_AGENT_DIR-aware;
                         ; pi: getAgentDir) — keep extension state
                         ; (configs, caches) under it

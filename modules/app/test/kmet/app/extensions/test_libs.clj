@@ -123,7 +123,7 @@
 ;; ─── Extension hooks live in the host's registry (P2) ─────────────────────
 
 (t/deftest extension-hooks-live-in-the-host-registry
-  ;; whatever an extension's init(api) installs belongs to
+  ;; whatever an extension's plugin body installs belongs to
   ;; [:app :extensions <name>]. Hooks are read from one registry rather than
   ;; copied into each engine, so one registered with no engine running
   ;; reaches every engine, and deregistering removes the only copy.

@@ -98,7 +98,7 @@
       (t/is (empty? (extensions/get-loaded-extensions))))))
 
 (t/deftest test-extension-registrations-are-owned-by-the-extension
-  ;; P5c: what init(api) registers lands on [:app :extensions <name>], so
+  ;; P5c: what the plugin body registers lands on [:app :extensions <name>], so
   ;; unload is one LIFO dispose of that owner instead of a tracked deregister
   ;; per registration. Only what lives outside the tree —
   ;; here an event subscription — stays on the extension's own list.
