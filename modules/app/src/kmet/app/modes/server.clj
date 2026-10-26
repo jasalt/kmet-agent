@@ -68,9 +68,10 @@
   "The command state `kmet.app.modes.rpc/handle-line` serves CONN through: the
    registry, the app scope, and the one handle this connection is. No
    `:command-ui`: a connection has no wire surface for a command's reply until
-   10b gives it a per-connection port, so a slash command is refused by name
-   rather than run with its answer dropped. No `:sessions` either — the log is
-   read through the handle."
+   the server grows a per-connection `:ui` port (not scheduled — the wire's
+   command table answers *about* commands; it does not run them), so a slash
+   command is refused by name rather than run with its answer dropped. No
+   `:sessions` either — the log is read through the handle."
   [conn {:keys [agents scope]}]
   {:agents agents :scope scope :handle (:handle conn)})
 
@@ -337,8 +338,8 @@
                     :pending (atom {})}
             ;; the command language is rpc's, so its builtins register here
             ;; too: `state-for` refuses them by name until a connection has a
-            ;; command surface (10b's per-connection port), and a client's
-            ;; slash command must not fall through to the model in the meantime
+            ;; command surface (a per-connection `:ui` port, not scheduled), so
+            ;; a client's slash command never falls through to the model
             _ (rpc/register-commands! scope)
             socket (java.net.ServerSocket. (int (or port 0)))
             server-thread (concurrent/spawn (fn [] (serve-connections! server)))

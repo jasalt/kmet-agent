@@ -171,7 +171,8 @@
             ((:handler c) {:runtime handle :ui command-ui :frontend :rpc} args))
           (ok :prompt {:disposition :handled}))
         ;; the server row serves this protocol but has no per-connection command
-        ;; surface yet (10b's port): running a command would drop its reply
+        ;; surface (a per-connection `:ui` port, not scheduled): running a
+        ;; command would drop its reply
         (failed :prompt "slash commands are not available on this connection yet")))))
 
 (defn- wire-command

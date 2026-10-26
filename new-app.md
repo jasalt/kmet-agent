@@ -196,7 +196,12 @@ queue (`ctx.hmr.runExclusive`), not through an agent boundary.
   that landed while another thread held the pass, so `:agent-settled` means
   both "no turn in flight" and "no pending refresh". A tool thread that must
   mount or provide submits instead of mutating: its change is queued and
-  applied at the boundary.
+  applied at the boundary. Landed at 10b: `kmet.app.loop/settle-boundary!`
+  drains *before* the emit, and `kmet.app.runtime/boundary!` admits one
+  boundary at a time per root — turns run on futures, so two agents can settle
+  on two threads, and two drains at once would mount plugin code concurrently
+  (a `plugin!` that loses the pass runs its `apply` inline). The static half is
+  `kmet.app.test-submit-guard`.
 - **Disposal never waits.** The store this design replaced had no clock, and
   the rule survives the store: a teardown does not block on quiescence, because
   the boundary is where quiescence is decided. `:agent-settled` is the dispose
@@ -892,7 +897,7 @@ Each is independently shippable and gated.
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
-| 10 | **in progress — 10a landed**; 10b/10c remain. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b/10c: resume-by-id, the boundary drain, the static submit guard, bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn; two sessions isolated by cwd, shell and model |
+| 10 | **in progress — 10a and 10b landed**; 10c and resume-by-id remain. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced; resume-by-id is 10a's leftover | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -1882,14 +1887,16 @@ the opposite kind: a *refused* command (`:prompt` with no message) travels the
 socket with the same name, the same error text and the same badge, which is what
 "one engine, two transports" means.
 
-**A named residual, not a bug in this increment:** the server thread calls
+**A named residual, closed at 10b.** The server thread calls
 `create!`/`dispose!` off the root's thread, and `new-app.md` says the crossing
-there is `kmet.app.runtime/submit!` + `boundary!`. The loop does not call
-`boundary!` yet (nothing in the tree does), so submissions have no drain point
-to ride; until the loop's turn boundary does that, a server mutation and a
-run's boundary are sequenced by the queue's single consumer and by nothing
-else. It is the same exposure print and rpc mode already have with one agent;
-6b makes it several, which is the reason to name it here.
+for a thread that is not the owner is `kmet.app.runtime/submit!` + `boundary!`.
+Nothing drained the queue at 6b, so submissions had no drain point to ride and
+a server mutation and a run's boundary were sequenced by the queue's single
+consumer and by nothing else. 10b gave the queue its drain — the loop's
+`:agent-settled` boundary, one at a time per root — so a tool thread's change
+now lands at the next turn boundary in every mode, and the server thread's
+serialization is a property of the *protocol* (a `:ready` names an agent that
+must exist) rather than the only thing ordering the process.
 
 ### Landing 6c — an approval answered by a client
 
@@ -3517,12 +3524,11 @@ Everything kmet1 carried is gone, and 9's execution seams are in: `:shell`,
 `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models` and `:modes` are services or
 verifications now, and `kmet.app.test-process-state` is the ledger of the
 process cells that remain, each with a written reason. What is left is the
-server's own work, plus two loose ends:
+server's own transport work, the session resume behind it, and two loose ends:
 
 | What | Where | Why it is left | Cut |
 |---|---|---|---|
 | `resume!` by session id | `kmet.app.loop.driver`'s factory throws `:kmet.app/unsupported-op` on `:resume` | a handle id is not a session: the registry's `resume!` passes the id it once published, and an agent brought back as a fresh session would answer with a different conversation and say nothing | 10a's last gate item — needs an agent record that outlives the handle |
-| the boundary drain | `kmet.app.runtime/submit!` and `boundary!` have no production caller (`submit!`'s only reader is `kmet.app.test-runtime`); the loop emits through `kmet.app.event-bus` → `srce/boundary!` | nothing drains the submission queue at `:agent-settled`, so a tool thread's mount is invisible mid-turn and live only by the queue's single consumer | 10b, with the static submit guard promised at 7b-i |
 | transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping; `:remember!` is called and nothing stores the decision at its scope | 10c |
 | `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
 | the server's user-facing page | `docs/` | `profiles.md` documents `--profile server --port` and `rpc.md` the protocol, but the connection rules — one session per connection, the approval route, the token, `--max-sessions` — belong on a page of their own | with 10c |
@@ -3625,7 +3631,7 @@ row's docstring describes the handle path a reader will find.
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | T | **landed** — `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
 | 9 | **landed** — `app` (`:shell`, `:sandbox`, the tool context's `:srce-ctx`), `libs` (verified) | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) |
-| 10 | `app` | ~1,100 | 10b/10c are the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
+| 10 | **10a, 10b landed** — `app` | ~1,100 | 10c and resume-by-id are the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
 | 11 | **landed** — all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
 **The execution order was T → 10a → 11 → 9 → 10b/10c, and all but the last
@@ -3694,9 +3700,9 @@ a no-op, and `:capabilities` is empty. `:bundle/headless` is the row (`:id
 :ui`); print, rpc, rpc-ask and the server stack it, and print and rpc inject
 `:ui` and bind its port (`front-end/install!`), rpc adding the wire's
 capabilities on top. The server stacks the bundle but binds no port: its
-extension UI calls stay headless, and a per-connection port waits for landing
-8's per-agent surface (the host's front-end binding is one process atom, so two
-connections cannot bind different ports).
+extension UI calls stay headless, and a per-connection port needs a per-agent
+front-end binding, which the host's single process atom does not provide — so
+the port is still out, after 8 and after 10b.
 
 **Why first.** It is the smallest missing seam with a real consumer today: two
 modes built a port by hand, and `front-end/install!` is the one place they hand
@@ -3714,8 +3720,9 @@ waits (`waiting-for=[ui]`), an `:optional` one never does, and both render
 distinctly.
 
 **Not in it.** The toolkit. `ui-terminal` waits for 5l's move; `ui-tk` is
-separate development (it waited for 8). The server's per-connection port and the
-dialog `:request`/`:response` pair are landing 6's.
+separate development (it waited for 8). The dialog `:request`/`:response` pair
+is landing 6c's; the server's per-connection port stayed out of 6 and out of
+every landing since.
 
 ### 5l — the TUI library moves into `ui`
 
@@ -4142,12 +4149,13 @@ builtins register idempotently with a thunk that reads the process root (so
 to the mode's mount scope for a composition that published none. The server row
 serves the same command language but has no per-connection command surface yet,
 so it calls the same `register-commands!` and refuses a slash command by name
-rather than running one with its reply dropped — the per-connection port is
-10b's. One named residual remains in the delivery path: a prompt submitted
-while a compaction runs lands in the compaction queue, which records no fact —
-the queue is memory, and recording at submit time would leave a queue fact the
-delivery never folds, so 10b's inbox read decides whether to record at the
-flush instead.
+rather than running one with its reply dropped — a per-connection command
+surface needs a per-connection `:ui` port, and that is not scheduled (10b was
+the boundary drain, 10c is transport hardening). One named residual remains in
+the delivery path: a prompt submitted while a compaction runs lands in the
+compaction queue, which records no fact — the queue is memory, and recording at
+submit time would leave a queue fact the delivery never folds, so whether to
+record at the flush is still open.
 
 The table is complete (10a's later slices). The session reads are the runtime's
 and the log's (`get-messages`, `get-last-assistant-text`, `get-session-stats`,
@@ -4341,9 +4349,9 @@ service (`kmet.app.test-sandbox`).
 
 ### 10 — the server's phase 1
 
-**10a lands before retirement** (it is the rpc parity kmet1's deletion must not
-lose); **10b and 10c land after it**, because they are kmet2's own server work
-and nothing in the old app waits on them.
+**10a landed before retirement** (it is the rpc parity kmet1's deletion must
+not lose); **10b landed and 10c is left**, both of them after it, because they
+are kmet2's own server work and nothing in the old app waits on them.
 
 Three commits. **10a, the protocol's whole table**: kmet1's `docs/rpc.md`
 declares ~30 commands and kmet2 serves seven, so "the protocol is served" is a
@@ -4357,23 +4365,47 @@ id, cwd, model, preset — which is the log, per 4c-iii-b); `set-model`,
 `get-available-thinking-levels`, `set-steering-mode`, `set-follow-up-mode`
 (8's handle ops); `clear-queue` and the compaction pair. Return an image on a
 *queue* and stay refused: that is kmet1's own limitation, documented on the
-same page. **10b, the boundary drain**: the loop calls `runtime/boundary!` at
-`:agent-settled`, the server stops relying on the queue's single consumer for
-cross-thread mutations (6b's named residual), and the static submit guard
-promised for 7b-i lands — a tool thread's mount is invisible mid-turn and live
-at the next turn. **10c, the transport hardening**: bearer token (one
-principal), a unix socket where the host has one and TCP loopback otherwise,
+same page. **10c, the transport hardening**: bearer token (one principal), a
+unix socket where the host has one and TCP loopback otherwise,
 `--max-sessions`, per-client queue depth, idle reaping on
 `kmet.libs.concurrent/monotonic-ms`, the fan-out `:lag` policy with a visible
 `:stream-gap`, and `:remember!` actually remembered at `:once`/`:agent`/
 `:workspace`.
 
+**10b, the boundary drain — landed.** The loop calls `runtime/boundary!` at
+`:agent-settled` (`kmet.app.loop/settle-boundary!`), so the queue has a drain
+point and 6b's residual is closed: a tool thread's mount is invisible to the
+turn that submitted it and live when the settle event fires, because the drain
+runs *before* the emit — `:agent-settled` means both "no turn in flight" and
+"no pending refresh". Two points the plan left implicit:
+
+- **The boundary itself is serialized.** Turns run on futures, so two agents in
+  one process settle on two threads; two drains at once would mount plugin code
+  concurrently, which the pass flag does not prevent (a `plugin!` that loses the
+  pass runs its `apply` inline). `boundary!` holds the queue's own atom as a
+  monitor, so a second boundary waits: one boundary at a time per root, no new
+  state, and the kernel's "one thread runs plugin code" rule holds at the point
+  the app decides to apply changes.
+- **The server keeps its single thread, and that is now a distinct fact.** A
+  connection's `create!`/`dispose!` run on the server thread because the
+  protocol answers synchronously (`:ready` names the agent it created), not
+  because the queue needs a consumer. The two orderings are independent: the
+  boundary sequences what *other* threads submitted, the server thread
+  sequences its own commands.
+
+The static half is `kmet.app.test-submit-guard`: the five kernel calls that run
+plugin code (`plugin!`, `restart!`, `dispose!`, `dispose-plugin!`,
+`dispose-subtree!`) have a ledger of the call sites that are the owner's, with
+a reason each, and the tool layer, the mode rows and the UI must contain none.
+Both directions fail by name (a new call site, a stale row), and the scan is
+over parsed nodes, so a docstring that names a mutator is prose.
+
 Gate: every command in `docs/rpc.md` either answers or is one of the two
 documented refusals (queue images, a token-less connection); an agent disposed,
 resumed by id and answered; a mount submitted from a tool thread absent
-mid-turn and present after it; two connections with different cwds, shells and
-models; a client that stops reading gets a `:stream-gap` and resyncs with
-`:get-state`.
+mid-turn and present after it (**met**, `kmet.app.test-composition-run`); two
+connections with different cwds, shells and models; a client that stops reading
+gets a `:stream-gap` and resyncs with `:get-state`.
 
 ### 11 — retirement
 
@@ -4670,11 +4702,16 @@ files and cuts two seams, it does not restructure the interactive loop.
   reaches the kernel only through `kmet.app.runtime/submit!` and is applied by
   `boundary!`, asserted end to end (a listener registered and a plugin mounted
   from a `future`, invisible before the boundary, live after it), with the
-  drain's order and its throw isolation. The **submit guard** proper — the
-  static assertion that `kmet.app.*` mutates only through that fn, plus a
-  concurrent-mount test that one pass runs and `settle!` applies the loser's
-  change — was written for `:agent-settled` (7b-i) and never landed, because
-  nothing drains the queue yet; it lands with the loop's first drain (10b).
+  drain's order and its throw isolation. The **submit guard** proper landed at
+  10b: `kmet.app.test-submit-guard` holds every structural kernel call site to a
+  written owner-side reason and refuses one in the tool layer, the mode rows or
+  the UI, in both directions; `kmet.app.test-runtime` adds the one-boundary-at-
+  a-time check (a second boundary cannot start its thunk while the first holds
+  one open) and `kmet.app.test-composition-run` the end-to-end one (a tool
+  thread's mount absent mid-turn, present at `:agent-settled`). The kernel's own
+  half — two threads providing at once run one pass owner and `settle!` applies
+  the other's change — is `two-threads-provide-at-once` in
+  `modules/srce/test/kmet/srce/test_kernel.clj`.
 - The kernel's own gates — the contract tests, srce self-containment, and the
   no-`scope` require ban — are in [`srce.md`](modules/srce/src/kmet/srce/srce.md).
 - New: a profile test — layers patch by row id, `--dump-config` resolves to

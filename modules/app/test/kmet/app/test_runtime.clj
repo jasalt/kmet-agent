@@ -190,4 +190,38 @@
   (is (= :kmet.app/no-submissions
          (error-type #(runtime/submit! (srce/root) (fn [] nil))))
       "a dropped change would be silent; the runtime refuses instead")
-  (is (false? (runtime/submitting? (srce/root)))))
+  (is (false? (runtime/submitting? (srce/root))))
+  (is (= :kmet.app/no-submissions
+         (error-type #(runtime/boundary! (srce/root))))
+      "and a boundary with no queue names the same error"))
+
+(deftest one-boundary-runs-at-a-time
+  ;; A submitted thunk may mount, and the kernel runs plugin code on one thread
+  ;; at a time — so two agents settling at once must not drain at once. The
+  ;; check is the ordering, not a clock: the second boundary cannot run its
+  ;; thunk while the first holds one open. `started` is what makes it a check
+  ;; rather than a race — the first thunk must be inside the boundary before
+  ;; the second is even submitted, or one drain would simply take both.
+  (let [{:keys [ctx]} (boot-events)
+        release (promise)
+        started (promise)
+        seen (atom [])]
+    (try
+      (runtime/submit! ctx (fn []
+                             (swap! seen conj :first-start)
+                             (deliver started true)
+                             @release
+                             (swap! seen conj :first-end)))
+      (let [first-boundary (future (runtime/boundary! ctx))]
+        (is (true? (deref started 2000 ::timeout)) "the first thunk is draining")
+        (runtime/submit! ctx (fn [] (swap! seen conj :second)))
+        (let [second-boundary (future (runtime/boundary! ctx))]
+          (Thread/sleep 100)
+          (is (= [:first-start] @seen)
+              "the second boundary is held out while the first drains")
+          (deliver release true)
+          @first-boundary
+          @second-boundary
+          (is (= [:first-start :first-end :second] @seen)
+              "and runs once the first is done")))
+      (finally (runtime/shutdown! {:ctx ctx})))))

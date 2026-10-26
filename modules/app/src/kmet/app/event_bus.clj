@@ -25,8 +25,9 @@
    and the loop feeds both (new-app.md, 7b-i): its events go to the kernel from
    the run's own ctx and to this table. They hold different listeners, so
    nothing hears an event twice; a boundary threads one decision through both
-   (`emit-boundary!`'s seed). Converging the two is the server boundary work
-   (new-app.md, 10b) — until then this table is the one the ABI registers in."
+   (`emit-boundary!`'s seed). Converging the two is the extension ABI moving
+   onto the kernel — retirement's work, not a boundary drain's — and until then
+   this table is the one the ABI registers in."
   (:require [kmet.app.debug :as debug]
             [kmet.app.events :as events]
             [kmet.srce.core :as srce]))

@@ -711,8 +711,13 @@ an awaitable queue. The light kernel answers with a rule:
   whole distinction; "safe but late" is not a licence for `dispose!`.
 - **The app marshals.** Plugin work, reloads and approvals are submitted to the
   loop; a tool thread that must mutate the kernel asks the loop to do it. This
-  is app policy, recorded in [`new-app.md`](../../../../../new-app.md), and a guard test
-  asserts `kmet.app.*` submits rather than mutating from a tool thread.
+  is app policy, recorded in [`new-app.md`](../../../../../new-app.md), and
+  `kmet.app.test-submit-guard` holds it: the five calls that run plugin code
+  (`plugin!`, `restart!`, `dispose!`, `dispose-plugin!`, `dispose-subtree!`)
+  have a ledger of the owner-side call sites, each with a written reason, and
+  the tool layer, the mode rows and the UI must contain none. The drain is the
+  loop's `:agent-settled` boundary (`kmet.app.runtime/boundary!`, one at a time
+  per root) — landed at 10b.
 - **No awaitable, no `drain-await`.** `dispose!` and `plugin!` are synchronous,
   so there is nothing in flight to drain. The turn-boundary quiesce is the
   loop's own awaitable (`:agents`' `when-idle`), not a kernel primitive.

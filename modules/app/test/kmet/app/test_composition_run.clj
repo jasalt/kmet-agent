@@ -50,6 +50,71 @@
       (finally (srce/dispose-subtree! (:ctx boot))
                (fs/delete-tree sessions-dir)))))
 
+(deftest a-tool-threads-mount-waits-for-the-turn-boundary
+  ;; 10b's gate, end to end. A tool body runs on its own future, and the
+  ;; kernel's rule is that the calls that run plugin code stay on the thread
+  ;; that owns the root (`srce.md` §8) — so a tool that must mount **submits**,
+  ;; and the loop's drain is what makes the change live. The mount is invisible
+  ;; to the turn that submitted it and present when `:agent-settled` fires,
+  ;; because that event means both "no turn in flight" and "no pending
+  ;; refresh" (`new-app.md`, § Reload and the turn boundary).
+  (fs/create-dirs sessions-dir)
+  (let [boot (runtime/boot (core/compose-config {:profile :tui}) {})
+        ctx (:ctx boot)]
+    (try
+      (let [agents (srce/get ctx :agents)
+            settled (promise)
+            ;; what the submitting thread saw: the run's ctx, and the service as
+            ;; it read it — nil means the change was queued, not applied
+            seen (atom nil)
+            mount-tool
+            {:name "defer-a-mount"
+             :description "Submit a mount and answer without it"
+             :parameters {:type "object" :properties {}}
+             :contextual? true
+             :execute (fn [_args _on-update _signal tool-ctx]
+                        (let [run-ctx (:srce-ctx tool-ctx)]
+                          (runtime/submit!
+                           run-ctx
+                           (fn []
+                             (srce/plugin! run-ctx
+                                           {:name :late
+                                            :provide #{:late}
+                                            :apply (fn [c _]
+                                                     (srce/provide! c :late :here
+                                                                    {:in (:parent c)}))})))
+                          (reset! seen {:ctx run-ctx :late (srce/get run-ctx :late)})
+                          {:content "submitted" :is-error false}))}
+            calls (atom 0)
+            unsubscribe (events/on! ctx :agent-settled (fn [ev] (deliver settled ev)))]
+        (try
+          (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                        llm/send-message
+                        (fn [opts]
+                          (future
+                            (if (= 1 (swap! calls inc))
+                              (do (when-let [on-tc (:on-tool-call opts)]
+                                    (on-tc {:id "tc-mount" :name "defer-a-mount"
+                                            :arguments "{}" :index 0}))
+                                  (when-let [done (:on-done opts)] (done :tool-calls)))
+                              (do (when-let [text (:on-text opts)] (text "ok"))
+                                  (when-let [done (:on-done opts)] (done :stop))))
+                            :done))]
+            (tools/register-tool! (srce/get ctx :tools) mount-tool)
+            (let [handle ((:create! agents) ctx {:config config})]
+              ((:send! agents) handle "mount it" {:target :next-turn})
+              (is (= :completed (:outcome (deref settled 20000 ::timeout))))
+              (is (= (:ctx handle) (:ctx @seen)) "the tool ran in its own agent's ctx")
+              (is (nil? (:late @seen))
+                  "the tool thread never saw its own change: the boundary had not run")
+              (is (= :here (srce/get (:ctx handle) :late))
+                  "the boundary applied it before the settle event")))
+          (finally
+            (unsubscribe)
+            (tools/unregister-tool! (srce/get ctx :tools) "defer-a-mount"))))
+      (finally (srce/dispose-subtree! (:ctx boot))
+               (fs/delete-tree sessions-dir)))))
+
 (deftest a-tool-swaps-at-the-turn-boundary
   ;; 7b-ii's second leg. The registry is live and what the model is offered is
   ;; read per request (`loop-state/active-tools`), so a tool registered between

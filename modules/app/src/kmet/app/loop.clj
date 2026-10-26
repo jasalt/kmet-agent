@@ -69,6 +69,7 @@
             [kmet.ai.llm :as llm]
             [kmet.app.loop-guard :as loop-guard]
             [kmet.app.retry :as retry]
+            [kmet.app.runtime :as runtime]
             [kmet.app.loop.stages :as loop-stages]
             [kmet.app.tools.util :as tools-util]
             [kmet.app.skills :as skills]
@@ -976,6 +977,29 @@
                (do (state/set-agent-status! agent :idle)
                    :stop))))))})
 
+(defn- settle-boundary!
+  "The turn's closing boundary: apply what other threads submitted while the
+   prompt ran, then let the kernel settle.
+
+   The kernel has no lock, and `plugin!`/`restart!`/`dispose!` run plugin code,
+   so a tool thread that must mount or unmount **submits**, and this is the one
+   drain point a kmet2 process has (`srce.md` §8). It runs *before*
+   `:agent-settled` is emitted — that event means both that no turn is in flight
+   and that no refresh is pending, so a front end that hears it and reads the
+   tree sees the applied change.
+
+   A failure is logged rather than raised: every front end waits for
+   `:agent-settled`, and a drain that threw past this point would hang the
+   conversation it was closing. A ctx outside a booted composition has no queue
+   and nothing to drain."
+  [agent]
+  (when-let [ctx (:ctx agent)]
+    (when (runtime/submitting? ctx)
+      (try
+        (runtime/boundary! ctx)
+        (catch Throwable t
+          (srce/log! ctx :error "the turn boundary failed" t))))))
+
 (defn run-agent-turn
   "Run the agent loop until it settles, owning the attempt/retry state
    machine (pi: _runAgentPrompt). Each attempt is a low-level run with its
@@ -1055,6 +1079,7 @@
             ;; TUI) must see the failure, not a silent settle.
             (reset! (:last-outcome agent) :error)
             (state/emit agent {:type :error :message reason})
+            (settle-boundary! agent)
             (state/emit agent {:type :agent-settled :outcome :error}))
           (future))
       ;; Bind the run's cancel signal for the whole prompt: it conveys into the
@@ -1166,6 +1191,7 @@
                 ;; :outcome lets a headless consumer tell how the prompt
                 ;; ended: a fired cancel signal is :aborted, otherwise the
                 ;; last turn's outcome.
+                (settle-boundary! agent)
                 (state/emit agent {:type :agent-settled
                                    :outcome (if @(:signal agent)
                                               :aborted

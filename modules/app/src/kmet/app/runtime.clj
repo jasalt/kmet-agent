@@ -13,8 +13,10 @@
    primitive is the pass flag. A thread that must change the kernel — a tool
    thread, a socket reader — therefore **submits**: `submit!` appends a thunk
    to the root's queue from any thread, and `boundary!` runs the queue and
-   settles the kernel. That is the submission point; the turn boundary is
-   where the loop calls `boundary!`.
+   settles the kernel, one boundary at a time per root. That is the submission
+   point; the loop is where it is called — at `:agent-settled`, before the event
+   is emitted, so a front end that hears the settle sees the applied change
+   (`kmet.app.loop/settle-boundary!`).
 
    The queue lives in the root ctx's own map under `::submissions`, so a child
    ctx reaches it by `srce/attr` and nothing holds a pointer back to the
@@ -41,6 +43,13 @@
   [ctx]
   (some? (queue ctx)))
 
+(defn- no-queue!
+  "The one error a ctx outside a booted runtime gets, whichever half of the
+   submission point was called."
+  []
+  (throw (ex-info "ctx is not a booted kmet2 runtime: no submission queue"
+                  {:type :kmet.app/no-submissions})))
+
 (defn submit!
   "Queue THUNK for the next boundary, from any thread. One append, so
    concurrent submitters are safe; nothing runs here. Throws
@@ -49,8 +58,7 @@
   [ctx thunk]
   (if-let [q (queue ctx)]
     (do (swap! q conj thunk) nil)
-    (throw (ex-info "ctx is not a booted kmet2 runtime: no submission queue"
-                    {:type :kmet.app/no-submissions}))))
+    (no-queue!)))
 
 (defn- take-submissions!
   "Atomically drain the queue. A concurrent append during the drain lands in
@@ -65,7 +73,11 @@
 (defn drain!
   "Run every queued thunk in submission order; returns how many ran. A
    throwing thunk is logged and does not stop the rest — the queue carries
-   independent submissions, not a transaction."
+   independent submissions, not a transaction.
+
+   This is the drain `boundary!` runs, without the boundary's one-at-a-time
+   rule: use `boundary!` from app code, and reach for this only when the caller
+   already holds the boundary or has no kernel pass to run."
   [ctx]
   (let [thunks (take-submissions! (queue ctx))]
     (doseq [thunk thunks]
@@ -85,22 +97,28 @@
 (defn boundary!
   "The turn boundary: run what other threads submitted, then settle the
    kernel's provider changes, repeating while submissions arrive. Returns
-   `{:applied n :rounds n}`. Idempotent, and cheap when nothing was
-   submitted."
+   `{:applied n :rounds n}`. Idempotent, and cheap when nothing was submitted.
+
+   **One boundary at a time per root.** A submitted thunk may mount, and the
+   kernel runs plugin code on one thread at a time (`srce.md` §8) — two agents
+   settling on two run threads would otherwise mount concurrently, which the
+   pass flag does not prevent (a `plugin!` that loses the pass runs its `apply`
+   inline). The queue's own atom is the monitor: no new state, and a second root
+   is a second lock."
   [ctx]
-  (loop [round 0 applied 0]
-    (let [n (drain! ctx)]
-      (srce/settle! ctx)
-      (cond
-        (and (seq @(queue ctx)) (< (inc round) max-rounds))
-        (recur (inc round) (+ applied n))
-
-        (seq @(queue ctx))
-        (do
-          (srce/log! ctx :warn ":kmet.app/churn" {:rounds (inc round)})
-          {:applied (+ applied n) :rounds (inc round)})
-
-        :else {:applied (+ applied n) :rounds (inc round)}))))
+  (if-let [q (queue ctx)]
+    (locking q
+      (loop [round 0 applied 0]
+        (let [n (drain! ctx)
+              rounds (inc round)]
+          (srce/settle! ctx)
+          (if (and (seq @q) (< rounds max-rounds))
+            (recur rounds (+ applied n))
+            (do
+              (when (seq @q)
+                (srce/log! ctx :warn ":kmet.app/churn" {:rounds rounds}))
+              {:applied (+ applied n) :rounds rounds})))))
+    (no-queue!)))
 
 ;; ── boot ──────────────────────────────────────────────────────────────────
 
