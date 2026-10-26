@@ -4,7 +4,7 @@ Temporary note at the project root, beside its package documentation. Work the
 items in order; each is a self-contained, revertible change. Delete this file
 when the list is empty.
 
-**Landed so far:** 1 docs/cleanup, 2 session source split, 4 god functions
+**Landed so far:** 1 docs/cleanup, 2 session source split, 3 list-screen extraction (step 1), 4 god functions
 (`make-agent-event-handler` → one handler per event family +
 `run-attempt!`, `compact-context!`, the settings row table, and
 `replay-branch!` decomposed), 5 compaction + bash-executor ownership, 6 Tk
@@ -43,7 +43,13 @@ only separable bulk left is UI (`### Custom renderers`, `### UI`,
 in the same directory — not done, because the api reference reads better as
 one file and both audiences now have one document each.
 
-## 3. List-screen extraction (large)
+## 3. List-screen extraction (landed — step 1)
+
+Step 1 done: `ui/tui/list_screen.clj` now holds `window`, `scroll-indicator`,
+`center-offset` and `clamp`; all four selectors (session, tree, fork, resource-config)
+route their viewport geometry through it, and `test_list_screen.clj` pins the
+behaviour. Step 2 (a shared `list-screen` component) remains optional — the
+viewport geometry is no longer duplicated.
 
 Three selectors re-implement the same list viewport:
 

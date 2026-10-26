@@ -41,7 +41,8 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.timers :as timers]
-            [kmet.tui.utils :as u]))
+            [kmet.tui.utils :as u]
+            [kmet.ui.tui.list-screen :as ls]))
 
 ;; ─── Layout constants (pi: SessionList.maxVisible) ─────────────────────────
 
@@ -760,16 +761,14 @@
     (if (zero? n)
       [(theme/fg th :muted (u/truncate-to-width (empty-message st) width "…"))]
       (let [selected (min (:selected-idx st) (dec n))
-            start (max 0 (min (- selected (quot max-visible 2)) (- n max-visible)))
-            end (min (+ start max-visible) n)
+            [start end] (ls/window selected max-visible n)
             rows (mapv (fn [i]
                          (session-row-line th st (assoc (nth flat i) :index i)
                                            width (:current-session-file this)))
                        (range start end))
-            scroll (when (or (pos? start) (< end n))
+            scroll (when-let [ind (ls/scroll-indicator start end selected n)]
                      [(theme/fg th :muted
-                                (u/truncate-to-width
-                                 (str "  (" (inc selected) "/" n ")") width ""))])]
+                                (u/truncate-to-width ind width ""))])]
         (into rows (or scroll []))))))
 
 (defcomponent SessionSelector nil

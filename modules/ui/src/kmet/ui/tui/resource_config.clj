@@ -59,7 +59,8 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
-            [kmet.tui.utils :as u]))
+            [kmet.tui.utils :as u]
+            [kmet.ui.tui.list-screen :as ls]))
 
 (def ^:private type-order
   "pi typeOrder — subgroup order inside a group (the kmet-only :tools
@@ -580,8 +581,8 @@
         item-total (count item-rows)
         max-visible (max 5 (- rows-count chrome-lines))
         sel (min (or (:selected st) 0) (max 0 (dec n)))
-        start-idx (max 0 (min (- sel (quot max-visible 2)) (- n max-visible)))
-        visible (subvec rows start-idx (min (+ start-idx max-visible) n))
+        [start-idx end-idx] (ls/window sel max-visible n)
+        visible (subvec rows start-idx end-idx)
         border-fn #(th/fg t :accent %)
         title (th/bold (if (= write-scope :project)
                          "Project Local Resources"
@@ -615,7 +616,7 @@
                                            (and (= :item (:kind row))
                                                 (= (+ start-idx rel) sel))))
                                visible)
-        clipped? (or (pos? start-idx) (< (+ start-idx max-visible) n))
+        clipped? (or (pos? start-idx) (< end-idx n))
         scroll-line (when clipped?
                       (let [cur (count (filterv #(= :item (:kind %))
                                                 (subvec rows 0 (inc sel))))]

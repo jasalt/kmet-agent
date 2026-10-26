@@ -20,7 +20,8 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
-            [kmet.tui.utils :as u]))
+            [kmet.tui.utils :as u]
+            [kmet.ui.tui.list-screen :as ls]))
 
 (def ^:private max-visible
   "Max messages visible (pi: UserMessageList.maxVisible)."
@@ -53,8 +54,7 @@
           [(theme/fg (theme/get-current-theme) :muted "  No user messages found")]
           (let [th (theme/get-current-theme)
                 selected @selected-idx-atom
-                start (max 0 (min (- selected (quot max-visible 2)) (- n max-visible)))
-                end (min (+ start max-visible) n)
+                [start end] (ls/window selected max-visible n)
                 row-lines (mapcat
                            (fn [i]
                              (let [{:keys [text]} (nth messages i)
@@ -69,9 +69,8 @@
                                                            (str "  Message " (inc i) " of " n))]
                                [message-line metadata-line ""]))
                            (range start end))
-                scroll (when (or (pos? start) (< end n))
-                         [(theme/fg th :muted
-                                    (str "  (" (inc selected) "/" n ")"))])]
+                scroll (when-let [ind (ls/scroll-indicator start end selected n)]
+                         [(theme/fg th :muted ind)])]
             (vec (concat row-lines scroll)))))))
 
   (handle-input [_this data]

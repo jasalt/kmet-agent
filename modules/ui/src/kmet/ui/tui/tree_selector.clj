@@ -34,7 +34,8 @@
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]
             [kmet.tui.terminal :as terminal]
-            [kmet.tui.utils :as u]))
+            [kmet.tui.utils :as u]
+            [kmet.ui.tui.list-screen :as ls]))
 
 ;; ─── Layout constants (pi: TreeList viewport tuning) ────────────────────────
 
@@ -782,10 +783,10 @@
             (th/fg theme-current :muted (str "  (0/0)" (status-labels st))) width)]
           (let [n (count filtered)
                 h (max 1 (rows-budget size max-visible-lines))
-                start-idx (max 0 (min (- selected-idx (quot h 2)) (- n h)))
+                [start-idx end-idx] (ls/window selected-idx h n)
                 rows (mapv (fn [i] (build-row theme-current (:tool-calls st) st
                                               (nth filtered i) (= i selected-idx)))
-                           (range start-idx (min (+ start-idx h) n)))
+                           (range start-idx end-idx))
                 status (str "  (" (inc selected-idx) "/" n ")" (status-labels st))]
             (conj (render-horizontal-viewport rows width)
                   (u/truncate-to-width (th/fg theme-current :muted status) width)))))))
