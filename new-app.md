@@ -897,7 +897,7 @@ Each is independently shippable and gated.
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
 | 9 | **planned** — the execution seams: `:shell`/`:subprocess`, `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`; every `defonce` cell the audit names becomes a per-context read | two agents run shell in two cwds with two shells; the § "Multi-session server mode" audit table holds only the extension host's own bindings, each with a written reason |
-| 10 | **in progress — 10a and 10b landed**; 10c and resume-by-id remain. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced; resume-by-id is 10a's leftover | an agent disposed, resumed by id and answered; a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
+| 10 | **in progress — 10a, 10b and resume-by-id landed**; 10c remains. 10a: the wire's prompt is the submission chain, `get-commands` answers, the session reads and moves, the cycles and queue modes, and `respond` (silent) — kmet1's whole table answers or is a documented refusal. 10b: the loop drains the submission queue at `:agent-settled` (one boundary at a time per root) and `kmet.app.test-submit-guard` holds the call sites to the owner's, so a tool thread's mount is invisible mid-turn and live after it. Resume-by-id: the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session. 10c: bearer token, unix socket where the host has one, `--max-sessions`, per-client depth, idle reaping, `:lag`/`:stream-gap`, `:remember!` enforced | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model |
 | 11 | **planned** — retirement: one `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except the ABI |
 
 **The order is not the table's order.** 7b's events half precedes landing 5:
@@ -1233,11 +1233,12 @@ log is the record, but a record that never says "delivered" is a leak.
 **Review of the pair.** One wrong-answer path and three test/doc tightenings:
 `resume!` reached the driver as `{:resume <handle-id>}`, and the factory created
 a **fresh session** — an agent brought back with a different conversation and
-no warning. A handle id is not a session, so the factory now refuses
+no warning. A handle id is not a session, so the factory refused it
 (`:kmet.app/unsupported-op` under the registry's `:agent-create-failed`) until
-an agent record outlives the handle; pinned by
-`resume-is-refused-not-approximated`, which also keeps the two error levels
-honest. The queue test had lost its queue: it asserted the delivered inbox and
+resume-by-id landed; the factory now resolves the id over the session dir and
+binds the handle to the stored session (`:kmet.app/unknown-session` when
+nothing carries it), with `kmet.app.loop.test-driver`'s
+`resume-binds-the-stored-session` as the gate. The queue test had lost its queue: it asserted the delivered inbox and
 then carried a name promising the loop's queue, so it now asserts both (the
 inbox drains, the follow-up queue holds the text the run will drain). A
 pointless `:or {on-event nil}` went, and the prompt-row test's comment about
@@ -2598,9 +2599,9 @@ inside it.
 One boundary is recorded rather than fixed: a remount of `:agents` (a
 `:projections` provider swap restarts it) forgets its handles while their ctxs
 stay under the root — exactly as a remounted `:sessions` loses its id index. The
-driver is re-hosted with them at 7a, and resume-by-id (landing 6) is what
-re-registers an agent that is still live: the registry is not the agent's
-durable record, the log is.
+driver is re-hosted with them at 7a, and resume-by-id is not a way to bring a
+live agent back: it creates a *new* agent for a stored session, because the
+registry is not the agent's durable record — the log is.
 
 A second pass found the one thing the first pass had taken on trust: **a parent
 ctx must outlive the agent**, and a plugin's mount ctx does not. Disposing a
@@ -3524,11 +3525,10 @@ Everything kmet1 carried is gone, and 9's execution seams are in: `:shell`,
 `:workspace`/`:fs`, `:sandbox`, `:llm`/`:models` and `:modes` are services or
 verifications now, and `kmet.app.test-process-state` is the ledger of the
 process cells that remain, each with a written reason. What is left is the
-server's own transport work, the session resume behind it, and two loose ends:
+server's own transport work and two loose ends:
 
 | What | Where | Why it is left | Cut |
 |---|---|---|---|
-| `resume!` by session id | `kmet.app.loop.driver`'s factory throws `:kmet.app/unsupported-op` on `:resume` | a handle id is not a session: the registry's `resume!` passes the id it once published, and an agent brought back as a fresh session would answer with a different conversation and say nothing | 10a's last gate item — needs an agent record that outlives the handle |
 | transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping; `:remember!` is called and nothing stores the decision at its scope | 10c |
 | `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
 | the server's user-facing page | `docs/` | `profiles.md` documents `--profile server --port` and `rpc.md` the protocol, but the connection rules — one session per connection, the approval route, the token, `--max-sessions` — belong on a page of their own | with 10c |
@@ -3631,7 +3631,7 @@ row's docstring describes the handle path a reader will find.
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | T | **landed** — `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
 | 9 | **landed** — `app` (`:shell`, `:sandbox`, the tool context's `:srce-ctx`), `libs` (verified) | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) |
-| 10 | **10a, 10b landed** — `app` | ~1,100 | 10c and resume-by-id are the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
+| 10 | **10a, 10b and resume-by-id landed** — `app` | ~1,100 | 10c is the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; an agent resumed by id answers in its stored session; two sessions isolated |
 | 11 | **landed** — all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
 **The execution order was T → 10a → 11 → 9 → 10b/10c, and all but the last
@@ -4176,8 +4176,9 @@ route. Two decisions worth keeping: a `steer`/`follow-up` on an idle agent
 starts a run under the handle's one start-or-queue rule, so the answer says
 `:started` rather than a `:queued` nothing would drain (kmet1 queued and waited
 — a client that depended on that should send them only around a live run); and
-an rpc row refuses the session-lifecycle flags by name until resume-by-id
-lands, which is 9's.
+an rpc row refuses the session-lifecycle flags by name — it opens no session
+of its own (the TUI row resolves them, and the registry's `resume!` creates an
+agent for a stored session).
 
 ### `ui-tk` — deferred to separate development
 

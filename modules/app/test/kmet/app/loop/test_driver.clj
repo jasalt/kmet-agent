@@ -219,22 +219,6 @@
               nil
               (catch Exception e (:type (ex-data e)))))))
 
-(deftest resume-is-refused-not-approximated
-  ;; The registry's resume names a handle id it once published; a handle id is
-  ;; not a session. Answering with a fresh conversation would be a wrong answer
-  ;; rather than an unimplemented one.
-  (let [{:keys [root agents]} (mounted)]
-    (is (= :kmet.app/agent-create-failed
-           (try ((:create! agents) root {:config test-config :resume "abc12345"})
-                nil
-                (catch Exception e (:type (ex-data e)))))
-        "create! fails")
-    (is (= :kmet.app/unsupported-op
-           (try ((:create! agents) root {:config test-config :resume "abc12345"})
-                nil
-                (catch Exception e (:type (ex-data (ex-cause e))))))
-        "and says what it cannot do")))
-
 (deftest two-agents-run-their-own-turns
   ;; The landing's gate: two agents created through `create!` each run a turn
   ;; and settle once — one registry, two ctxs, two states.
@@ -627,6 +611,74 @@
               (finally
                 ((:dispose! agents) handle)))))
         gate))))
+
+(deftest resume-binds-the-stored-session
+  ;; The registry's `:resume!` creates an agent for a *stored session*: the id
+  ;; resolves over the composition's session dir, and the handle is bound to the
+  ;; session that file holds — entries included, not a fresh conversation
+  ;; wearing the id.
+  (let [{:keys [root agents]} (mounted)
+        log (srce/get root :sessions)
+        live-session (fn [handle] ((:session handle)))
+        entry-count (fn [handle] (count ((:entries log) (live-session handle))))
+        user-texts (fn [handle]
+                     (into [] (comp (filter #(= :user (:role %)))
+                                    (map (comp :text first :content)))
+                           ((:entries log) (live-session handle))))]
+    (with-stubbed-llm
+      (fn [_]
+        (let [handle (create! {:root root :agents agents})
+              id (:id (:header (live-session handle)))]
+          ((:send! agents) handle "hello" {:target :next-turn})
+          ((:when-idle agents) handle)
+          (let [stored (entry-count handle)]
+            (is (pos? stored) "the run stored entries before the resume")
+            ((:dispose! agents) handle)
+            ;; a resumed agent is a new agent: the caller names the composition
+            ;; it is resumed into, as it would for `create!`
+            (let [resumed ((:resume! agents) root id {:config test-config})]
+              (try
+                (is (not= id (:id resumed))
+                    "a resumed agent is a new handle, not the one that was disposed")
+                (is (= id (:id (:header (live-session resumed))))
+                    "bound to the stored session rather than a fresh one")
+                (is (= stored (entry-count resumed))
+                    "with the entries the log holds")
+                ;; and it answers in that conversation: the stored prompt plus
+                ;; what the caller sent now
+                ((:send! agents) resumed "again" {:target :next-turn})
+                ((:when-idle agents) resumed)
+                (is (= ["hello" "again"] (user-texts resumed))
+                    "the resumed agent runs new turns over the stored session")
+                (finally ((:dispose! agents) resumed))))))))))
+
+(deftest resume-refuses-an-id-no-session-carries
+  ;; A handle id is not a session id, and nothing is guessed: the refusal is
+  ;; named, and the create leaves no child ctx behind.
+  (let [{:keys [root agents]} (mounted)
+        children (count (srce/children root))
+        refused (fn [id]
+                  (try ((:resume! agents) root id)
+                       nil
+                       (catch Throwable t t)))]
+    (let [e (refused "no-such-session")]
+      (is (= :kmet.app/agent-create-failed (:type (ex-data e)))
+          "a refused resume fails the create it was")
+      (is (= :kmet.app/unknown-session (:type (ex-data (ex-cause e))))
+          "and the cause names what was missing")
+      (is (= [] ((:list agents) root)) "no agent was published"))
+    (is (= children (count (srce/children root)))
+        "the refused creates rolled their child ctxs back")
+    ;; a fresh agent's handle id is not the session's id either
+    (let [handle (create! {:root root :agents agents})
+          session-id (:id (:header ((:session handle))))]
+      (try
+        (is (not= session-id (:id handle))
+            "the registry's id and the log's id are different names")
+        (is (= :kmet.app/unknown-session
+               (-> (refused (:id handle)) ex-cause ex-data :type))
+            "so resuming by a handle id finds no session")
+        (finally ((:dispose! agents) handle))))))
 
 (deftest a-handle-flushes-its-compaction-queue
   ;; Messages typed during a compaction reach the run through the handle: the

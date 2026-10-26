@@ -217,6 +217,21 @@
     (fs/create-dirs dir)
     ((:create! log) {:dir dir :cwd cwd})))
 
+(defn- resume-session
+  "The stored session ID (or a session file path) names over LOG: the session
+   its file holds, loaded through the log so the service indexes it by id.
+
+   Throws :kmet.app/unknown-session when nothing matches. An agent brought back
+   as a fresh session would answer a different conversation and say nothing,
+   which is the failure this replaces."
+  [log config id]
+  (let [path (session/resolve-session-path id (cfg/get-session-dir config))]
+    (or (when path ((:load log) path))
+        (throw (ex-info (str "no stored session is " (pr-str id))
+                        {:type :kmet.app/unknown-session
+                         :id id
+                         :session-dir (cfg/get-session-dir config)})))))
+
 (defn- agent-handle
   "The handle the registry publishes for one agent: the value a front end
    reads, the run it owns, and the control surface
@@ -543,11 +558,11 @@
    (`resolve-create-opts`) — an agent's model is an option of the agent, not of
    the process, so two agents of one server can differ.
 
-   `:resume` is refused rather than approximated: the registry's resume passes
-   the *handle* id it once published, and a handle id is not a session — an
-   agent brought back as a fresh session would answer with a different
-   conversation and say nothing. It waits for an agent record that outlives
-   the handle."
+   `:resume` creates an agent for a *stored session*: the id (or path) is
+   resolved over the composition's session dir, and the handle is bound to the
+   session its file holds — entries, cwd and all, because `agent-state` takes
+   its cwd from the session. An id nothing answers to is a named failure
+   (:kmet.app/unknown-session), never a fresh conversation wearing the id."
   [ctx _config]
   (let [scope (:parent ctx)
         agents (srce/get ctx :agents)
@@ -557,21 +572,16 @@
         cwd (str (fs/cwd))]
     ((:register-factory! agents) scope
                                  (fn [child opts]
-                                   (when-let [id (:resume opts)]
-                                     (throw (ex-info
-                                             (str "the loop driver cannot resume agent "
-                                                  (pr-str id) ": a handle id is not a session, "
-                                                  "and a fresh one would answer with a different "
-                                                  "conversation")
-                                             {:type :kmet.app/unsupported-op
-                                              :op :resume
-                                              :id id})))
                                    (let [config (-> (or (:config opts) (cfg/load-config))
                                                     (cfg/apply-cli-overrides
-                                                     (resolve-create-opts opts)))]
+                                                     (resolve-create-opts opts)))
+                                         session (or (some->> (:resume opts)
+                                                              (resume-session log config))
+                                                     (:session opts)
+                                                     (session-for log config cwd))]
                                      (agent-handle child {:id (:id opts)
                                                           :config config
-                                                          :session (or (:session opts) (session-for log config cwd))
+                                                          :session session
                                                           :prompt-fn prompt-fn
                                                           :projections projections}))))))
 
