@@ -23,6 +23,17 @@
 
 ;; ─── Load / unload / reload lifecycle (real runtime) ─────────────────────
 
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (t/deftest test-load-single-file-extension
   (extensions/clear-extensions!)
   (let [result (extensions/load-extension! "test/fixtures/ext-single/hello_ext.clj")]
@@ -76,20 +87,20 @@
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/owned_ext"))
     (spit (str dir "/extension.edn")
-          "{:name \"owned-ext\" :entry owned-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/owned_ext/main.clj")
-          (str "(ns owned-ext.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-command! api {:name \"owned-cmd\" :description \"d\"\n"
-               "                              :handler (fn [_ _] nil)})\n"
-               "  (ext/register-tool! api {:name \"owned-tool\" :label \"T\"\n"
-               "                           :description \"d\" :parameters []\n"
-               "                           :execute (fn [_] {:content \"ok\"})})\n"
-               "  (ext/register-tool-source! api :owned-source (fn [] {}))\n"
-               "  (ext/register-skill! api \"---\\nname: owned-skill\\ndescription: d\\n---\\nbody\")\n"
-               "  (ext/register-prompt! api {:name \"owned-prompt\" :content \"body\"})\n"
-               "  (ext/register-flag! api \"owned-flag\")\n"
-               "  (ext/on-event api :session-start (fn [_ _] nil)))\n"))
+          "{:name \"owned-ext\" :plugin owned-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/owned_ext/main.clj")
+                 (str "(ns owned-ext.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-command! api {:name \"owned-cmd\" :description \"d\"\n"
+                      "                              :handler (fn [_ _] nil)})\n"
+                      "  (ext/register-tool! api {:name \"owned-tool\" :label \"T\"\n"
+                      "                           :description \"d\" :parameters []\n"
+                      "                           :execute (fn [_] {:content \"ok\"})})\n"
+                      "  (ext/register-tool-source! api :owned-source (fn [] {}))\n"
+                      "  (ext/register-skill! api \"---\\nname: owned-skill\\ndescription: d\\n---\\nbody\")\n"
+                      "  (ext/register-prompt! api {:name \"owned-prompt\" :content \"body\"})\n"
+                      "  (ext/register-flag! api \"owned-flag\")\n"
+                      "  (ext/on-event api :session-start (fn [_ _] nil)))\n"))
     (try
       (let [result (extensions/load-extension! dir)
             owner [:app :extensions "owned-ext"]]
@@ -136,10 +147,10 @@
         unsubscribed (atom [])]
     (fs/delete-tree dir)
     (fs/create-dirs dir)
-    (spit (str dir "/ext.clj")
-          (str "(ns term-ext (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/ui-on-terminal-input api (fn [_data] nil)))\n"))
+    (spit-plugin (str dir "/ext.clj")
+                 (str "(ns term-ext (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/ui-on-terminal-input api (fn [_data] nil)))\n"))
     (extensions/bind-extensions!
      {:mode :interactive :has-ui true
       :ui {:on-terminal-input (fn [handler]
@@ -172,16 +183,16 @@
     (fs/create-dirs prompt-dir)
     (fs/create-dirs theme-dir)
     (spit (str dir "/extension.edn")
-          "{:name \"res-owner\" :entry res-owner.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/res_owner/main.clj")
-          (str "(ns res-owner.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/on-event api :resources-discover\n"
-               "    (fn [_ _]\n"
-               (pr-str {:skill-paths [skill-dir]
-                        :prompt-paths [prompt-dir]
-                        :theme-paths [theme-dir]})
-               ")))\n"))
+          "{:name \"res-owner\" :plugin res-owner.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/res_owner/main.clj")
+                 (str "(ns res-owner.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/on-event api :resources-discover\n"
+                      "    (fn [_ _]\n"
+                      (pr-str {:skill-paths [skill-dir]
+                               :prompt-paths [prompt-dir]
+                               :theme-paths [theme-dir]})
+                      ")))\n"))
     (spit (str skill-dir "/SKILL.md")
           "---\nname: res-owned-skill\ndescription: From res-owner\n---\nbody")
     (spit (str prompt-dir "/res-owned-prompt.md") "Prompt body from res-owner")

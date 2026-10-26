@@ -8,3 +8,8 @@
                            :description "tools.cli 0.4.1"
                            :params {:x {:type :string}}
                            :execute (fn [_args] {:content "iso-a"})}))
+
+;; The plugin the loader mounts: the extension body stays `init` above.
+(def plugin
+  {:name :ext/iso-a
+   :apply (fn [_ctx api] (init api) nil)})

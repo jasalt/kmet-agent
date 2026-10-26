@@ -288,30 +288,31 @@
   (testing "rejects strict-layout violations"
     (let [dir "target/test-pack-sloppy"]
       (fs/create-dirs (str dir "/sloppy"))
-      (spit (str dir "/extension.edn") "{:name \"sloppy\" :entry sloppy.main :loader [:sci]}")
+      (spit (str dir "/extension.edn") "{:name \"sloppy\" :plugin sloppy.main/plugin :loader [:sci]}")
       (spit (str dir "/sloppy/main.clj") "(ns wrong.place)\n(defn init [api] nil)\n")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"strict layout violation"
                             (build/pack-extension! dir "target/test-pack-sloppy.jar")))
       (fs/delete-tree dir)))
-  (testing "rejects string :entry manifests"
+  (testing "rejects a string :plugin manifest"
     (let [dir "target/test-pack-strentry"]
       (fs/create-dirs dir)
-      (spit (str dir "/extension.edn") "{:name \"strentry\" :entry \"main.clj\" :loader [:sci]}")
+      (spit (str dir "/extension.edn")
+            "{:name \"strentry\" :plugin \"main.clj\" :loader [:sci]}")
       (spit (str dir "/main.clj") "(ns strentry.main)\n(defn init [api] nil)\n")
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":entry"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":plugin"
                             (build/pack-extension! dir "target/test-pack-str.jar")))
       (fs/delete-tree dir)))
   (testing "rejects a manifest without :loader and unknown loader kinds"
     (let [dir "target/test-pack-loader"]
       (fs/create-dirs (str dir "/ld"))
       (spit (str dir "/ld/main.clj") "(ns ld.main)\n(defn init [api] nil)\n")
-      (spit (str dir "/extension.edn") "{:name \"ld\" :entry ld.main}")
+      (spit (str dir "/extension.edn") "{:name \"ld\" :plugin ld.main/plugin}")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #":loader"
                             (build/pack-extension! dir "target/test-pack-loader.jar")))
-      (spit (str dir "/extension.edn") "{:name \"ld\" :entry ld.main :loader [:jvm]}")
+      (spit (str dir "/extension.edn") "{:name \"ld\" :plugin ld.main/plugin :loader [:jvm]}")
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #":loader"
                             (build/pack-extension! dir "target/test-pack-loader.jar")))
-      (spit (str dir "/extension.edn") "{:name \"ld\" :entry ld.main :loader [:sci :jolt]}")
+      (spit (str dir "/extension.edn") "{:name \"ld\" :plugin ld.main/plugin :loader [:sci :jolt]}")
       (is (= "target/test-pack-loader.jar"
              (build/pack-extension! dir "target/test-pack-loader.jar")))
       (fs/delete-tree dir)
@@ -345,7 +346,7 @@
   (let [dir "target/test-bundle-discovery"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/one/src"))
-    (spit (str dir "/one/src/extension.edn") "{:name \"one\" :entry one.core :loader [:sci]}\n")
+    (spit (str dir "/one/src/extension.edn") "{:name \"one\" :plugin one.core/plugin :loader [:sci]}\n")
     (spit (str dir "/single.clj") "(ns single)\n")
     (fs/create-dirs (str dir "/wrapper"))
     (spit (str dir "/wrapper/README.md") "not an artifact\n")
@@ -358,7 +359,7 @@
     (let [dir "target/test-bundle-nosci"]
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/bad"))
-      (spit (str dir "/bundle/extension.edn") "{:name \"bad\" :entry bad.main :loader [:jolt]}")
+      (spit (str dir "/bundle/extension.edn") "{:name \"bad\" :plugin bad.main/plugin :loader [:jolt]}")
       (spit (str dir "/bundle/bad/main.clj") "(ns bad.main)\n(defn init [api] nil)\n")
       (is (thrown-with-msg? Exception #"must include :sci"
                             (@#'build/validate-bundled-dir! "bad" (str dir "/bundle"))))
@@ -367,7 +368,7 @@
     (let [dir "target/test-bundle-sloppy"]
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/sloppy"))
-      (spit (str dir "/bundle/extension.edn") "{:name \"sloppy\" :entry sloppy.main :loader [:sci]}")
+      (spit (str dir "/bundle/extension.edn") "{:name \"sloppy\" :plugin sloppy.main/plugin :loader [:sci]}")
       (spit (str dir "/bundle/sloppy/main.clj") "(ns wrong.place)\n(defn init [api] nil)\n")
       (is (thrown-with-msg? Exception #"strict layout violation"
                             (@#'build/validate-bundled-dir! "sloppy" (str dir "/bundle"))))
@@ -376,7 +377,7 @@
     (let [dir "target/test-bundle-deps"]
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/lr"))
-      (spit (str dir "/bundle/extension.edn") "{:name \"lr\" :entry lr.main :loader [:sci]}")
+      (spit (str dir "/bundle/extension.edn") "{:name \"lr\" :plugin lr.main/plugin :loader [:sci]}")
       (spit (str dir "/bundle/lr/main.clj") "(ns lr.main)\n(defn init [api] nil)\n")
       (spit (str dir "/bundle/deps.edn") "{:deps {foo/bar {:local/root \"../x\"}}}")
       (is (thrown-with-msg? Exception #":local/root"

@@ -116,7 +116,9 @@
        "  (ext/register-tool! api {:name \"tool-route-probe\"\n"
        "                           :description \"probe\"\n"
        "                           :params {:x {:type :string}}\n"
-       "                           :execute (fn [args] {:content (str (:x args))})}))\n"))
+       "                           :execute (fn [args] {:content (str (:x args))})}))\n\n"
+       "(def plugin {:name :ext/tool-route-probe\n"
+       "             :apply (fn [_ctx api] (init api) nil)})\n"))
 
 (deftest extension-tools-reach-the-compositions-tool-table
   ;; The host's :registry is a tag router: :kmet/tool (and :kmet/tool-source)

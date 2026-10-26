@@ -281,6 +281,18 @@
     (is (= :demo/plugin (:name @f)))
     (is (= :demo/plugin (:srce/plugin (meta #'demo-plugin))))))
 
+(deftest defplugin-expands-to-public-api-only
+  ;; A macro a sandboxed caller uses must expand to `kmet.srce.core` and
+  ;; nothing else: an extension context shares that one namespace, so an
+  ;; expansion naming `kmet.srce.fiber` (or any other sub-namespace) fails to
+  ;; evaluate there — the macro would be unusable exactly where it is needed.
+  (let [form (macroexpand-1 '(srce/defplugin p {:name :p :apply (fn [_ _] nil)}))
+        syms (filter symbol? (tree-seq coll? seq form))
+        kmet-syms (filter #(str/starts-with? (str %) "kmet.srce.") syms)]
+    (is (every? #(str/starts-with? (str %) "kmet.srce.core")
+                kmet-syms)
+        (str "defplugin expands to public kernel API only, got " (pr-str kmet-syms)))))
+
 ;; ── fibers and effects ────────────────────────────────────────────────────
 
 (deftest one-runtime-many-fibers

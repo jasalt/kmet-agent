@@ -21,24 +21,30 @@ repo layout it uses), and [rpc.md](rpc.md) (extension UI over RPC).
 
 ```clojure
 (ns my.hello-ext
-  (:require [kmet.extension :as ext]))
+  (:require [kmet.extension :as ext]
+            [kmet.srce.core :as srce]))
 
-(defn init [api]
-  (ext/register-command! api
-    {:name        "hello"
-     :description "Say hello"
-     :handler     (fn [ctx args] (str "Hello, " args "!"))}))
+(srce/defplugin plugin
+  {:name  :ext/hello
+   :apply (fn [_ctx api]
+            (ext/register-command! api
+              {:name        "hello"
+               :description "Say hello"
+               :handler     (fn [ctx args] (str "Hello, " args "!"))})
+            nil)})
 
 (defn shutdown [api]
   ;; optional teardown — deregistration is automatic
   nil)
 ```
 
-The loader calls `(init api)` with the capability map; everything registered
-inside `init` belongs to the extension, and unload disposes it automatically
-— `shutdown` is optional. That is the **single-file** form. A directory or jar
-extension names a plugin var in `extension.edn` instead and puts the same body
-in the plugin map's `:apply` (see [Directory extensions](#directory-extensions-multi-file-extensionedn)).
+An extension **is** a plugin: the loader mounts the `plugin` var, `:apply`
+receives the extension's ctx and its capability map, and everything registered
+through `api` belongs to the extension — unload disposes it automatically.
+`:inject` lives in the same map, so a mount waits for the services it names.
+That is also the **single-file** form; a directory or jar extension names the
+same var in `extension.edn` (see
+[Directory extensions](#directory-extensions-multi-file-extensionedn)).
 The full contract (ownership, name conflicts, lifecycle guarantees) is in the
 [contract reference](../modules/app/src/kmet/extension.md#the-contract).
 
@@ -115,7 +121,7 @@ A `.clj` file in the extensions directory:
 
 ```
 ~/.kmet/agent/extensions/
-└── hello_ext.clj        ; namespace must start with (ns ...) and define init
+└── hello_ext.clj        ; namespace must start with (ns ...) and define plugin
 ```
 
 ## Directory extensions (multi-file, `extension.edn`)
@@ -152,9 +158,10 @@ underscores, dots → slashes; `.clj` → `.cljc` → `.bb` fallback):
 The manifest names the extension's **plugin** — `:plugin`, a qualified var
 symbol holding a `srce` plugin map (`kmet.srce.core/defplugin`) — and the
 loader backends the extension supports — `:loader` (see
-[Loader compatibility](#loader-compatibility-loader)). There is no `init`
-convention beside it: the plugin map's `:apply` **is** the extension body,
-and its `:inject` declares the app services it waits for:
+[Loader compatibility](#loader-compatibility-loader)). There is no separate
+init function: the plugin map's `:apply` **is** the extension body, and its
+`:inject` declares the app services it waits for (the manifest may not carry
+`:inject` — the map is the one declaration):
 
 ```clojure
 ;; my_ext/main.clj
@@ -496,7 +503,7 @@ from the shipped extensions' side).
 
 Extensions are testable in isolation with the **nullable API** — a test
 fixture that captures every registration into a state atom, with no kmet
-runtime involved. Load the extension's `init` against it and assert what was
+runtime involved. Call the plugin's `:apply` with it and assert what was
 registered (the state shape and the `create-nullable-api` contract are in the
 contract reference's § Testing extensions).
 
@@ -508,9 +515,9 @@ The fixture in a directory-based extension's own test tree:
             [kmet.extension :as ext]
             [my.hello-ext :as sut]))
 
-(deftest init-registers-hello-command
+(deftest the-plugin-registers-hello-command
   (let [{:keys [api state]} (ext/create-nullable-api)]
-    (sut/init api)
+    ((:apply sut/plugin) nil api)
     (is (contains? (:commands @state) "hello"))))
 ```
 
@@ -532,9 +539,13 @@ A complete extension showing the common pieces:
 (ns my.ext
   "Example: command + tool + event handler + status."
   (:require [clojure.string :as str]
-            [kmet.extension :as ext]))
+            [kmet.extension :as ext]
+            [kmet.srce.core :as srce]))
 
-(defn init [api]
+(srce/defplugin plugin
+  {:name  :ext/my-ext
+   :inject {:tools nil}          ; wait for the tool registry
+   :apply (fn [_ctx api]
   (ext/ui-set-status api "my-ext" "loaded")
 
   (ext/register-command! api
@@ -554,7 +565,8 @@ A complete extension showing the common pieces:
   (ext/on-input api
     (fn [{:keys [text]}]
       (when (str/starts-with? text "!magic")
-        {:action :transform :text (str "The magic word is " text)}))))
+        {:action :transform :text (str "The magic word is " text)})))
+  nil)})
 
 (defn shutdown [api]
   (ext/ui-set-status api "my-ext" nil))

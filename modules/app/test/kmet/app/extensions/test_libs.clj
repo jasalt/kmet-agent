@@ -61,6 +61,17 @@
                                  (fs/glob dir "**/*.{clj,cljc,jolt,bb}")))))
           roots)))
 
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (t/deftest test-shared-library-lists-match-the-source-trees
   (testing "the extension shared-library lists and the source trees agree:
             a namespace added or removed without updating its list fails"
@@ -164,14 +175,14 @@
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/hook_ext"))
     (spit (str dir "/extension.edn")
-          "{:name \"hook-ext\" :entry hook-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/hook_ext/main.clj")
-          (str "(ns hook-ext.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/on-input api (fn [{:keys [text]}]\n"
-               "                      {:action :transform :text (str text \"-hooked\")}))\n"
-               "  (ext/on-before-agent-start api (fn [_] {:system-prompt \"HOOK SYS\"}))\n"
-               "  (ext/on-tool-call api (fn [_] {:args {:by \"hook-ext\"}})))\n"))
+          "{:name \"hook-ext\" :plugin hook-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/hook_ext/main.clj")
+                 (str "(ns hook-ext.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/on-input api (fn [{:keys [text]}]\n"
+                      "                      {:action :transform :text (str text \"-hooked\")}))\n"
+                      "  (ext/on-before-agent-start api (fn [_] {:system-prompt \"HOOK SYS\"}))\n"
+                      "  (ext/on-tool-call api (fn [_] {:args {:by \"hook-ext\"}})))\n"))
     (try
       (let [tool-hooks (count (extensions/get-tool-call-hooks))
             result (extensions/load-extension! dir)

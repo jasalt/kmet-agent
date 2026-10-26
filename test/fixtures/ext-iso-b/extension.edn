@@ -1,1 +1,1 @@
-{:name "iso-b", :entry iso-b.main, :loader [:sci :jolt]}
+{:name "iso-b", :plugin iso-b.main/plugin, :loader [:sci :jolt]}

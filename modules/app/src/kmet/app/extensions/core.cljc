@@ -1320,8 +1320,8 @@
    own copy loads first) is returned skipped, and no second context is
    built."
   [resolved path]
-  (let [{:keys [name kind artifact entry-ns plugin-sym file declared-loaders legacy-loader?
-                bundled? inject]} resolved
+  (let [{:keys [name kind artifact entry-ns plugin-sym file declared-loaders
+                legacy-loader? bundled?]} resolved
         loader-kind (if (context/resource-kind? kind)
                       (context/forced-loader-kind resolved declared-loaders)
                       (context/select-loader-kind declared-loaders))]
@@ -1425,70 +1425,48 @@
                 (do
                   (loader/load l {:kind :ns :name (str file-ns)})
                   (reset! (:entry-ns ext) file-ns)))
-              (let [plugin-var (when plugin-sym
-                                 ;; the local `name` is this extension's name, so
-                                 ;; the var name needs clojure.core/name
-                                 (extension-var ext @(:entry-ns ext)
-                                                (symbol (clojure.core/name plugin-sym))))
-                    init-var (when-not plugin-sym
-                               (extension-var ext @(:entry-ns ext) 'init))]
-                (when (and plugin-sym (not plugin-var))
-                  (throw (ex-info (str "Extension " (:name ext) " manifest names "
-                                       plugin-sym " but the namespace does not define it")
+              ;; An extension IS a plugin: `extension.edn` names its var (a
+              ;; single-file extension defines it in its own namespace), the
+              ;; kernel mounts that map, and `:apply` is the extension body —
+              ;; it receives the extension's ctx and its ABI map. A throwing
+              ;; body is the kernel's business: the fiber goes :failed rather
+              ;; than rethrowing, so a mount that failed *now* is turned back
+              ;; into a load error — otherwise a broken extension reports as
+              ;; loaded.
+              (let [plugin-var (extension-var ext @(:entry-ns ext)
+                                              (if plugin-sym
+                                                (symbol (clojure.core/name plugin-sym))
+                                                'plugin))]
+                (when-not plugin-var
+                  (throw (ex-info (str "Extension " (:name ext) " does not define "
+                                       (if plugin-sym plugin-sym 'plugin)
+                                       " — an extension names a plugin var in "
+                                       "extension.edn, and a single-file extension "
+                                       "defines (def plugin {...}) in its namespace")
                                   {:path path})))
-                (when (and (not plugin-sym) (not init-var))
-                  (throw (ex-info (str "Extension " (:name ext)
-                                       " does not define an init fn")
-                                  {:path path})))
-                (let [plugin (when plugin-var (deref plugin-var))]
-                  (when (and plugin-var
-                             (not (and (map? plugin)
-                                       (keyword? (:name plugin))
-                                       (fn? (:apply plugin)))))
-                    (throw (ex-info (str "Extension " (:name ext) " :plugin must hold a "
-                                         "plugin map (a srce/defplugin var), got: "
+                (let [plugin (deref plugin-var)]
+                  (when-not (and (map? plugin)
+                                 (keyword? (:name plugin))
+                                 (fn? (:apply plugin)))
+                    (throw (ex-info (str "Extension " (:name ext) " plugin must be a "
+                                         "map with a keyword :name and an :apply fn "
+                                         "(a srce/defplugin var), got: "
                                          (pr-str (type plugin)))
                                     {:path path})))
-                  (let [inject (if plugin-var (:inject plugin) inject)
-                        mounted? (boolean (or plugin-var inject))]
-                    (if mounted?
-                      ;; The extension is a plugin: the kernel holds it pending
-                      ;; until the ctx provides what it waits for, runs its body
-                      ;; at activation, and disposes it on unload (unload still
-                      ;; calls shutdown first). A manifest `:plugin` supplies the
-                      ;; whole map; the legacy manifest `:inject` mounts the
-                      ;; `init` fn.
-                      ;; A throwing body is the kernel's business: it marks the
-                      ;; fiber :failed rather than rethrowing, so a mount that
-                      ;; failed *now* must be turned back into a load error —
-                      ;; otherwise a broken extension reports as loaded.
-                      (let [fiber
-                            (if plugin-var
-                              (srce/plugin!
+                  (let [fiber (srce/plugin!
                                (:ctx (services))
                                (assoc plugin
                                       :apply (fn [fctx _config]
                                                (let [api (create-extension-api ext)]
                                                  (reset! (:api ext) api)
                                                  ((:apply plugin) fctx api)
-                                                 (reset! (:initialized? ext) true)))))
-                              (srce/inject!
-                               (:ctx (services)) (keyword name) inject
-                               (fn [_fctx _config]
-                                 (let [api (create-extension-api ext)]
-                                   (reset! (:api ext) api)
-                                   ((loader-aware ext (deref init-var)) api)
-                                   (reset! (:initialized? ext) true)))))]
-                        (reset! (:fiber ext) fiber)
-                        (when (= :failed (:state @fiber))
-                          (throw (ex-info (str "Extension " name " failed: "
-                                               (or (ex-message (:error @fiber)) "init threw"))
-                                          {:path path
-                                           :cause (:error @fiber)}))))
-                      (let [api (create-extension-api ext)]
-                        (reset! (:api ext) api)
-                        ((loader-aware ext (deref init-var)) api)
-                        (reset! (:initialized? ext) true)))))))
+                                                 (reset! (:initialized? ext) true)))))]
+                    (reset! (:fiber ext) fiber)
+                    (when (= :failed (:state @fiber))
+                      (throw (ex-info (str "Extension " name " failed: "
+                                           (or (ex-message (:error @fiber)) "init threw"))
+                                      {:path path
+                                       :cause (:error @fiber)})))))))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
@@ -1509,7 +1487,8 @@
    or .jar/.zip archive with the same layout at its root). Each extension
    evaluates in its own isolated context; deps.edn jars are served only to
    that context, so different extensions may pin different versions of the
-   same library. Calls the extension's init with its api. A successful load
+   same library. Mounts the extension's plugin (its `:apply` receives the
+   extension's ctx and its api map). A successful load
    returns {:extension NAME :error nil :loader-kind :sci/:jolt}; an
    extension whose declared :loader this host does not offer is returned
    skipped ({:extension NAME :skipped true :reason :unsupported-loader

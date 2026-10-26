@@ -71,9 +71,10 @@ never ship.
 ## Layout rules
 
 - **Single-file extensions** (`*.clj` at the top level of the directory) —
-  one namespace defining `(defn init [api])`, namespaced
-  `kmet.extensions.<name>` (the file's stem). They cannot carry a
-  `deps.edn`, so they may only use `kmet.extension` plus the shared
+  one namespace defining a `plugin` var (whose `:apply` is the extension
+  body), namespaced `kmet.extensions.<name>` (the file's stem). They cannot
+  carry a `deps.edn`, so they may only use `kmet.extension`, `kmet.srce.core`
+  plus the shared
   `kmet.tui.*` / `kmet.libs.*` library layers, the shared renderer
   namespaces (`kmet.agent.ui.tui.tool-renderers`, `kmet.app.keybindings`),
   `clojure.*` / `babashka.*` builtins and the fixed bundled set

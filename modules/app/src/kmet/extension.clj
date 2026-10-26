@@ -21,9 +21,12 @@
    own panel). kmet.tui.theme exposes get-theme/get-all-themes/
    get-theme-by-name/get-current-theme directly.
 
-   An extension is a Clojure namespace defining:
-     (defn init [api] ...)     — required; register everything here
-     (defn shutdown [api] ...) — optional; teardown on unload/reload
+   An extension is a plugin: its namespace defines
+     (def plugin {:name :ext/my-ext :inject … :apply (fn [ctx api] …)})
+   with `kmet.srce.core/defplugin` (or a plain map). The kernel mounts it —
+   pending until its declared `:inject` services exist — and `:apply` is the
+   body: register everything through `api`. A namespace may also define
+     (defn shutdown [api])     — optional; teardown on unload/reload
    api is a map of runtime-bound capabilities. The wrapper fns in this
    namespace take api as their first argument and dispatch to the runtime
    implementation, so extensions never require kmet internals.
@@ -31,9 +34,10 @@
    Layout: extensions are single .clj files, directories containing an
    extension.edn manifest, or .jar/.zip archives with the same layout at
    the archive root:
-     {:name \"my-ext\" :entry my.ext.main :loader [:jolt :sci]}
-   — :entry is a namespace symbol resolved by strict ns-path lookup
-   (namespace a.b/c lives at a/b/c.clj under the root); :loader lists the
+     {:name \"my-ext\" :plugin my.ext.main/plugin :loader [:jolt :sci]}
+   — :plugin is a qualified var symbol; its namespace is resolved by strict
+   ns-path lookup (namespace a.b lives at a/b.clj under the root), and a
+   single-file extension defines the var in its own namespace; :loader lists the
    loader backends the extension supports (:sci / :jolt — the host picks
    its own preference, see kmet.app.extensions.core). Internal namespaces
    are required from there. An extension directory may also carry a deps.edn

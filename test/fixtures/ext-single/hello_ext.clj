@@ -29,3 +29,8 @@
 
 (defn shutdown [api]
   (ext/ui-set-status api "hello-ext" nil))
+
+;; The plugin the loader mounts: the extension body stays `init` above.
+(def plugin
+  {:name :ext/hello-ext
+   :apply (fn [_ctx api] (init api) nil)})

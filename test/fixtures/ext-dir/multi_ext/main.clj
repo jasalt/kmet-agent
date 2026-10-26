@@ -24,3 +24,8 @@
 
 (defn shutdown [api]
   nil)
+
+;; The plugin the loader mounts: the extension body stays `init` above.
+(def plugin
+  {:name :ext/multi-ext :inject {:tools nil}
+   :apply (fn [_ctx api] (init api) nil)})

@@ -34,6 +34,17 @@
                      (orig key))))]
     (with-redefs [io/resource mapped] (f))))
 
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (t/deftest test-load-resource-dir-descriptor
   ;; artifact mode: a :resource-dir descriptor loads the same extension the
   ;; checkout path does, with every source read through the extensions/
@@ -150,13 +161,13 @@
   (let [dir "target/test-ext-prov-unload"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/prov_unload"))
-    (spit (str dir "/extension.edn") "{:name \"prov-unload\" :entry prov-unload.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/prov_unload/main.clj")
-          (str "(ns prov-unload.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/models-register-provider! api :prov-unload\n"
-               "    {:base-url \"https://prov-unload.example/v1\" :api :openai-completions\n"
-               "     :api-key \"sk-x\" :models [{:id \"pu-1\"}]}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"prov-unload\" :plugin prov-unload.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/prov_unload/main.clj")
+                 (str "(ns prov-unload.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/models-register-provider! api :prov-unload\n"
+                      "    {:base-url \"https://prov-unload.example/v1\" :api :openai-completions\n"
+                      "     :api-key \"sk-x\" :models [{:id \"pu-1\"}]}))\n"))
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
@@ -235,15 +246,15 @@
   (let [dir "target/test-ext-slurp"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/slurp_ext"))
-    (spit (str dir "/extension.edn") "{:name \"slurp-ext\" :entry slurp-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/slurp_ext/main.clj")
-          (str "(ns slurp-ext.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-tool! api {:name \"slurp-tool\"\n"
-               "                           :description \"reads/writes via slurp/spit\"\n"
-               "                           :execute (fn [_]\n"
-               "                                      (spit \"target/slurp-ext-out.txt\" \"written\")\n"
-               "                                      {:content (slurp \"target/slurp-ext-in.txt\")})}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"slurp-ext\" :plugin slurp-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/slurp_ext/main.clj")
+                 (str "(ns slurp-ext.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-tool! api {:name \"slurp-tool\"\n"
+                      "                           :description \"reads/writes via slurp/spit\"\n"
+                      "                           :execute (fn [_]\n"
+                      "                                      (spit \"target/slurp-ext-out.txt\" \"written\")\n"
+                      "                                      {:content (slurp \"target/slurp-ext-in.txt\")})}))\n"))
     (spit "target/slurp-ext-in.txt" "input")
     (try
       (let [result (extensions/load-extension! dir)]
@@ -266,15 +277,15 @@
   (let [dir "target/test-ext-tools-reader"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/tr_ext"))
-    (spit (str dir "/extension.edn") "{:name \"tr-ext\" :entry tr-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/tr_ext/main.clj")
-          (str "(ns tr-ext.main\n  (:require [kmet.extension :as ext]\n            [clojure.tools.reader :as r]\n            [clojure.tools.reader.reader-types :as rt]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-tool! api {:name \"tr-tool\"\n"
-               "                           :description \"uses the bundled tools.reader port\"\n"
-               "                           :execute (fn [_]\n"
-               "                                      {:content (str (rt/read-char (rt/string-push-back-reader \"hi\"))\n"
-               "                                                     (r/read-string \"(1 2 3)\"))})}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"tr-ext\" :plugin tr-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/tr_ext/main.clj")
+                 (str "(ns tr-ext.main\n  (:require [kmet.extension :as ext]\n            [clojure.tools.reader :as r]\n            [clojure.tools.reader.reader-types :as rt]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-tool! api {:name \"tr-tool\"\n"
+                      "                           :description \"uses the bundled tools.reader port\"\n"
+                      "                           :execute (fn [_]\n"
+                      "                                      {:content (str (rt/read-char (rt/string-push-back-reader \"hi\"))\n"
+                      "                                                     (r/read-string \"(1 2 3)\"))})}))\n"))
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
@@ -300,20 +311,20 @@
     (fs/create-dirs (str dir "/data"))
     (spit (str dir "/data/a.clj") "x")
     (spit (str dir "/data/b.clj") "y")
-    (spit (str dir "/extension.edn") "{:name \"spec-ext\" :entry spec-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/spec_ext/main.clj")
-          (str "(ns spec-ext.main\n"
-               "  (:require [kmet.extension :as ext]\n"
-               "            [clojure.spec.alpha :as s]\n"
-               "            [clojure.java.io :as io]))\n"
-               "(s/def ::x int?)\n"
-               "(defn init [api]\n"
-               "  (ext/register-tool! api {:name \"spec-tool\"\n"
-               "                           :description \"uses the bundled spec port + file-seq\"\n"
-               "                           :execute (fn [_]\n"
-               "                                      {:content (str (s/valid? ::x 5)\n"
-               "                                                     \" \"\n"
-               "                                                     (count (file-seq (io/file \"target/test-ext-spec-file-seq/data\"))))})}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"spec-ext\" :plugin spec-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/spec_ext/main.clj")
+                 (str "(ns spec-ext.main\n"
+                      "  (:require [kmet.extension :as ext]\n"
+                      "            [clojure.spec.alpha :as s]\n"
+                      "            [clojure.java.io :as io]))\n"
+                      "(s/def ::x int?)\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-tool! api {:name \"spec-tool\"\n"
+                      "                           :description \"uses the bundled spec port + file-seq\"\n"
+                      "                           :execute (fn [_]\n"
+                      "                                      {:content (str (s/valid? ::x 5)\n"
+                      "                                                     \" \"\n"
+                      "                                                     (count (file-seq (io/file \"target/test-ext-spec-file-seq/data\"))))})}))\n"))
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
@@ -386,7 +397,10 @@
             "  (ext/register-tool! api"
             "                      {:name \"fixed-set-tool\""
             "                       :description \"uses the fixed bundled extension set\""
-            "                       :execute (fn [_] {:content (probe)})}))"]))
+            "                       :execute (fn [_] {:content (probe)})}))"
+            ""
+            "(def plugin {:name :ext/fixed-set"
+            "             :apply (fn [_ctx api] (init api) nil)})"]))
     (try
       (let [result (extensions/load-extension! f)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
@@ -404,9 +418,9 @@
   (let [dir "target/test-ext-missing-req"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/missing_req"))
-    (spit (str dir "/extension.edn") "{:name \"missing-req\" :entry missing-req.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/missing_req/main.clj")
-          "(ns missing-req.main\n  (:require [no.such.namespace]))\n(defn init [api] nil)\n")
+    (spit (str dir "/extension.edn") "{:name \"missing-req\" :plugin missing-req.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/missing_req/main.clj")
+                 "(ns missing-req.main\n  (:require [no.such.namespace]))\n(defn init [api] nil)\n")
     (let [result (extensions/load-extension! dir)]
       (t/is (str/includes? (:error result) "no.such.namespace")
             (str "actionable error, got: " (:error result)))
@@ -450,8 +464,8 @@
   (testing "a file without init fails and leaves no trace"
     (let [dir "target/test-ext-bad"]
       (fs/create-dirs dir)
-      (spit (str dir "/bad.clj")
-            "(ns bad-ext)\n(defn not-init [api] nil)\n")
+      (spit-plugin (str dir "/bad.clj")
+                   "(ns bad-ext)\n(defn not-init [api] nil)\n")
       (let [result (extensions/load-extension! (str dir "/bad.clj"))]
         (t/is (some? (:error result)))
         (t/is (empty? (extensions/get-loaded-extensions))))
@@ -466,17 +480,17 @@
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/rb_ext"))
     (spit (str dir "/extension.edn")
-          "{:name \"rb-ext\" :entry rb-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/rb_ext/main.clj")
-          (str "(ns rb-ext.main\n  (:require [kmet.extension :as ext]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-command! api {:name \"rb-cmd\" :description \"d\"\n"
-               "                              :handler (fn [_ _] nil)})\n"
-               "  (ext/register-tool! api {:name \"rb-tool\" :label \"T\"\n"
-               "                           :description \"d\" :parameters []\n"
-               "                           :execute (fn [_] {:content \"ok\"})})\n"
-               "  (ext/register-skill! api \"---\\nname: rb-skill\\ndescription: d\\n---\\nbody\")\n"
-               "  (throw (ex-info \"init failed\" {})))\n"))
+          "{:name \"rb-ext\" :plugin rb-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/rb_ext/main.clj")
+                 (str "(ns rb-ext.main\n  (:require [kmet.extension :as ext]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-command! api {:name \"rb-cmd\" :description \"d\"\n"
+                      "                              :handler (fn [_ _] nil)})\n"
+                      "  (ext/register-tool! api {:name \"rb-tool\" :label \"T\"\n"
+                      "                           :description \"d\" :parameters []\n"
+                      "                           :execute (fn [_] {:content \"ok\"})})\n"
+                      "  (ext/register-skill! api \"---\\nname: rb-skill\\ndescription: d\\n---\\nbody\")\n"
+                      "  (throw (ex-info \"init failed\" {})))\n"))
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (some? (:error result)) "the load fails")
@@ -501,18 +515,18 @@
     (let [dir "target/test-ext-fork-iso"]
       (fs/delete-tree dir)
       (fs/create-dirs dir)
-      (spit (str dir "/iso_a.clj")
-            (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
-                 "(def tag :a)\n"
-                 "(defn init [api]\n"
-                 "  (ext/register-tool! api {:name \"fork-iso-a\" :description \"a\"\n"
-                 "                           :execute (fn [_] {:content (name tag)})}))\n"))
-      (spit (str dir "/iso_b.clj")
-            (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
-                 "(def tag :b)\n"
-                 "(defn init [api]\n"
-                 "  (ext/register-tool! api {:name \"fork-iso-b\" :description \"b\"\n"
-                 "                           :execute (fn [_] {:content (name tag)})}))\n"))
+      (spit-plugin (str dir "/iso_a.clj")
+                   (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
+                        "(def tag :a)\n"
+                        "(defn init [api]\n"
+                        "  (ext/register-tool! api {:name \"fork-iso-a\" :description \"a\"\n"
+                        "                           :execute (fn [_] {:content (name tag)})}))\n"))
+      (spit-plugin (str dir "/iso_b.clj")
+                   (str "(ns fork-iso (:require [kmet.extension :as ext]))\n"
+                        "(def tag :b)\n"
+                        "(defn init [api]\n"
+                        "  (ext/register-tool! api {:name \"fork-iso-b\" :description \"b\"\n"
+                        "                           :execute (fn [_] {:content (name tag)})}))\n"))
       (try
         (t/is (nil? (:error (extensions/load-extension! (str dir "/iso_a.clj")))))
         (t/is (nil? (:error (extensions/load-extension! (str dir "/iso_b.clj")))))
@@ -579,7 +593,7 @@
                        "  (ext/on-event api :session-tree\n"
                        "    (fn [ev ctx] (ext/emit-event! api {:type :queue-update :mode (:mode ctx)}))))\n")]
       (fs/create-dirs dir)
-      (spit (str dir "/ext.clj") content)
+      (spit-plugin (str dir "/ext.clj") content)
       (let [result (extensions/load-extension! (str dir "/ext.clj"))]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
         (event-bus/emit-event! {:type :session-start})
@@ -607,12 +621,12 @@
     (extensions/clear-extensions!)
     (let [dir "target/test-ext-ctx-cmd"]
       (fs/create-dirs dir)
-      (spit (str dir "/ext.clj")
-            (str "(ns ctx-cmd (:require [kmet.extension :as ext]))\n"
-                 "(defn init [api]\n"
-                 "  (ext/register-command! api\n"
-                 "    {:name \"ctx-test\" :description \"d\"\n"
-                 "     :handler (fn [ctx args] {:mode (:mode ctx) :args args})}))\n"))
+      (spit-plugin (str dir "/ext.clj")
+                   (str "(ns ctx-cmd (:require [kmet.extension :as ext]))\n"
+                        "(defn init [api]\n"
+                        "  (ext/register-command! api\n"
+                        "    {:name \"ctx-test\" :description \"d\"\n"
+                        "     :handler (fn [ctx args] {:mode (:mode ctx) :args args})}))\n"))
       (let [result (extensions/load-extension! (str dir "/ext.clj"))]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
         (let [c (commands/find-command "ctx-test")]
@@ -627,7 +641,7 @@
   (let [load (fn [name content]
                (let [dir (str "target/test-ext-iso-" name)]
                  (fs/create-dirs dir)
-                 (spit (str dir "/ext.clj") content)
+                 (spit-plugin (str dir "/ext.clj") content)
                  (let [result (extensions/load-extension! (str dir "/ext.clj"))]
                    (fs/delete-tree dir)
                    ;; unload the single-file probe so each testing block starts
@@ -640,14 +654,14 @@
       (let [dir "target/test-ext-internal-ns"]
         (fs/create-dirs (str dir "/kmet/extensions/myext"))
         (spit (str dir "/extension.edn")
-              "{:name \"internal-ns\" :entry kmet.extensions.myext.core :loader [:sci :jolt]}\n")
-        (spit (str dir "/kmet/extensions/myext/core.clj")
-              (str "(ns kmet.extensions.myext.core\n"
-                   "  (:require [kmet.extension :as ext]\n"
-                   "            [kmet.extensions.myext.internal :as internal]))\n"
-                   "(defn init [api]\n"
-                   "  (when-not (= 42 (internal/answer))\n"
-                   "    (throw (ex-info \"internal require failed\" {}))))\n"))
+              "{:name \"internal-ns\" :plugin kmet.extensions.myext.core/plugin :loader [:sci :jolt]}\n")
+        (spit-plugin (str dir "/kmet/extensions/myext/core.clj")
+                     (str "(ns kmet.extensions.myext.core\n"
+                          "  (:require [kmet.extension :as ext]\n"
+                          "            [kmet.extensions.myext.internal :as internal]))\n"
+                          "(defn init [api]\n"
+                          "  (when-not (= 42 (internal/answer))\n"
+                          "    (throw (ex-info \"internal require failed\" {}))))\n"))
         (spit (str dir "/kmet/extensions/myext/internal.clj")
               "(ns kmet.extensions.myext.internal)\n(defn answer [] 42)\n")
         (let [result (extensions/load-extension! dir)]
@@ -727,11 +741,11 @@
   (extensions/clear-extensions!)
   (let [dir "target/test-ext-bad-deps"]
     (fs/create-dirs dir)
-    (spit (str dir "/extension.edn") "{:name \"bad-deps\" :entry bad-deps.main :loader [:sci :jolt]}\n")
+    (spit (str dir "/extension.edn") "{:name \"bad-deps\" :plugin bad-deps.main/plugin :loader [:sci :jolt]}\n")
     (spit (str dir "/deps.edn") "{:deps {org.clojure/does-not-exist {:mvn/version \"9.9.9\"}}}\n")
     (fs/create-dirs (str dir "/bad_deps"))
-    (spit (str dir "/bad_deps/main.clj")
-          "(ns bad-deps.main (:require [org.clojure.does-not-exist :as bad]))\n(defn init [api] nil)\n")
+    (spit-plugin (str dir "/bad_deps/main.clj")
+                 "(ns bad-deps.main (:require [org.clojure.does-not-exist :as bad]))\n(defn init [api] nil)\n")
     (testing "an unresolvable dep fails the load without killing the process"
       (let [result (extensions/load-extension! dir)]
         (t/is (some? (:error result)))

@@ -41,6 +41,17 @@
 
 ;; ─── Manifest and the bundle gate ─────────────────────────────────────────
 
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (t/deftest test-manifest-is-complete-and-well-formed
   (let [m (bundled/manifest)]
     (t/is (= 1 (:schema m)))
@@ -78,8 +89,8 @@
   (let [repo (tmp-dir)
         ext (str (fs/path repo "extensions"))]
     (fs/create-dirs (str ext "/good"))
-    (spit (str ext "/good/extension.edn") "{:name \"good\" :entry good.core :loader [:sci]}\n")
-    (spit (str ext "/single.clj") "(ns single)\n")
+    (spit (str ext "/good/extension.edn") "{:name \"good\" :plugin good.core/plugin :loader [:sci]}\n")
+    (spit-plugin (str ext "/single.clj") "(ns single)\n")
     (let [manifest {:artifacts [{:name "good" :kind :dir :root "good"}
                                 {:name "single" :kind :file :root "single.clj"}
                                 {:name "ghost" :kind :dir :root "ghost"}
@@ -104,7 +115,7 @@
     (fs/create-dirs (fs/parent manifest-path))
     (spit (str manifest-path) "{}")
     (spit (str (fs/path artifact "extension.edn"))
-          "{:name \"demo\" :entry demo.core :loader [:jolt :sci]}\n")
+          "{:name \"demo\" :plugin demo.core/plugin :loader [:jolt :sci]}\n")
     (try
       (with-redefs [fs/cwd (constantly repo)
                     io/resource resource
@@ -151,7 +162,7 @@
 
 (t/deftest test-items-enabled-state
   (let [root (tmp-dir)
-        _ (spit (str root "/extension.edn") "{:name \"demo\" :entry demo.core :loader [:sci]}\n")
+        _ (spit (str root "/extension.edn") "{:name \"demo\" :plugin demo.core/plugin :loader [:sci]}\n")
         descriptor {:name "demo" :kind :dir :root root :path root :bundled? true}]
     (with-redefs [bundled/artifacts (fn [] [descriptor])]
       (let [items (pkgs/bundled-items {} {})]

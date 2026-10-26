@@ -38,6 +38,7 @@
             [babashka.process :as proc]
             [clojure.string :as str]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.tui.theme :as theme]))
 
 ;; ─── The schedule (api-docs.deepseek.com/quick_start/pricing) ──────────────
@@ -247,3 +248,10 @@
    api {:name "deepseek-peak"
         :description "DeepSeek API peak/off-peak hours in your local time zone"
         :handler (fn [ctx _args] (show-peak-info! api ctx))}))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/deepseek-peak
+   :apply (fn [_ctx api] (init api) nil)})

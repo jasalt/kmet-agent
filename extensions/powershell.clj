@@ -19,6 +19,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.agent.ui.tui.tool-renderers :as renderers]
             [kmet.libs.process :as process]))
 
@@ -114,3 +115,10 @@
   "Register the powershell tool (an opt-in Windows shell tool)."
   [api]
   (ext/register-tool! api (make-tool api)))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/powershell
+   :apply (fn [_ctx api] (init api) nil)})

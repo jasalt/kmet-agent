@@ -14,10 +14,21 @@
             [kmet.app.skills :as skills]
             [kmet.app.config :as cfg]
             [kmet.tui.theme :as theme]
-            [kmet.test-utils :refer [slash]]))
+            [kmet.test-utils :as tu :refer [slash]]))
 
 (defn- tmp-dir []
   (str (fs/create-temp-dir {:dir (System/getenv "TMPDIR")})))
+
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
 
 (defn- make-package
   "A conventional kmet package directory: extensions/, skills/ (a SKILL.md
@@ -27,9 +38,9 @@
   (fs/create-dirs (str root "/skills/root"))
   (fs/create-dirs (str root "/prompts"))
   (fs/create-dirs (str root "/themes"))
-  (spit (str root "/extensions/one.clj") "(ns pkg-one)\n")
-  (spit (str root "/extensions/two.clj") "(ns pkg-two)\n")
-  (spit (str root "/extensions/three.clj") "(ns pkg-three)\n")
+  (spit-plugin (str root "/extensions/one.clj") "(ns pkg-one)\n")
+  (spit-plugin (str root "/extensions/two.clj") "(ns pkg-two)\n")
+  (spit-plugin (str root "/extensions/three.clj") "(ns pkg-three)\n")
   (spit (str root "/skills/root/SKILL.md")
         "---\nname: skill-a\ndescription: skill a\n---\nbody\n")
   (spit (str root "/skills/flat.md")
@@ -104,16 +115,16 @@
 
 (t/deftest test-resolve-extension-dir-package
   (let [dir (tmp-dir)]
-    (spit (str dir "/extension.edn") "{:name \"pkg-ext\" :entry pkg.ext}\n")
-    (spit (str dir "/pkg_ext.clj") "(ns pkg.ext)\n")
+    (spit (str dir "/extension.edn") "{:name \"pkg-ext\" :plugin pkg.ext/plugin}\n")
+    (spit-plugin (str dir "/pkg_ext.clj") "(ns pkg.ext)\n")
     (let [res (with-stubbed-cwd #(pkgs/resolve-package-items {:packages [dir]} nil))]
       (t/is (= [(slash dir)] (slash (mapv :path (:extensions res)))))
       (t/is (empty? (:skills res))))))
 
 (t/deftest test-resolve-bare-dir-is-extension-container
   (let [dir (tmp-dir)]
-    (spit (str dir "/a.clj") "(ns bare-a)\n")
-    (spit (str dir "/b.clj") "(ns bare-b)\n")
+    (spit-plugin (str dir "/a.clj") "(ns bare-a)\n")
+    (spit-plugin (str dir "/b.clj") "(ns bare-b)\n")
     (let [res (with-stubbed-cwd #(pkgs/resolve-package-items {:packages [dir]} nil))]
       (t/is (= (slash #{(str dir "/a.clj") (str dir "/b.clj")})
                (slash (set (map :path (:extensions res)))))))))
@@ -143,7 +154,7 @@
     (fn []
       (let [checkout (str (fs/path (cfg/get-agent-dir) "git" "github.com" "user" "repo"))]
         (fs/create-dirs (str checkout "/extensions"))
-        (spit (str checkout "/extensions/x.clj") "(ns pkg-x)\n")
+        (spit-plugin (str checkout "/extensions/x.clj") "(ns pkg-x)\n")
         (let [res (pkgs/resolve-package-items {:packages ["git:github.com/user/repo"]} nil)]
           (t/is (= [(slash (str checkout "/extensions/x.clj"))]
                    (slash (mapv :path (:extensions res)))))
@@ -229,7 +240,7 @@
     (doseq [root [p1 p2]]
       (fs/create-dirs (str root "/extensions"))
       (doseq [i (range 10)]
-        (spit (str root "/extensions/e" i ".clj") "(ns x)\n")))
+        (spit-plugin (str root "/extensions/e" i ".clj") "(ns x)\n")))
     (let [res (with-stubbed-cwd #(pkgs/resolve-package-items {:packages [p1 p2]} nil))]
       (t/is (= (into (mapv #(str "e" % ".clj") (range 10))
                      (mapv #(str "e" % ".clj") (range 10)))
@@ -331,7 +342,7 @@
       (t/testing "resolution uses the subdirectory as the package root"
         (let [a (str (fs/path global-dir "git" "github.com" "user" "repo" "packages" "a"))]
           (fs/create-dirs (str a "/extensions"))
-          (spit (str a "/extensions/x.clj") "(ns sub-a)\n")
+          (spit-plugin (str a "/extensions/x.clj") "(ns sub-a)\n")
           (let [res (pkgs/resolve-package-items
                      {:packages ["git:github.com/user/repo//packages/a"
                                  "git:github.com/user/repo//packages/b"]}
@@ -577,7 +588,7 @@
               (t/is (empty? (:packages (pkgs/user-settings-map)))))))
         (t/testing "an extension.edn directory too"
           (let [dir (tmp-dir)]
-            (spit (str dir "/extension.edn") "{:name \"pkg-ext\" :entry pkg.ext}\n")
+            (spit (str dir "/extension.edn") "{:name \"pkg-ext\" :plugin pkg.ext/plugin}\n")
             (let [item (first (:extensions (with-stubbed-cwd #(pkgs/resolve-package-items {:packages [dir]} nil))))]
               (t/is (pkgs/single-extension-item? item))
               (t/is (false? (pkgs/apply-global-toggle! item false))))))
@@ -598,7 +609,7 @@
         extra (str sandbox "/extra")]
     (spit ext-file "(ns solo)\n")
     (fs/create-dirs extra)
-    (spit (str extra "/x.clj") "(ns x)\n")
+    (spit-plugin (str extra "/x.clj") "(ns x)\n")
     (with-redefs [cfg/get-agent-dir (fn [] sandbox)
                   cfg/project-dir (fn [] (str (tmp-dir) "/.kmet"))
                   fs/cwd (fn [] (tmp-dir))]
@@ -650,7 +661,7 @@
         proj (tmp-dir)
         proj-ext (str proj "/.kmet/extensions")]
     (fs/create-dirs proj-ext)
-    (spit (str proj-ext "/p.clj") "(ns p)\n")
+    (spit-plugin (str proj-ext "/p.clj") "(ns p)\n")
     (with-redefs [cfg/get-agent-dir (fn [] sandbox)
                   cfg/project-dir (fn [] (str proj "/.kmet"))
                   fs/cwd (fn [] proj)]
@@ -671,10 +682,10 @@
   (let [sandbox (tmp-dir)
         proj (tmp-dir)]
     (fs/create-dirs (str sandbox "/extensions"))
-    (spit (str sandbox "/extensions/a.clj") "(ns a)\n")
-    (spit (str sandbox "/extensions/b.clj") "(ns b)\n")
+    (spit-plugin (str sandbox "/extensions/a.clj") "(ns a)\n")
+    (spit-plugin (str sandbox "/extensions/b.clj") "(ns b)\n")
     (fs/create-dirs (str proj "/.kmet/extensions"))
-    (spit (str proj "/.kmet/extensions/c.clj") "(ns c)\n")
+    (spit-plugin (str proj "/.kmet/extensions/c.clj") "(ns c)\n")
     (with-redefs [cfg/get-agent-dir (fn [] sandbox)
                   cfg/project-dir (fn [] (str proj "/.kmet"))
                   fs/cwd (fn [] proj)]
@@ -708,7 +719,7 @@
         shared (str proj "/shared.clj")]
     (fs/create-dirs (str sandbox "/extensions"))
     (spit shared "(ns shared)\n")
-    (spit (str sandbox "/extensions/other.clj") "(ns other)\n")
+    (spit-plugin (str sandbox "/extensions/other.clj") "(ns other)\n")
     (with-redefs [cfg/get-agent-dir (fn [] sandbox)
                   cfg/project-dir (fn [] (str proj "/.kmet"))
                   fs/cwd (fn [] proj)]
@@ -722,7 +733,7 @@
     (fn [{:keys [global-dir]}]
       (let [ext (str global-dir "/extensions")]
         (fs/create-dirs ext)
-        (spit (str ext "/a.clj") "(ns a)\n")
+        (spit-plugin (str ext "/a.clj") "(ns a)\n")
         (let [item (first (:extensions (pkgs/resolve-package-items nil nil)))]
           (t/is (pkgs/top-level-item? item))
           (t/is (= "extensions/a.clj" (pkgs/top-level-pattern item)))
@@ -736,7 +747,7 @@
     (fn [{:keys [global-dir]}]
       (let [ext (str global-dir "/extensions")]
         (fs/create-dirs ext)
-        (spit (str ext "/a.clj") "(ns a)\n")
+        (spit-plugin (str ext "/a.clj") "(ns a)\n")
         (let [item (first (:extensions (pkgs/resolve-package-items nil nil)))]
           (t/is (= :inherit (pkgs/top-level-override-state-of item)))
           (t/is (true? (pkgs/apply-project-override! item :unload)))
@@ -797,7 +808,7 @@
         project-dir (str (fs/path home-root ".kmet"))
         agent-dir (str (fs/path project-dir "agent"))]
     (fs/create-dirs (str (fs/path agent-dir "extensions")))
-    (spit (str (fs/path agent-dir "extensions/a.clj")) "(ns a)\n")
+    (spit-plugin (str (fs/path agent-dir "extensions/a.clj")) "(ns a)\n")
     (with-redefs [cfg/get-agent-dir (fn [] agent-dir)
                   cfg/project-dir (fn [] project-dir)
                   fs/cwd (fn [] home-root)]
@@ -835,7 +846,7 @@
     (fn [{:keys [global-dir]}]
       (let [pkg (str (fs/path global-dir "pkg"))]
         (fs/create-dirs (str pkg "/extensions"))
-        (spit (str pkg "/extensions/p.clj") "(ns p)\n")
+        (spit-plugin (str pkg "/extensions/p.clj") "(ns p)\n")
         (let [bundled (pkgs/bundled-items {:bundled-extensions ["clojure"]} {})
               resolved (pkgs/resolve-package-items {:packages [pkg]} nil nil true bundled)
               names (mapv #(or (get-in % [:metadata :display-name])
@@ -880,26 +891,30 @@
           (t/is (nil? (:packages (project-settings)))))))))
 
 (t/deftest test-load-extensions-loads-bundled-descriptor
-  (with-isolated-settings
-    (fn [{:keys [global-dir]}]
-      (let [root (str (fs/path global-dir "bundled-test"))]
-        (fs/create-dirs (str root "/bundled"))
-        (spit (str root "/extension.edn")
-              "{:name \"bundled-test\" :entry bundled.ext :loader [:sci]}\n")
-        (spit (str root "/bundled/ext.clj")
-              "(ns bundled.ext)\n(defn init [api] nil)\n(def mark (atom :unset))\n")
-        (spit (str global-dir "/settings.edn") (pr-str {:bundled-extensions ["bundled-test"]}))
-        (with-redefs [be/artifacts (fn [] [{:name "bundled-test" :kind :dir :root root
-                                            :path root :bundled? true}])]
-          (ext/clear-extensions!)
-          (try
-            (let [results (pkgs/load-extensions!)]
-              (t/is (= [{:extension "bundled-test" :error nil
-                         :loader-kind :sci :bundled true :pending false}]
-                       results)))
-            (let [loaded (ext/get-loaded-extensions)]
-              (t/is (= 1 (count loaded)))
-              (t/is (= "bundled-test" (:name (first loaded))))
-              (t/is (true? (:bundled (first loaded)))))
-            (finally (ext/clear-extensions!))))))))
+  ;; a loaded extension mounts as a plugin under the host's ctx, so the test
+  ;; binds one (the composition's `:extensions` row does this in a run)
+  (tu/with-extension-host
+    (fn []
+      (with-isolated-settings
+        (fn [{:keys [global-dir]}]
+          (let [root (str (fs/path global-dir "bundled-test"))]
+            (fs/create-dirs (str root "/bundled"))
+            (spit (str root "/extension.edn")
+                  "{:name \"bundled-test\" :plugin bundled.ext/plugin :loader [:sci]}\n")
+            (spit-plugin (str root "/bundled/ext.clj")
+                         "(ns bundled.ext)\n(defn init [api] nil)\n(def mark (atom :unset))\n")
+            (spit (str global-dir "/settings.edn") (pr-str {:bundled-extensions ["bundled-test"]}))
+            (with-redefs [be/artifacts (fn [] [{:name "bundled-test" :kind :dir :root root
+                                                :path root :bundled? true}])]
+              (ext/clear-extensions!)
+              (try
+                (let [results (pkgs/load-extensions!)]
+                  (t/is (= [{:extension "bundled-test" :error nil
+                             :loader-kind :sci :bundled true :pending false}]
+                           results)))
+                (let [loaded (ext/get-loaded-extensions)]
+                  (t/is (= 1 (count loaded)))
+                  (t/is (= "bundled-test" (:name (first loaded))))
+                  (t/is (true? (:bundled (first loaded)))))
+                (finally (ext/clear-extensions!))))))))))
 

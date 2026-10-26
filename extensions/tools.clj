@@ -22,6 +22,7 @@
    Usage: symlink or copy this file into ~/.kmet/agent/extensions/ (global)
    or .kmet/extensions/ (project-local), then restart kmet or run /reload."
   (:require [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.components.settings-list :as settings-list]
@@ -128,3 +129,10 @@
                   (fn [_ev _ctx] (restore-from-branch! api state)))
     (ext/on-event api :session-tree
                   (fn [_ev _ctx] (restore-from-branch! api state)))))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/tools
+   :apply (fn [_ctx api] (init api) nil)})

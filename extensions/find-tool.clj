@@ -14,6 +14,7 @@
   (:require [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.extension :as ext]
+            [kmet.srce.core :as srce]
             [kmet.libs.path :as path]
             [kmet.agent.ui.tui.tool-renderers :as renderers]))
 
@@ -54,3 +55,10 @@
                        ;; plain-text output — the bash result body fits
                        :render-result renderers/render-bash-result
                        :execute execute}))
+
+;; The extension's plugin: the loader mounts this var, so the kernel owns the
+;; extension's lifecycle (pending on a declared :inject, disposed on unload)
+;; and hands the ABI map to `init`.
+(srce/defplugin plugin
+  {:name :ext/find-tool
+   :apply (fn [_ctx api] (init api) nil)})

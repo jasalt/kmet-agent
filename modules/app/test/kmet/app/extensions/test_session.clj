@@ -24,6 +24,17 @@
 
 ;; ─── Session facades through the api ──────────────────────────────────────
 
+(defn- spit-plugin
+  "Write an extension source to PATH and append the plugin var the loader
+   mounts — fixtures keep writing a plain `(defn init [api] …)`, and the
+   mount stays a plugin (`{:apply (fn [ctx api] (init api))}`)."
+  [path source]
+  (spit path source)
+  (spit path (str "\n(def plugin {:name :ext/fixture"
+                  " :apply (fn [_ctx api] (init api) nil)})\n")
+        :append true)
+  path)
+
 (t/deftest test-session-api-facades
   (let [dir (str "target/test-ext-sess-" (System/currentTimeMillis))
         sess (session/create-session dir)]
@@ -386,17 +397,17 @@
     (fs/delete-tree dir)
     (fs/delete-if-exists jar)
     (fs/create-dirs (str dir "/jar_ext"))
-    (spit (str dir "/extension.edn") "{:name \"jar-ext\" :entry jar-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/jar_ext/main.clj")
-          (str "(ns jar-ext.main\n"
-               "  (:require [kmet.extension :as ext]\n"
-               "            [jar-ext.helper :as helper]\n"
-               "            [clojure.java.io :as io]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-tool! api {:name \"jar-ext-tool\"\n"
-               "                           :description \"from a jar\"\n"
-               "                           :execute (fn [_] {:content (str (helper/answer)\n"
-               "                                                          \"|\" (slurp (io/resource \"data.txt\")))})}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"jar-ext\" :plugin jar-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/jar_ext/main.clj")
+                 (str "(ns jar-ext.main\n"
+                      "  (:require [kmet.extension :as ext]\n"
+                      "            [jar-ext.helper :as helper]\n"
+                      "            [clojure.java.io :as io]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-tool! api {:name \"jar-ext-tool\"\n"
+                      "                           :description \"from a jar\"\n"
+                      "                           :execute (fn [_] {:content (str (helper/answer)\n"
+                      "                                                          \"|\" (slurp (io/resource \"data.txt\")))})}))\n"))
     (spit (str dir "/jar_ext/helper.clj")
           "(ns jar-ext.helper)\n(defn answer [] \"jar-ok\")\n")
     (spit (str dir "/data.txt") "bundled")
@@ -444,7 +455,7 @@
             (doseq [rel ["extension.edn" "jar_ext/main.clj" "jar_ext/helper.clj" "data.txt"]]
               (.putNextEntry zos (java.util.zip.ZipEntry. rel))
               (if (= rel "extension.edn")
-                (.write zos (.getBytes "{:name \"jar-ext\" :entry jar-ext.main :loader [:sci]}\n" "UTF-8"))
+                (.write zos (.getBytes "{:name \"jar-ext\" :plugin jar-ext.main/plugin :loader [:sci]}\n" "UTF-8"))
                 (io/copy (io/file (str dir "/" rel)) zos))
               (.closeEntry zos)))
           (extensions/unload-all-extensions!)
@@ -460,9 +471,9 @@
           (fs/delete-tree sdir)
           (fs/delete-if-exists sjar)
           (fs/create-dirs (str sdir "/sloppy"))
-          (spit (str sdir "/extension.edn") "{:name \"jar-sloppy\" :entry sloppy.main :loader [:sci :jolt]}\n")
-          (spit (str sdir "/sloppy/main.clj")
-                "(ns wrong.place)\n(defn init [api] nil)\n")
+          (spit (str sdir "/extension.edn") "{:name \"jar-sloppy\" :plugin sloppy.main/plugin :loader [:sci :jolt]}\n")
+          (spit-plugin (str sdir "/sloppy/main.clj")
+                       "(ns wrong.place)\n(defn init [api] nil)\n")
           (with-open [zos (java.util.zip.ZipOutputStream. (io/output-stream sjar))]
             (doseq [rel ["extension.edn" "sloppy/main.clj"]]
               (.putNextEntry zos (java.util.zip.ZipEntry. rel))
@@ -488,15 +499,15 @@
   (let [dir "target/test-ext-dir-resource"]
     (fs/delete-tree dir)
     (fs/create-dirs (str dir "/dir_ext"))
-    (spit (str dir "/extension.edn") "{:name \"dir-ext\" :entry dir-ext.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/dir_ext/main.clj")
-          (str "(ns dir-ext.main\n"
-               "  (:require [kmet.extension :as ext]\n"
-               "            [clojure.java.io :as io]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-tool! api {:name \"dir-ext-tool\"\n"
-               "                           :description \"from a dir\"\n"
-               "                           :execute (fn [_] {:content (slurp (io/resource \"data.txt\"))})}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"dir-ext\" :plugin dir-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/dir_ext/main.clj")
+                 (str "(ns dir-ext.main\n"
+                      "  (:require [kmet.extension :as ext]\n"
+                      "            [clojure.java.io :as io]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-tool! api {:name \"dir-ext-tool\"\n"
+                      "                           :description \"from a dir\"\n"
+                      "                           :execute (fn [_] {:content (slurp (io/resource \"data.txt\"))})}))\n"))
     (spit (str dir "/data.txt") "dir-data")
     (try
       (let [result (extensions/load-extension! dir)]
@@ -522,17 +533,17 @@
           "---\nname: selfreg-skill\ndescription: Self-registered skill\n---\nSkill body here")
     (spit (str dir "/tpl.md")
           "---\ndescription: Self-registered template\n---\nTemplate body $1")
-    (spit (str dir "/extension.edn") "{:name \"selfreg\" :entry selfreg.main :loader [:sci :jolt]}\n")
-    (spit (str dir "/selfreg/main.clj")
-          (str "(ns selfreg.main\n"
-               "  (:require [kmet.extension :as ext]\n"
-               "            [clojure.java.io :as io]))\n"
-               "(defn init [api]\n"
-               "  (ext/register-skill! api (slurp (io/resource \"SKILL.md\"))\n"
-               "                        {:location \"selfreg:SKILL.md\"})\n"
-               "  (ext/register-prompt! api {:name \"selfreg-tpl\"\n"
-               "                             :content (slurp (io/resource \"tpl.md\"))\n"
-               "                             :location \"selfreg:tpl.md\"}))\n"))
+    (spit (str dir "/extension.edn") "{:name \"selfreg\" :plugin selfreg.main/plugin :loader [:sci :jolt]}\n")
+    (spit-plugin (str dir "/selfreg/main.clj")
+                 (str "(ns selfreg.main\n"
+                      "  (:require [kmet.extension :as ext]\n"
+                      "            [clojure.java.io :as io]))\n"
+                      "(defn init [api]\n"
+                      "  (ext/register-skill! api (slurp (io/resource \"SKILL.md\"))\n"
+                      "                        {:location \"selfreg:SKILL.md\"})\n"
+                      "  (ext/register-prompt! api {:name \"selfreg-tpl\"\n"
+                      "                             :content (slurp (io/resource \"tpl.md\"))\n"
+                      "                             :location \"selfreg:tpl.md\"}))\n"))
     (try
       (let [result (extensions/load-extension! dir)]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
@@ -598,12 +609,12 @@
                (fs/delete-tree dir)
                (fs/create-dirs (str dir "/loader_probe"))
                (spit (str dir "/extension.edn") manifest)
-               (spit (str dir "/loader_probe/main.clj")
-                     "(ns loader-probe.main)\n(defn init [api] nil)\n")
+               (spit-plugin (str dir "/loader_probe/main.clj")
+                            "(ns loader-probe.main)\n(defn init [api] nil)\n")
                dir))
         entry "loader-probe.main"
         manifest (fn [name loader-part]
-                   (str "{:name \"" name "\" :entry " entry
+                   (str "{:name \"" name "\" :plugin " entry "/plugin"
                         (when loader-part (str " :loader " loader-part)) "}\n"))]
     (try
       (testing ":sci loads on every host (it is Jolt's declared fallback)"

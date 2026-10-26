@@ -36,12 +36,13 @@ color values, installation, and live reload; complete starting points are in
 - **Extensions**: Place `.clj` files (or directories with `extension.edn`) in
   `~/.kmet/agent/extensions/` or `.kmet/extensions/` — the fixed auto roots;
   extra paths go in top-level `:extensions` settings entries (`KMET_CODING_AGENT_DIR`
-  moves the agent dir). A single-file extension is a Clojure
-  namespace defining `(defn init [api])` (and optionally `(defn shutdown [api])`);
-  a manifest dir instead declares `{:name :plugin :loader}` — `:plugin` names a
-  `srce/defplugin` var whose `:apply` receives `(ctx api)` — and `deps.edn`
-  carries its own source deps. Extensions depend on `kmet.extension` (plus
-  `kmet.srce.core` for a plugin var). Loaded at startup, reloadable via `/reload`, and
+  moves the agent dir). Every extension — single file or manifest dir — is a
+  plugin: its namespace defines a `plugin` var (a `kmet.srce.core/defplugin`
+  map, or a plain map) whose `:apply` receives the extension's ctx and its
+  api map; it may also define `(defn shutdown [api])`. A manifest dir declares
+  `{:name :plugin :loader}` (`:plugin` is that var), and `deps.edn` carries
+  its own source deps. Extensions depend on `kmet.extension` and
+  `kmet.srce.core`. Loaded at startup, reloadable via `/reload`, and
   unloadable at runtime; unload runs shutdown then disposes everything it
   registered.
   Shipped opt-in extensions live in [`extensions/`](../extensions/)

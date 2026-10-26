@@ -15,21 +15,27 @@ guide in sync whenever the described behavior changes.
 
 ## The contract
 
-An extension defines an `init` function. The loader calls `(init api)` with a
-map of runtime-bound capabilities; register everything inside `init`.
+An extension **is a plugin**: its namespace defines a `plugin` var (with
+`kmet.srce.core/defplugin`, or a plain map) whose `:apply` the loader calls
+with the extension's ctx and a map of runtime-bound capabilities — register
+everything there. The map's `:inject` decides when the mount activates.
 Optionally define `(defn shutdown [api])` for teardown — it runs on
 unload/reload, and **everything the extension registered is automatically
 unregistered** afterwards.
 
 ```clojure
 (ns my.hello-ext
-  (:require [kmet.extension :as ext]))
+  (:require [kmet.extension :as ext]
+            [kmet.srce.core :as srce]))
 
-(defn init [api]
-  (ext/register-command! api
-    {:name        "hello"
-     :description "Say hello"
-     :handler     (fn [ctx args] (str "Hello, " args "!"))}))
+(srce/defplugin plugin
+  {:name  :ext/hello
+   :apply (fn [_ctx api]
+            (ext/register-command! api
+              {:name        "hello"
+               :description "Say hello"
+               :handler     (fn [ctx args] (str "Hello, " args "!"))})
+            nil)})
 
 (defn shutdown [api]
   ;; optional teardown — deregistration is automatic
@@ -152,7 +158,7 @@ the names, `init` runs at activation, and unloading disposes the fiber after
 `shutdown`. Without it nothing changes: the load is immediate and
 `get-loaded-extensions` reports `:fiber-state nil`.
 
-What `init(api)` registers is **owned**: commands, tools and tool sources,
+What the plugin's `:apply` registers is **owned**: commands, tools and tool sources,
 skills, prompts, hooks, renderers, flags, and the resources a
 `:resources-discover` contribution loads land in the app's registries under
 `[:app :extensions <name>]`, so unload deregisters them tag by tag — a failing
@@ -508,14 +514,20 @@ works for dir installs, symlinked checkouts and unexpanded jars:
 ```clojure
 (ns my-ext.main
   (:require [clojure.java.io :as io]
-            [kmet.extension :as ext]))
+            [kmet.extension :as ext]
+            [kmet.srce.core :as srce]))
 
-(defn init [api]
-  (ext/register-skill! api (slurp (io/resource "skills/my-skill/SKILL.md"))
-                       {:location "my-ext:skills/my-skill/SKILL.md"})
-  (ext/register-prompt! api {:name "my-prompt"
-                             :content (slurp (io/resource "prompts/my-prompt.md"))
-                             :location "my-ext:prompts/my-prompt.md"}))
+(srce/defplugin plugin
+  {:name  :ext/my-ext
+   :apply (fn [_ctx api]
+            (ext/register-skill!
+             api (slurp (io/resource "skills/my-skill/SKILL.md"))
+             {:location "my-ext:skills/my-skill/SKILL.md"})
+            (ext/register-prompt!
+             api {:name "my-prompt"
+                  :content (slurp (io/resource "prompts/my-prompt.md"))
+                  :location "my-ext:prompts/my-prompt.md"})
+            nil)})
 ```
 
 Rules: resources are referenced by exact shipped names — directory listing
@@ -538,7 +550,7 @@ After `:session-start` (startup, `/new`, `/reload`), kmet fires
 `:resources-discover` (pi: resources_discover — fired after session_start).
 The one-shot `--print`/json runs create a runtime without emitting
 `:session-start`, so neither these handlers nor their paths reach them — an
-extension that must add a skill there should register it in `init(api)`
+extension that must add a skill there should register it in the plugin's `:apply`
 (`register-skill!`) instead.
 so extensions (and user config) can contribute skill, prompt-template and
 theme paths (directories). Session *switches* (`/resume`, `/import`,
@@ -949,9 +961,12 @@ Use it to contribute UI by name: a tree site embeds
   [{:keys [label]} _children]
   [:text {:padding-x 0 :padding-y 0} label])
 
-(defn init [api]
-  (ext/register-alias! api chip chip-view)
-  (ext/ui-set-widget api "chip" [:container {} [chip {:label "ready"}]]))
+(srce/defplugin plugin
+  {:name  :ext/my-ext
+   :apply (fn [_ctx api]
+            (ext/register-alias! api chip chip-view)
+            (ext/ui-set-widget api "chip" [:container {} [chip {:label "ready"}]])
+            nil)})
 ```
 
 - `attrs` is the element's props map without `:key`/`:ref`; `children` is a
