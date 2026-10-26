@@ -58,6 +58,20 @@
             space (str/last-index-of cut " ")]
         (str (if space (subs cut 0 space) cut) "…")))))
 
+(defn prompt-snippet
+  "DESCRIPTION's one-line form for the system prompt's tool list: whitespace
+   runs (server prose is multi-line and indented) collapse to a single space,
+   then the text is cut to N chars with an ellipsis. build-system-prompt joins
+   snippets with newlines, so a stray newline splits one tool entry across
+   lines."
+  [description n]
+  (let [one-line (-> (str (or description ""))
+                     (str/replace #"\s+" " ")
+                     str/trim)]
+    (if (<= (count one-line) n)
+      one-line
+      (str (subs one-line 0 n) "…"))))
+
 (defn cached-tools
   "The cached tools for a server (fresh + fingerprint-valid), or nil."
   [state name]

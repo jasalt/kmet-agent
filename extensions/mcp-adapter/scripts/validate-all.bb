@@ -1,15 +1,28 @@
 #!/usr/bin/env bb
 ;; Run every mcp-adapter validation script with the classpath a direct run
-;; needs (the extension's src and the repo src; org.clojure/data.json is
-;; bb-bundled since 1.13.224).
+;; needs. `bb -cp` replaces the config classpath, so a bare run has neither
+;; the module src roots (app code lives under modules/*/src — there is no
+;; repo-root `src`) nor the bundled-extension Maven deps (malli, cljfmt,
+;; parinferish). Ask a bare bb, launched from the repo root, for the repo's own
+;; classpath instead of hardcoding either; prepend this extension's src.
 ;;
 ;; Usage: bb scripts/validate-all.bb
-(require '[babashka.process :as proc])
+(require '[babashka.fs :as fs]
+         '[babashka.process :as proc]
+         '[clojure.string :as str])
 
-(def cp "../../src:src")
+(def repo-root
+  (-> *file* fs/normalize fs/parent fs/parent fs/parent fs/parent))
+
+(def cp
+  (str "src:"
+       (str/trim (:out (proc/shell {:dir (str repo-root) :out :string :err :string}
+                                   "bb" "-e"
+                                   "(print (babashka.classpath/get-classpath))")))))
 
 (def runs
   [["validate-names.bb"]
+   ["validate-snippets.bb"]
    ["validate-client.bb" "scripts/fake-mcp-server.bb" "scripts/fake-http-mcp-server.bb"]
    ["validate-config.bb"]
    ["validate-oauth.bb" "scripts/fake-oauth-server.bb"]

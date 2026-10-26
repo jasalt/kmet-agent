@@ -19,12 +19,14 @@
 ;; Usage: bb fake-mcp-server.bb [--era modern]  (speaks JSON-RPC over
 ;; stdin/stdout)
 ;; Locate the kmet source tree (the fakes run as bare bb children with no
-;; -cp) so JSON can go through kmet.libs.json like everywhere else.
+;; -cp) so JSON can go through kmet.libs.json like everywhere else. App code
+;; lives under modules/<module>/src — there is no repo-root `src`.
 (require '[babashka.fs :as fs]
          '[babashka.classpath :as bcp])
-(let [src (str (fs/normalize (fs/path (fs/parent *file*) ".." ".." ".." "src")))]
-  (when (fs/directory? src)
-    (bcp/add-classpath src)))
+(let [root (fs/path (fs/parent *file*) ".." ".." "..")]
+  (doseq [dir (fs/glob root "modules/*/src")]
+    (when (fs/directory? dir)
+      (bcp/add-classpath (str dir)))))
 (require '[kmet.libs.json :as json]
          '[clojure.string :as str])
 

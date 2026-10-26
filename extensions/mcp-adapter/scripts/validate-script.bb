@@ -16,11 +16,16 @@
          '[clojure.string :as str])
 
 (require '[kmet.extension :as ext]
-         '[kmet.agent.tools.registry :as registry]
+         '[kmet.app.registry :as app-registry]
+         '[kmet.app.tools.registry :as registry]
          '[kmet.extensions.mcp-adapter.core :as mcp]
          '[kmet.extensions.mcp-adapter.config :as config])
 
 (def failures (atom 0))
+
+;; the tool registry the script bridges into — the handle every reader and
+;; writer takes (kmet.app.tools.registry has no process default)
+(def reg (app-registry/atom-registry))
 
 (defn check [label ok]
   (println (if ok "PASS" "FAIL") label)
@@ -50,7 +55,7 @@
 (defn- script-exec
   "Run CODE through the real run_code tool; returns the tool result map."
   [code & [{:keys [on-update timeout]}]]
-  (registry/execute-tool "run_code"
+  (registry/execute-tool reg "run_code"
                          (cond-> {:code code}
                            timeout (assoc :timeout timeout))
                          (cond-> {}
@@ -65,7 +70,7 @@
       (check "tool source registered by the extension" (fn? source-fn))
       ;; bridge the fixture's source into the real registry (the fixture api
       ;; captures registrations; the shared run_code tool reads the registry)
-      (registry/register-tool-source! :mcp source-fn))
+      (registry/register-tool-source! reg :mcp source-fn))
 
     ;; connect the fake server (fills the metadata cache the source reads)
     (let [proxy-tool (get-in @state [:tools "mcp"])
@@ -123,7 +128,7 @@
       (check "inner progress partials arrive" (seq @partials))
       (check "slow call result" (str/includes? (:content r) "slept")))
     ;; removal: the generation bump drops the catalog from the next script
-    (registry/unregister-tool-source! :mcp)
+    (registry/unregister-tool-source! reg :mcp)
     (let [r (script-exec "(emit (tools/list))")]
       (check "unregister removes the catalog"
              (not (str/includes? (:content r) "fake_echo"))))

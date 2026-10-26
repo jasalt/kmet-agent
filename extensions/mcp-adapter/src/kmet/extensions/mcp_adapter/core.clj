@@ -11,6 +11,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [kmet.extensions.mcp-adapter.auth :as auth]
+            [kmet.extensions.mcp-adapter.catalog :as catalog]
             [kmet.extensions.mcp-adapter.config :as config]
             [kmet.extensions.mcp-adapter.metadata :as metadata]
             [kmet.extensions.mcp-adapter.names :as names]
@@ -540,12 +541,6 @@
         (str prefixed " " one)
         prefixed))))
 
-(defn- truncate
-  "Truncate S to N chars with an ellipsis."
-  [s n]
-  (let [s (or s "")]
-    (if (<= (count s) n) s (str (subs s 0 n) "…"))))
-
 (defn- normalize-direct-schema
   "Ensure {:type \"object\" :properties {}} base; pass through
    properties/required as-is (§10.5)."
@@ -655,7 +650,7 @@
                               {:name (:prefixed spec)
                                :label (str "MCP: " (:original spec))
                                :description (or (:description spec) "(no description)")
-                               :prompt-snippet (truncate (:description spec) 100)
+                               :prompt-snippet (catalog/prompt-snippet (:description spec) 100)
                                :parameters (normalize-direct-schema (:input-schema spec))
                                :streams? true
                                :execute (make-execute spec)

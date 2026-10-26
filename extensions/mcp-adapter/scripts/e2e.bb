@@ -13,6 +13,7 @@
          '[clojure.java.io :as io]
          '[kmet.extension :as ext]
          '[kmet.extensions.mcp-adapter.core :as mcp]
+         '[kmet.extensions.mcp-adapter.catalog :as catalog]
          '[kmet.extensions.mcp-adapter.config :as config]
          '[kmet.extensions.mcp-adapter.metadata :as metadata])
 
@@ -157,6 +158,21 @@
         (Thread/sleep 2000)
         (check "bootstrap registered the direct tool"
                (contains? (:tools @state) "e2e_echo"))
+        ;; :prompt-snippet is what the system prompt's "Available tools" list
+        ;; shows, and kmet.app.system-prompt joins snippets with newlines — one
+        ;; tool per line (catalog/prompt-snippet flattens the server's prose
+        ;; before truncating, so this holds for multi-line descriptions too)
+        (let [tool (get-in @state [:tools "e2e_echo"])
+              snippet (:prompt-snippet tool)]
+          (check "direct tool snippet is the flattened description"
+                 (= (catalog/prompt-snippet (:description tool) 100) snippet))
+          (check "direct tool snippet is one line"
+                 (and (string? snippet)
+                      (not (str/includes? snippet "\n")))))
+        (check "every registered snippet is one line"
+               (every? (fn [t] (let [s (:prompt-snippet t)]
+                                 (or (nil? s) (not (str/includes? s "\n")))))
+                       (vals (:tools @state))))
         (check "legacy connect stored its era"
                (= {:era :legacy :version "2025-11-25"}
                   (get-in (metadata/load-cache) [:servers "e2e" :protocol-era])))

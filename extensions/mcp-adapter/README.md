@@ -325,25 +325,29 @@ configure. Only add servers you trust.
 ## Development
 
 The `scripts/` directory carries fake MCP/OAuth servers (legacy and
-2026-07-28 modern modes) and eight validation scripts
-(names assignment, protocol wire shape, client transports,
+2026-07-28 modern modes) and nine validation scripts
+(names assignment, prompt snippets, protocol wire shape, client transports,
 config/extension load, OAuth flow, McpPanel/TextDialog/prompt components,
 scripted-MCP end-to-end) plus an end-to-end smoke of the proxy-tool surface
 (`e2e.bb`, headless — see plan §15.22). `validate-all.bb` runs the whole
 set:
 
 ```bash
-# `bb -cp` replaces the classpath; org.clojure/data.json is bb-bundled
-# (1.13.224+), so the tree's src roots are all the classpath needs.
+# `bb -cp` replaces the config classpath, so a direct run needs both roots:
+# this extension's src and the repo's own classpath (the module srcs plus the
+# bundled-extension deps — malli, cljfmt, parinferish). validate-all.bb builds
+# the same string for the children it spawns.
+CP="src:$(cd ../../ && bb -e '(print (babashka.classpath/get-classpath))')"
 bb scripts/validate-all.bb
-bb -cp ../../src:src scripts/validate-names.bb
-bb -cp ../../src:src scripts/validate-protocol.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
-bb -cp ../../src:src scripts/validate-client.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
-bb -cp ../../src:src scripts/validate-config.bb
-bb -cp ../../src:src scripts/validate-panel.bb
-bb -cp ../../src:src scripts/validate-oauth.bb scripts/fake-oauth-server.bb
-bb -cp ../../src:src scripts/validate-script.bb scripts/fake-mcp-server.bb
-bb -cp ../../src:src scripts/e2e.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
+bb -cp "$CP" scripts/validate-names.bb
+bb -cp "$CP" scripts/validate-snippets.bb
+bb -cp "$CP" scripts/validate-protocol.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
+bb -cp "$CP" scripts/validate-client.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
+bb -cp "$CP" scripts/validate-config.bb
+bb -cp "$CP" scripts/validate-panel.bb
+bb -cp "$CP" scripts/validate-oauth.bb scripts/fake-oauth-server.bb
+bb -cp "$CP" scripts/validate-script.bb scripts/fake-mcp-server.bb
+bb -cp "$CP" scripts/e2e.bb scripts/fake-mcp-server.bb scripts/fake-http-mcp-server.bb
 ```
 
 ## Phase-3 roadmap
