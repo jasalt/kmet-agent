@@ -42,12 +42,24 @@
             (srce/provide! mount :sessionPersistence (backend/ednl)
                            {:in (:parent mount)}))})
 
+(defonce ^{:doc "Was the test sessions dir cleared this process?"} sessions-dir-cleared?
+  (atom false))
+
+(defn- clean-sessions-dir!
+  "Clear SESSIONS-DIR once per test process. The dir is where a real backend
+   writes, so it accumulates a file per run — and every resume or listing scans
+   it, which made a full run's scan hundreds of files wide."
+  []
+  (when (compare-and-set! sessions-dir-cleared? false true)
+    (fs/delete-tree sessions-dir)))
+
 (defn- mounted
   "A booted root with the rows the driver injects — the log, the registries,
    the prompt row, the agent registry — and the driver over them. The host's
    row comes too: a run's first extension hook resolves through the binding it
    makes, which is why a composition has it."
   []
+  (clean-sessions-dir!)
   (fs/create-dirs sessions-dir)
   (let [ctx (srce/root {:name :app})]
     (doseq [row [host/plugin (persistence-row) sessions/plugin
@@ -593,11 +605,15 @@
               (is (= :steered (:action ((:submit! agents) handle "later" {})))
                   "a submission while the run is live steers it")
               ;; the queue is the durable inbox's projection: the submit answers
-              ;; the disposition, and the run's delivery is what fills the
-              ;; in-memory queue, so wait for the condition rather than the
-              ;; scheduler
+              ;; the disposition, and the run's own delivery fills the in-memory
+              ;; queue — which the turn already running may drain into the
+              ;; context before a poll observes it, so either evidence counts:
+              ;; the queue holding the text, or the run having consumed it (the
+              ;; `:steered` answer above is the claim that no second prompt
+              ;; started, and the texts below are the claim that it arrived)
               (is (support/wait-until
-                   #(= ["later"] (:steering (runtime/queues handle))))
+                   #(or (= ["later"] (:steering (runtime/queues handle)))
+                        (some #{"later"} (user-texts (:agent handle)))))
                   "the steered text reached the run's queue")
               (is (= [nil :steer] @seen)
                   "the hooks were told the second text would be steered")

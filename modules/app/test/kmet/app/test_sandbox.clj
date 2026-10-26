@@ -53,7 +53,9 @@
   ;; the child's store (the mount's parent), or the agent's own lookups — which
   ;; walk up, never down — would never see it.
   (let [root (srce/root {:name :app})
-        agent (srce/extend root {:name :agent/1})]
+        ;; `:agent/1` is not a keyword the JVM reader accepts — the loader
+        ;; rejects it before the test can run
+        agent (srce/extend root {:name :agent-1})]
     (srce/plugin! agent sandbox/plugin {:isolate [:workspace]})
     (srce/settle! agent)
     (is (= #{:workspace} (:isolate (srce/get agent :sandbox)))

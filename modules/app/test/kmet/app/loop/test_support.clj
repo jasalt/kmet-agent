@@ -119,6 +119,19 @@
         (models/clear-providers!)
         (doseq [p saved] (models/register-provider! p))))))
 
+(defn without-providers
+  "Run F with the model registry empty and restore it after. A test that
+   asserts what an empty registry does has to make it empty: another namespace's
+   composition can have registered providers in the same process."
+  [f]
+  (let [saved (models/get-providers)]
+    (models/clear-providers!)
+    (try
+      (f)
+      (finally
+        (models/clear-providers!)
+        (doseq [p saved] (models/register-provider! p))))))
+
 (defn thinking-model
   "Reasoning model supporting exactly the non-off LEVELS (pi
    getSupportedThinkingLevels): levels absent from the set are pinned to nil

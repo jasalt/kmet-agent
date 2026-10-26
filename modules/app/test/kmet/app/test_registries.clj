@@ -36,7 +36,7 @@
 
 (deftest a-row-below-sees-the-services
   (let [ctx (mounted)
-        child (srce/extend ctx {:name :agent/1})]
+        child (srce/extend ctx {:name :agent-1})]
     (doseq [service [:tools :commands :prompts :skills]]
       (is (identical? (srce/get ctx service) (srce/get child service))
           "a child ctx reads it through the chain"))))

@@ -22,7 +22,7 @@
       (is (= {:name "probe"} (registry/entry (srce/get ctx :tools) :kmet/tool "probe"))
           "the same service value answers, so nothing was re-provided"))
     (testing "a row mounted below sees it"
-      (let [child (srce/extend ctx {:name :agent/1})]
+      (let [child (srce/extend ctx {:name :agent-1})]
         (is (identical? handle (srce/get child :tools)))))
     (testing "a sibling row reads it through its own ctx"
       (let [sibling (srce/plugin! ctx {:name :consumer

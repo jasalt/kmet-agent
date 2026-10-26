@@ -67,7 +67,7 @@
           sibling (srce/plugin! ctx {:name :consumer
                                      :inject {:sessions nil}
                                      :apply (fn [c _] (srce/provide! c :seen (srce/get c :sessions)))})
-          child (srce/extend ctx {:name :agent/1})]
+          child (srce/extend ctx {:name :agent-1})]
       (is (= :active (:state @sibling)) "the inject gate is satisfied")
       (is (identical? log (srce/get child :sessions)) "a child ctx reads it through the chain")
       (srce/dispose! sibling))))

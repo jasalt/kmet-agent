@@ -100,8 +100,11 @@
         (doseq [p saved] (models/register-provider! p))))))
 
 (t/deftest test-loop-cycle-model-no-models
-  (let [agent (support/make-agent-state :model "a")]
-    (t/is (nil? (state/cycle-model! agent 1)) "no scoped models and no available models → nil")))
+  (support/without-providers
+   (fn []
+     (let [agent (support/make-agent-state :model "a")]
+       (t/is (nil? (state/cycle-model! agent 1))
+             "no scoped models and no available models → nil")))))
 
 (t/deftest test-loop-init-scoped-models
   ;; pi: parsed.models ?? settingsManager.getEnabledModels — CLI/config

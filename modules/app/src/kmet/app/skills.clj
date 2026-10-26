@@ -151,7 +151,11 @@
    and then subdirectories (recursion). Hidden entries and node_modules are
    skipped. Returns the ordered skill file paths."
   [dir]
-  (let [entries (try (fs/list-dir dir) (catch Exception _ []))
+  (let [;; sorted by file name: `add-skill!` keeps the first registration of a
+        ;; name, and an unsorted `list-dir` would make which file is "first" a
+        ;; property of the filesystem's directory hashing
+        entries (sort-by fs/file-name
+                         (try (fs/list-dir dir) (catch Exception _ [])))
         skill-md (some #(when (= "SKILL.md" (fs/file-name %)) %) entries)]
     (if skill-md
       [(str skill-md)]
