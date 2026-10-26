@@ -35,9 +35,11 @@
 (ns kmet-frame-bench
   (:require [clojure.string :as str]
             [kmet.app.session.core :as session]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.registry :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
-            [kmet.agent.modes.interactive :as inter]
+            [kmet.ui.tui.interactive :as inter]
+            [kmet.test-utils :as tu]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.stack :as stack]
             [kmet.tui.core :as core]
@@ -85,7 +87,7 @@
 (def ^:private replay-branch!
   "The private session-admin replay entry (resume populates the chat
    history through it; the harness only needs the same populated history)."
-  (var-get (ns-resolve 'kmet.agent.modes.interactive.session-admin 'replay-branch!)))
+  (var-get (ns-resolve 'kmet.ui.tui.interactive.session-admin 'replay-branch!)))
 
 ;; ─── Frame/phase post-processing ───────────────────────────────────────────
 
@@ -295,35 +297,37 @@
       (System/exit 1))
     (println (str "host: " host "  session: " (last (str/split session-file #"/"))
                   "  " width "x" height "  scenario: " scenario))
-    (instrument!)
-    (let [sess (session/load-session session-file)
-          ch (chat-history/make-chat-history :tool-display-mode :expanded
-                                         :tool-fn tools/get-tool)
-          cs (inter/map->CoreState {:chat-history ch})
-          _ (replay-branch! cs sess)
-          ed (editor/make-editor :height 1)
-          size (atom {:cols width :rows height})
-          writes (atom [])
-          vt (map->VirtualTerminal {:size size :writes writes})
-          tui (core/create-tui vt)]
-      (core/editor-set-text! ed "")
-      (core/tui-add-child tui ch)
-      (core/tui-add-child tui ed)
-      (reset! (:running? tui) true)
-      (reset! (:stopped? tui) false)
-      (reset! (:render-loop tui) (future ((var core/run-render-loop!) tui)))
-      (try
-        (when (or (scenarios "all") (scenarios "cold")) (run-cold! tui writes))
-        (when (or (scenarios "all") (scenarios "calm")) (run-calm! tui writes 10))
-        (when (or (scenarios "all") (scenarios "typing")) (run-typing! tui writes ed 20))
-        (when (or (scenarios "all") (scenarios "stream")) (run-stream! tui writes ch 40))
-        (when (or (scenarios "all") (scenarios "redraw")) (run-redraw! tui writes vt 4))
-        (finally
-          (core/tui-stop tui)
-          (when-let [f @(:render-loop tui)]
-            (let [v (try (deref f 5000 nil) (catch Throwable t t))]
-              (when (instance? Throwable v)
-                (println "render loop died:" v))))))
-      (println "total frames:" @(:frame-count tui)))))
+    (tu/with-extension-host
+      (fn []
+        (instrument!)
+        (let [sess (session/load-session session-file)
+              ch (chat-history/make-chat-history :tool-display-mode :expanded
+                                                 :tool-fn (fn [name] (tools/get-tool (registry/atom-registry) name)))
+              cs (inter/map->CoreState {:chat-history ch})
+              _ (replay-branch! cs sess)
+              ed (editor/make-editor :height 1)
+              size (atom {:cols width :rows height})
+              writes (atom [])
+              vt (map->VirtualTerminal {:size size :writes writes})
+              tui (core/create-tui vt)]
+          (core/editor-set-text! ed "")
+          (core/tui-add-child tui ch)
+          (core/tui-add-child tui ed)
+          (reset! (:running? tui) true)
+          (reset! (:stopped? tui) false)
+          (reset! (:render-loop tui) (future ((var core/run-render-loop!) tui)))
+          (try
+            (when (or (scenarios "all") (scenarios "cold")) (run-cold! tui writes))
+            (when (or (scenarios "all") (scenarios "calm")) (run-calm! tui writes 10))
+            (when (or (scenarios "all") (scenarios "typing")) (run-typing! tui writes ed 20))
+            (when (or (scenarios "all") (scenarios "stream")) (run-stream! tui writes ch 40))
+            (when (or (scenarios "all") (scenarios "redraw")) (run-redraw! tui writes vt 4))
+            (finally
+              (core/tui-stop tui)
+              (when-let [f @(:render-loop tui)]
+                (let [v (try (deref f 5000 nil) (catch Throwable t t))]
+                  (when (instance? Throwable v)
+                    (println "render loop died:" v))))))
+          (println "total frames:" @(:frame-count tui)))))))
 
 (apply -main *command-line-args*)

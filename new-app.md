@@ -3530,12 +3530,13 @@ verifications now, and `kmet.app.test-process-state` is the ledger of the
 process cells that remain, each with a written reason. 10c closed the server's
 transport: the bearer token, `--socket`/`--max-sessions`/`--queue-depth`/
 `--idle-timeout`, the `:lag` policy with its `:stream-gap`, and the config a
-connection brings (its own page is [`docs/serve.md`](docs/serve.md)). What is
-left is one loose end:
+connection brings (its own page is [`docs/serve.md`](docs/serve.md)). The last
+loose end — `scripts/bench/`'s three harnesses — is closed: they load and run
+again after the require repoint above.
 
 | What | Where | Why it is left | Cut |
 |---|---|---|---|
-| `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
+| `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | **done** — requires repointed at `kmet.ui.tui.interactive` / `kmet.app.tools.registry` + `kmet.app.registry/atom-registry`, extension host bound via `kmet.test-utils/with-extension-host`; all three load and run on `bb` again | — |
 
 ### The interactive front end first
 
@@ -4547,13 +4548,14 @@ namespaces' render paths); they name their host now (`with-host`,
 boundary case that required the façade inside the sandbox went with it: the
 sandbox's own exclusion is already pinned by `kmet.app.loop`.
 
-**Two loose ends the endgame left, recorded rather than fixed.**
-`scripts/bench/`'s three files (the frame, perf and render harnesses) require
+**One loose end the endgame left, recorded rather than fixed.**
+`scripts/bench/`'s three files (the frame, perf and render harnesses) required
 `kmet.agent.modes.interactive` and `kmet.agent.tools.core`; the interactive
-cluster moved to `ui` at 5l-iii and the façade died with kmet1, so they have not
-loaded since — each needs a rewrite against `kmet.ui.tui.interactive` and the
-handle-taking registry, or deletion. They are outside every gate, so nothing
-notices. And the server's user-facing page: `profiles.md` documents
+cluster moved to `ui` at 5l-iii and the façade died with kmet1, so they did not
+load. They are rewritten now against `kmet.ui.tui.interactive` and the
+handle-taking registry (`kmet.app.tools.registry` over `kmet.app.registry/atom-registry`),
+with the extension host bound via `kmet.test-utils/with-extension-host`; all three
+load and run on `bb` again. And the server's user-facing page: `profiles.md` documents
 `--profile server`/`--port` and `rpc.md` the protocol, but the connection rules
 (one session per connection, the approval route, and 10c's token and
 `--max-sessions`) belong on a page of their own once 10c settles them.

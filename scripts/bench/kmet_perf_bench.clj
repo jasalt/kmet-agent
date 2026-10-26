@@ -19,7 +19,8 @@
             [kmet.libs.markdown :as md]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.markdown :as markdown]
-            [kmet.tui.protocols :as protocols]))
+            [kmet.tui.protocols :as protocols]
+            [kmet.test-utils :as tu]))
 
 ;; Same pattern as kmet.tui.utils' (private) ANSI-CODE-RE, for the A/B.
 (def ANSI-CODE-RE
@@ -197,13 +198,12 @@
                      label (count texts) chars blocks ms (/ (* ms 1000.0) (max 1 chars))))))
 
 (defn md-session [file]
-  (require 'kmet.app.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive
-           'kmet.agent.tools.core)
+  (require 'kmet.app.session.core 'kmet.app.registry 'kmet.app.tools.registry 'kmet.ui.tui.chat-history 'kmet.ui.tui.interactive)
   (let [session ((resolve 'kmet.app.session.core/load-session) file)
         ch ((resolve 'kmet.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded
-                                                    :tool-fn (resolve 'kmet.agent.tools.core/get-tool))
-        cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})]
-    ((resolve 'kmet.agent.modes.interactive/replay-branch!) cs session)
+                                                                  :tool-fn (fn [name] ((resolve 'kmet.app.tools.registry/get-tool) ((resolve 'kmet.app.registry/atom-registry)) name)))
+        cs ((resolve 'kmet.ui.tui.interactive/map->CoreState) {:chat-history ch})]
+    ((var-get (ns-resolve 'kmet.ui.tui.interactive.session-admin 'replay-branch!)) cs session)
     (let [messages @(:messages-atom ch)
           parts (fn [k] (keep (fn [m] (when (= :assistant (:role m)) @(k (:component m)))) messages))]
       (println "md/parse over the assistant messages' markdown sources:")
@@ -213,25 +213,27 @@
 ;; ─── Kitty-image whole-document scan cost (the diff hot path) ───────────────
 
 (defn kitty-scan [file]
-  (require 'kmet.app.session.core 'kmet.ui.tui.chat-history 'kmet.agent.modes.interactive 'kmet.tui.core
+  (require 'kmet.app.session.core 'kmet.app.registry 'kmet.app.tools.registry 'kmet.ui.tui.chat-history 'kmet.ui.tui.interactive 'kmet.tui.core
            'kmet.libs.terminal-image)
-  (let [session ((resolve 'kmet.app.session.core/load-session) file)
-        ch ((resolve 'kmet.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded
-                                                    :tool-fn (resolve 'kmet.agent.tools.core/get-tool))
-        cs ((resolve 'kmet.agent.modes.interactive/map->CoreState) {:chat-history ch})
-        replay (var-get (ns-resolve 'kmet.agent.modes.interactive.session-admin 'replay-branch!))
-        _ (replay cs session)
-        lines ((resolve 'kmet.tui.core/render) ch 100)
-        avg (/ (double (reduce + 0 (map count lines))) (max 1 (count lines)))
-        ek (resolve 'kmet.libs.terminal-image/extract-kitty-image-ids)
-        scan (fn [] (doseq [l lines] (ek l)))]
-    (println (format "lines=%d avg-len=%.0f" (count lines) avg))
-    (dotimes [_ 2] (scan))
-    (let [t (now)
-          _ (dotimes [_ 3] (scan))
-          ms (/ (double (- (now) t)) 3.0 1e6)]
-      (println (format "kitty scan: %.2f ms/pass; expand runs it on prev+lines => %.2f ms/changed frame"
-                       ms (* 2 ms))))))
+  (tu/with-extension-host
+    (fn []
+      (let [session ((resolve 'kmet.app.session.core/load-session) file)
+            ch ((resolve 'kmet.ui.tui.chat-history/make-chat-history) :tool-display-mode :expanded
+                                                                      :tool-fn (fn [name] ((resolve 'kmet.app.tools.registry/get-tool) ((resolve 'kmet.app.registry/atom-registry)) name)))
+            cs ((resolve 'kmet.ui.tui.interactive/map->CoreState) {:chat-history ch})
+            replay (var-get (ns-resolve 'kmet.ui.tui.interactive.session-admin 'replay-branch!))
+            _ (replay cs session)
+            lines ((resolve 'kmet.tui.core/render) ch 100)
+            avg (/ (double (reduce + 0 (map count lines))) (max 1 (count lines)))
+            ek (resolve 'kmet.libs.terminal-image/extract-kitty-image-ids)
+            scan (fn [] (doseq [l lines] (ek l)))]
+        (println (format "lines=%d avg-len=%.0f" (count lines) avg))
+        (dotimes [_ 2] (scan))
+        (let [t (now)
+              _ (dotimes [_ 3] (scan))
+              ms (/ (double (- (now) t)) 3.0 1e6)]
+          (println (format "kitty scan: %.2f ms/pass; expand runs it on prev+lines => %.2f ms/changed frame"
+                           ms (* 2 ms))))))))
 
 ;; ─── Main ───────────────────────────────────────────────────────────────────
 

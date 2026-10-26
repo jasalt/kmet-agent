@@ -12,9 +12,11 @@
 (ns kmet-render-bench
   (:require [clojure.string :as str]
             [kmet.app.session.core :as session]
-            [kmet.agent.tools.core :as tools]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.registry :as tools]
             [kmet.ui.tui.chat-history :as chat-history]
-            [kmet.agent.modes.interactive :as inter]
+            [kmet.ui.tui.interactive :as inter]
+            [kmet.test-utils :as tu]
             [kmet.tui.core :as core]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]))
@@ -25,7 +27,7 @@
 (def ^:private replay-branch!
   "The private session-admin replay entry (resume populates the chat
    history through it; the harness only needs the same populated history)."
-  (var-get (ns-resolve 'kmet.agent.modes.interactive.session-admin 'replay-branch!)))
+  (var-get (ns-resolve 'kmet.ui.tui.interactive.session-admin 'replay-branch!)))
 
 (defn- timed
   "Run F, print `LABEL: <ms> ms[, <lines> lines]`, return F's value."
@@ -55,7 +57,7 @@
                         (update-in [:roles (:role m) :lines] (fnil + 0) (count ls))
                         (update-in [:roles (:role m) :chars] (fnil + 0) chars)
                         (cond->
-                          (= :tool (:role m))
+                         (= :tool (:role m))
                           (-> (update-in [:tools (or (:tool-name m) (:name m)) :ms] (fnil + 0.0) d)
                               (update-in [:tools (or (:tool-name m) (:name m)) :n] (fnil inc 0))
                               (update-in [:tools (or (:tool-name m) (:name m)) :lines] (fnil + 0) (count ls))
@@ -84,35 +86,37 @@
                   "  session: " (last (str/split session-file #"/"))
                   "  width: " width
                   "  mode: " mode))
-    (let [sess (session/load-session session-file)
-          ch (chat-history/make-chat-history :tool-display-mode :expanded
-                                         :tool-fn tools/get-tool)
-          cs (inter/map->CoreState {:chat-history ch})]
-      (timed "replay" (fn [] (replay-branch! cs sess) nil))
-      (if (= mode "roles")
-        (roles-profile ch width)
-        (do
-          (timed "render #1 (cold)" #(render-all ch width))
-          (timed "render #2 (warm)" #(render-all ch width))
-          (timed "Ctrl+O -> collapsed"
-                 (fn [] (chat-history/chat-history-set-tool-display-mode! ch :collapsed)
-                        (render-all ch width)))
-          (timed "Ctrl+O -> expanded"
-                 (fn [] (chat-history/chat-history-set-tool-display-mode! ch :expanded)
-                        (render-all ch width)))
+    (tu/with-extension-host
+      (fn []
+        (let [sess (session/load-session session-file)
+              ch (chat-history/make-chat-history :tool-display-mode :expanded
+                                                 :tool-fn (fn [name] (tools/get-tool (registry/atom-registry) name)))
+              cs (inter/map->CoreState {:chat-history ch})]
+          (timed "replay" (fn [] (replay-branch! cs sess) nil))
+          (if (= mode "roles")
+            (roles-profile ch width)
+            (do
+              (timed "render #1 (cold)" #(render-all ch width))
+              (timed "render #2 (warm)" #(render-all ch width))
+              (timed "Ctrl+O -> collapsed"
+                     (fn [] (chat-history/chat-history-set-tool-display-mode! ch :collapsed)
+                       (render-all ch width)))
+              (timed "Ctrl+O -> expanded"
+                     (fn [] (chat-history/chat-history-set-tool-display-mode! ch :expanded)
+                       (render-all ch width)))
           ;; Theme switch: a modified copy of the live theme, so the swap is
           ;; a real change whatever theme is configured.
-          (let [cur (theme/get-current-theme)
-                other (assoc cur :name "probe-theme" :text "#ff0000")]
-            (timed "theme switch" (fn [] (theme/set-theme-instance! other)
-                                    (render-all ch width)))
-            (timed "theme switch back" (fn [] (theme/set-theme-instance! cur)
-                                         (render-all ch width))))
+              (let [cur (theme/get-current-theme)
+                    other (assoc cur :name "probe-theme" :text "#ff0000")]
+                (timed "theme switch" (fn [] (theme/set-theme-instance! other)
+                                        (render-all ch width)))
+                (timed "theme switch back" (fn [] (theme/set-theme-instance! cur)
+                                             (render-all ch width))))
           ;; Output-pad change: every boxed message re-wraps.
-          (timed "output-pad 1 -> 2"
-                 (fn [] (reset! (:output-pad-atom ch) 2) (render-all ch width)))
-          (timed "output-pad 2 -> 1"
-                 (fn [] (reset! (:output-pad-atom ch) 1) (render-all ch width)))
-          (timed "warm frame" #(render-all ch width)))))))
+              (timed "output-pad 1 -> 2"
+                     (fn [] (reset! (:output-pad-atom ch) 2) (render-all ch width)))
+              (timed "output-pad 2 -> 1"
+                     (fn [] (reset! (:output-pad-atom ch) 1) (render-all ch width)))
+              (timed "warm frame" #(render-all ch width)))))))))
 
 (apply -main *command-line-args*)
