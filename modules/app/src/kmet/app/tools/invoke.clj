@@ -18,6 +18,7 @@
    than required so kmet.app.tools.run-code can use this namespace without a
    require cycle (the registry requires script)."
   (:require [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.read :as read-tool]
             [kmet.app.tools.util :as tool-util]))
 
 (def execute-tool-contract
@@ -81,7 +82,7 @@
 
 (defn execute-tool-call
   "Execute one call through EXECUTE-TOOL. BINDINGS, when given, are applied
-   around execution ({:signal :session-env-fn :shell :cwd}) — a raw worker thread
+   around execution ({:signal :session-env-fn :shell :skill-resolver :cwd}) — a raw worker thread
    conveys no dynamic bindings, which is the run_code bridge's pool-worker
    case; the loop's futures already convey the run-wide ones. Returns the
    result map; never throws for a tool failure — a throwing tool becomes an
@@ -102,6 +103,7 @@
         (binding [bash-tool/*cancel-signal* (:signal bindings)
                   bash-tool/*session-env-fn* (:session-env-fn bindings)
                   bash-tool/*shell* (:shell bindings)
+                  read-tool/*skill-resolver* (:skill-resolver bindings)
                   tool-util/*cwd* (:cwd bindings)]
           (execute))
         (execute))

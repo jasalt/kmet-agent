@@ -6,6 +6,7 @@
             [kmet.app.test-support :as support]
             [kmet.app.skill-block :as skill-block]
             [kmet.app.skills :as skills]
+            [kmet.app.tools.read :as read]
             [kmet.app.tools.registry :as tools]
             [kmet.app.tools.tool :as tool]
             [kmet.app.registry :as registry]
@@ -406,28 +407,32 @@
                  "---\nname: read-me\ndescription: Readable skill\n---\n# Body\nDo it."
                  {:location "my-ext:skills/read-me/SKILL.md" :extension "my-ext"})]
       (try
-        (t/testing "exact location resolves"
-          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
-            (t/is (not (:is-error result)))
-            (t/is (str/includes? (:content result) "Do it."))))
-        (t/testing "cwd-joined absolute locator resolves (model verbatim join)"
-          (let [result (tools/execute-tool (registry/current) "read" {:path (str (fs/cwd) "/my-ext:skills/read-me/SKILL.md")})]
-            (t/is (not (:is-error result)))
-            (t/is (str/includes? (:content result) "Do it."))))
-        (t/testing "backslash-joined locator resolves (Windows path join)"
-          (let [result (tools/execute-tool (registry/current) "read" {:path "C:\\work\\my-ext:skills/read-me/SKILL.md"})]
-            (t/is (not (:is-error result)))
-            (t/is (str/includes? (:content result) "Do it."))))
-        (t/testing "offset/limit apply to skill reads"
-          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md" :offset 1 :limit 1})]
-            (t/is (not (:is-error result)))
-            (t/is (str/includes? (:content result) "---"))))
-        (t/testing "unknown locator still reports File not found"
-          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/nope/SKILL.md"})]
-            (t/is (:is-error result))
-            (t/is (str/includes? (:content result) "File not found"))))
-        (t/testing "deregistered skill no longer resolves"
-          (dereg)
-          (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
-            (t/is (:is-error result))))
+        ;; The resolver is the run's binding now (landing 9b), not a process
+        ;; cell this namespace installs at load time: it answers from the
+        ;; registry handle it was built over, per call.
+        (binding [read/*skill-resolver* (skills/content-resolver (registry/current))]
+          (t/testing "exact location resolves"
+            (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
+              (t/is (not (:is-error result)))
+              (t/is (str/includes? (:content result) "Do it."))))
+          (t/testing "cwd-joined absolute locator resolves (model verbatim join)"
+            (let [result (tools/execute-tool (registry/current) "read" {:path (str (fs/cwd) "/my-ext:skills/read-me/SKILL.md")})]
+              (t/is (not (:is-error result)))
+              (t/is (str/includes? (:content result) "Do it."))))
+          (t/testing "backslash-joined locator resolves (Windows path join)"
+            (let [result (tools/execute-tool (registry/current) "read" {:path "C:\\work\\my-ext:skills/read-me/SKILL.md"})]
+              (t/is (not (:is-error result)))
+              (t/is (str/includes? (:content result) "Do it."))))
+          (t/testing "offset/limit apply to skill reads"
+            (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md" :offset 1 :limit 1})]
+              (t/is (not (:is-error result)))
+              (t/is (str/includes? (:content result) "---"))))
+          (t/testing "unknown locator still reports File not found"
+            (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/nope/SKILL.md"})]
+              (t/is (:is-error result))
+              (t/is (str/includes? (:content result) "File not found"))))
+          (t/testing "deregistered skill no longer resolves"
+            (dereg)
+            (let [result (tools/execute-tool (registry/current) "read" {:path "my-ext:skills/read-me/SKILL.md"})]
+              (t/is (:is-error result)))))
         (finally (skills/clear-skills!))))))

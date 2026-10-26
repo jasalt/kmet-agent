@@ -7,7 +7,11 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [babashka.fs :as fs]
-            [kmet.app.config :as cfg]))
+            [kmet.app.config :as cfg]
+            ;; The hint's styling is the live theme's, read at render time: a
+            ;; theme change re-renders the hint, so there is nothing to install
+            ;; and no process cell two terminals could disagree about (9b).
+            [kmet.tui.theme :as theme]))
 
 ;; ─── App keybinding definitions ──────────────────────────────────────────
 ;; Extends the TUI definitions with agent-specific actions.
@@ -59,7 +63,10 @@
    "app.tree.toggleLabelTimestamp" {:default-keys ["shift+t"]        :description "Tree: toggle label timestamps"}})
 
 ;; ─── Dynamic TUI interop ───────────────────────────────────────────────
-;; App-layer policy definitions stay here without requiring the TUI layer.
+;; The app's policy definitions (the ids, keys and descriptions this file owns)
+;; stay here; the *machinery* — the manager, label rendering, hint styling — is
+;; the TUI's, resolved late where it is only needed in a terminal, and read
+;; directly for the theme (a libs leaf, landing 9b).
 
 (defn- tui-keybindings-ns []
   (require 'kmet.tui.keybindings)
@@ -217,12 +224,13 @@
 
 ;; ─── Convenience: key-hint with theme fns ───────────────────────────────
 
-(defonce ^:private theme-fns-atom (atom nil))
-
-(defn set-key-hint-theme-fns!
-  "Set the dim/muted styling functions for key hint rendering."
-  [dim-fn muted-fn]
-  (reset! theme-fns-atom {:dim dim-fn :muted muted-fn}))
+(defn- hint-styling
+  "The key-hint styling: the active theme's dim and muted. Derived at call time
+   — a theme change re-renders the hint (the header's content fns run again),
+   so there is no installed pair to refresh and no cell to read."
+  []
+  {:dim theme/dim
+   :muted #(theme/fg (theme/get-current-theme) :muted %)})
 
 (defn key-text
   [id]
@@ -241,16 +249,16 @@
 
 (defn key-hint
   ([id desc]
-   (let [{:keys [dim muted]} @theme-fns-atom]
-     (if (and dim muted)
-       ((tui-kb-var 'key-hint) ((tui-kb-var 'get-global-keybindings)) id desc dim muted)
-       ;; Fallback: plain text
-       (str (key-label id) " " desc))))
+   (if-let [hint (tui-kb-var 'key-hint)]
+     (let [{:keys [dim muted]} (hint-styling)]
+       (hint ((tui-kb-var 'get-global-keybindings)) id desc dim muted))
+     ;; Fallback: plain text (a host that never loaded the TUI's keybindings)
+     (str (key-label id) " " desc)))
   ([kmgr id desc]
-   (let [{:keys [dim muted]} @theme-fns-atom]
-     (if (and dim muted)
-       ((tui-kb-var 'key-hint) kmgr id desc dim muted)
-       (str (or ((tui-kb-var 'key-label-text) kmgr id) "") " " desc)))))
+   (if-let [hint (tui-kb-var 'key-hint)]
+     (let [{:keys [dim muted]} (hint-styling)]
+       (hint kmgr id desc dim muted))
+     (str (or ((tui-kb-var 'key-label-text) kmgr id) "") " " desc))))
 
 ;; ─── Create/reload manager wrappers ───────────────────────────────────────
 

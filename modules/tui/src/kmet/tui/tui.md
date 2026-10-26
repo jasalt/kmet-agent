@@ -1336,7 +1336,10 @@ else renders as itself, and a modified key relabels its key part only
 (`alt+left` → `alt+←`). `keys/key-text`/`key-label-text` join an id's
 chords with `/`. `key-hint` renders through the label form, so a hint line
 and the tree help cannot drift; the tree selector's private prettify pass
-was replaced by the shared table.
+was replaced by the shared table. It styles with the active theme **read at
+render time** (`kmet.app.keybindings` derives dim/muted from
+`kmet.tui.theme` per call), so nothing is installed at layout time and a
+theme change reaches the next hint through the ordinary render.
 
 ---
 

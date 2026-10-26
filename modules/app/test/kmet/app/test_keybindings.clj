@@ -2,8 +2,10 @@
   (:require [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.app.keybindings :as kb]
+            [clojure.string :as str]
             [kmet.tui.keys :as keys]
-            [kmet.tui.keybindings :as tui-kb]))
+            [kmet.tui.keybindings :as tui-kb]
+            [kmet.tui.theme :as theme]))
 
 (defn- temp-agent-dir
   "Create a throwaway agent dir under target/ (with optional keybindings.edn
@@ -193,4 +195,30 @@
       (t/is (= ["ctrl+x"] (tui-kb/get-keys kmgr "tui.editor.deleteCharBackward")))
       (tui-kb/set-user-bindings! kmgr {}))))
 
-
+(t/deftest a-key-hint-wears-the-live-theme
+  ;; The hint's muted styling is read from the active theme at call time, so a
+  ;; theme change re-renders it and there is no installed pair to refresh (no
+  ;; process cell two terminals could disagree about) — landing 9b.
+  (let [dir (temp-agent-dir)
+        previous-theme (theme/get-current-theme-name)
+        previous-kmgr (tui-kb/get-global-keybindings)
+        muted-color #(get (:fg-colors (theme/get-theme %)) :muted)]
+    (try
+      (tui-kb/set-global-keybindings! (kb/create-agent-keybindings-manager dir))
+      (theme/init-theme! "dark")
+      (let [dark (kb/key-hint "app.quit" "quit")]
+        (theme/init-theme! "light")
+        (let [light (kb/key-hint "app.quit" "quit")]
+          (t/is (not= (muted-color "dark") (muted-color "light"))
+                "the two themes really do mute differently")
+          (t/is (str/includes? dark (muted-color "dark"))
+                "the dark hint wears the dark theme's muted color")
+          (t/is (str/includes? light (muted-color "light"))
+                "and the light hint wears the light one's, with nothing
+                 re-installed in between")
+          (t/is (and (str/includes? dark "ctrl+q") (str/includes? light "quit"))
+                "the label and description still reach the hint")))
+      (finally
+        (theme/init-theme! previous-theme)
+        (tui-kb/set-global-keybindings! previous-kmgr)
+        (cleanup dir)))))

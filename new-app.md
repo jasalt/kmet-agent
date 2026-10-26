@@ -612,8 +612,9 @@ difference between "two sessions" and "two isolated sessions":
 | `shell-options` | `bash_executor.clj` `defonce` | per-context `:shell`/`:subprocess` service value |
 | `System/getProperty "user.dir"` fallback | `libs/path.clj` | **done** — it resolves against `(:cwd ctx)`; the remaining reads are defaults (see 9's audit) |
 | `cli-flag-values`, `extension-binding`, `extensions` | `modules/app/src/kmet/app/extensions/core.cljc` | **superseded by 5i**: the host's bindings are process-wide by design, and the ctx is the per-agent world; landing 9 leaves them with a written reason |
-| `bridge-queue` | `tools/run_code.cljc` | 9b decides: a pool on the ctx, or a written reason one process-wide bound is right |
-| `skill-content-resolver`, `theme-fns-atom` | `tools/read`, `keybindings` | through the tool factory's config and the key-hint renderers' arguments (9b) |
+| `bridge-queue` | `tools/run_code.cljc` | **decided in 9b, kept**: a bound, not a setting — settings travel per submission in `:bindings`, and a pool per agent multiplies the threads it exists to cap |
+| `skill-content-resolver` | `tools/read` | **done in 9b**: a binding (`read/*skill-resolver*`) the run sets from the agent's `:skills`; the load-time push is gone |
+| `theme-fns-atom` | `keybindings` | **done in 9b**: derived from the live theme at call time; nothing is installed |
 
 The tool-layer rows are `modules/app/src/kmet/agent/tools/` since 4f; the
 extension rows are `modules/agent/src/kmet/agent/extensions/`. Moving a file
@@ -4212,31 +4213,39 @@ stale and one was already true):
 
 **Three loose cells**, each measured to its setter's callers:
 
-- `run_code`'s bridge queue (`tools/run_code.cljc`) — the *decision* is whether a
-  per-agent pool buys isolation or loses the bound it exists for (a fixed worker
-  count is the point, not an accident). Slice 9b settles it either way: a pool on
-  the ctx, or a written reason it is one process-wide queue.
-- `read`'s skill-content resolver — set at **load time** in `skills.clj` with a
-  comment explaining the require cycle (`skills → registry → read`). The fix is
-  the same as the shell seam: the `:tools` row takes a `:skill-resolver` in its
-  config, injected from `:skills`, so the tool is built with it and the cycle
-  never appears.
-- `keybindings`' theme-fns cell — written by the TUI layout at build time
-  (`layout.clj`, two sites) and read by the key-hint renderers. The theme is a
-  value; the renderers should take it, or the `:config` row installs it.
+- `run_code`'s bridge queue (`tools/run_code.cljc`) — **settled in 9b, kept**: a
+  fixed worker count is a bound, not a setting. Everything an inner call needs
+  (cwd, shell, skill resolver, cancel signal, hooks) travels per submission in
+  the pipeline's `:bindings`, so two agents sharing the pool still run in their
+  own cwd and shell; a pool per agent would multiply the platform threads the
+  bound exists to cap, and would have to be disposed with its agent. The reason
+  is written at the cell.
+- `read`'s skill-content resolver — **done in 9b**, as a binding rather than the
+  predicted row config: the run sets `read/*skill-resolver*` from the agent's
+  own `:skills` service (`skills/content-resolver`), and `invoke`'s `:bindings`
+  carry it to `run_code`'s pool workers. A row config would have pinned every
+  agent of a composition to one skills table — the per-agent property the shell
+  seam had just established — and the binding also deletes the require cycle
+  outright (read never names skills; skills never names read).
+- `keybindings`' theme-fns cell — **done in 9b** by derivation: `key-hint` reads
+  the live theme at render time (`theme/dim`, `theme/fg (get-current-theme)`),
+  so neither `layout.clj` install site is needed and a theme change re-renders
+  through the same path it always did.
 
 **What the gate measures.** `modules/app/src` holds 23 `defonce`s; 15 are the
 ones the gate keeps (the extension host's nine bindings and caches, the debug
 cells and log paths, the session store's debug flag, `server.clj`'s ask route —
 `root.clj`'s process-root atom stays by decision: it is the one place a process
-root lives). The other eight are this landing: `bash_executor`'s shell options,
-`run_code`'s bridge queue, `read`'s resolver, `keybindings`' cell,
-`event_bus`'s listener table (which converges with 10b's boundary drain rather
-than with a row) and `registry.clj`'s process-handle pair — the fallback a rpc
-or server connection reads, which is the `:config`/`:auth` half of the
-re-point.
+root lives). The other eight were this landing. **Gone after 9a and 9b** (five
+cells): `bash_executor`'s shell options, `read`'s resolver, `keybindings`' cell,
+and — by decision, with the reason written at the site — `run_code`'s bridge
+queue, which is a thread *bound*, not a setting: it stays a `defonce` and joins
+the gate's kept list. **Still scheduled**: `event_bus`'s listener table (10b's
+boundary drain, not a row) and `registry.clj`'s process-handle pair (the
+fallback a rpc or server connection reads, the `:config`/`:auth` half of the
+re-point).
 
-**The slices — 9a is landed.** The shell settings are `:shell` now: a value
+**The slices — 9a and 9b are landed.** The shell settings are `:shell` now: a value
 each agent carries on its own ctx, provided by the agents factory from that
 agent's config, with `kmet.app.tools.bash/*shell*` bound by the run (and by the
 `!` path, and conveyed to `run_code`'s bridge workers through the pipeline's
@@ -4262,12 +4271,31 @@ ctx and its config; the gate test creates two agents with two prefixes and runs
 the tool under each (`kmet.app.tools.test-shell`).
 
 
-- **9a, `:shell`** — the row, its two call sites, the config wiring, and the
-  test that two contexts running bash get two shells and two prefixes. First
-  because it is the one cell the multi-session gate names outright: two shells
-  is a property, not a frame budget.
-- **9b, the three cells** — `run_code`'s decision, `read`'s resolver through the
-  tool factory's config, the key-hint theme as a value.
+**9b is landed too.** Three cells, three different answers, which is the point
+of slicing them together:
+
+- **`read`'s resolver became a binding.** `kmet.app.tools.read/*skill-resolver*`
+  is set by each run from the agent's own `:skills` service
+  (`kmet.app.skills/content-resolver`, built over the handle), and
+  `kmet.app.tools.invoke` conveys it to `run_code`'s pool workers beside the
+  cwd/shell/signal. The load-time push and its atom are gone, and with them the
+  require cycle the old comment named: `skills` no longer requires `read`, and
+  `read` never names `skills`. The predicted shape — the `:tools` row's config —
+  would have pinned one composition's skills table onto every agent, the
+  per-agent property 9a had just established; the run binds it for the same
+  reason it binds the shell. Both wirings are tested where the binding is in
+  effect (`kmet.app.loop.test-driver` observes it from inside the model call),
+  and `kmet.app.tools.test-read` holds the outside-a-run answer.
+- **The key-hint theme became a derivation.** `key-hint` reads the live theme at
+  call time (`theme/dim`, `theme/fg (get-current-theme)`), so the atom and both
+  `layout.clj` install sites are deleted; a theme change re-renders the hint
+  through the path it already used. `kmet.app.test-keybindings` switches themes
+  and asserts the hint's muted color follows, mutation-checked.
+- **The bridge queue stayed, on purpose.** A fixed worker count is a bound, not
+  a setting: settings travel per submission, and a pool per agent multiplies the
+  platform threads the bound exists to cap. The reason is written at the cell
+  and the cell moves to the gate's kept list.
+
 - **9c, `:sandbox`** — `run_code`'s bridge in an isolated realm, which is also
   where "a script sees the host it was mounted over" becomes a test rather than
   a promise.
@@ -4278,7 +4306,8 @@ the tool under each (`kmet.app.tools.test-shell`).
 
 Gate: two agents in one process run bash in two cwds with two shells and read two
 filesystems; `kmet.app.test-process-state` holds every remaining `defonce` with
-its reason, and the eight above are gone.
+its reason, and the eight above are gone — five at 9a/9b, the bridge queue kept
+for its written reason, the last two at 9c/9d and 10b.
 
 ### 10 — the server's phase 1
 
@@ -4580,18 +4609,19 @@ files and cuts two seams, it does not restructure the interactive loop.
   11 removes. Scheduled with 11: the docs move, and the topic map is updated
   in the same change.
 
-- **MARKED: `kmet.app.skills` pushes its resolver into the read tool at load
-  time.** `skills.clj` ends with `(read/set-skill-content-resolver! …)` and a
-  comment offering the require cycle as the reason. The effect is that
-  requiring `kmet.app.skills` for any reason — nine namespaces do, including
-  `registries` and the TUI's `layout` — rewires the process's read tool, and a
-  composition that never loaded skills still reads the first one's table. This
-  is the retired `kmet.agent.app-runtime` defect at a smaller size: a load side
-  effect standing in for a declared dependency — and no test names it, which is
-  why it has survived every landing around it. Marked in place (`MARKED` at the
-  site) and fixed by 9b, where the `:tools` row takes a `:skill-resolver` in its
-  config, injected from `:skills`, so the factory builds the tool with it and
-  9d's process-state test can hold the cell's absence.
+- **Fixed in 9b: `kmet.app.skills` used to push its resolver into the read tool
+  at load time.** `skills.clj` ended with `(read/set-skill-content-resolver! …)`
+  and a comment offering the require cycle as the reason, so requiring
+  `kmet.app.skills` for any reason — nine namespaces do, including `registries`
+  and the TUI's `layout` — rewired the process's read tool, and a composition
+  that never loaded skills still read the first one's table: the retired
+  `kmet.agent.app-runtime` defect at a smaller size. 9b removed the push and the
+  cell with it: the resolver is `read/*skill-resolver*`, bound by each run from
+  the agent's own `:skills` service and conveyed to `run_code`'s workers through
+  the pipeline's `:bindings`. Its test names the seam twice over
+  (`kmet.app.loop.test-driver` observes the binding from inside the model call;
+  `kmet.app.tools.test-read` holds the not-a-file answer outside a run), and 9d's
+  process-state test can hold the cell's absence.
 
 ## Gates
 

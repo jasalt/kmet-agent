@@ -25,6 +25,8 @@
             [kmet.app.sessions :as sessions]
             [kmet.app.system-prompt :as system-prompt]
             [kmet.app.test-support :as support]
+            [kmet.app.registry :as registry]
+            [kmet.app.tools.read :as read-tool]
             [kmet.srce.core :as srce]))
 
 (def ^:private sessions-dir
@@ -135,6 +137,34 @@
         ((:when-idle agents) handle)
         (is (= "AGENT_SHELL=one" (:command-prefix @seen))
             "and the run bound it for the tools it ran")))))
+
+(deftest a-run-binds-its-agents-skill-resolver
+  ;; An extension skill has no file: its <location> is served through read from
+  ;; the agent's own :skills registry. The run binds that resolver (landing 9b)
+  ;; — observed where the binding is in effect, inside the model call, so a
+  ;; missing binding fails here instead of in a configuration.
+  (let [{:keys [root agents]} (mounted)
+        seen (atom ::none)]
+    (with-redefs [cfg/get-api-key (fn [_] "test-key")
+                  llm/send-message
+                  (fn [opts]
+                    (reset! seen read-tool/*skill-resolver*)
+                    (future (when-let [done (:on-done opts)] (done :stop)) :done))]
+      (let [handle (create! {:root root :agents agents})]
+        (registry/register! (srce/get root :skills) :kmet/skill "ext-skill"
+                            {:name "ext-skill"
+                             :description "an extension's skill"
+                             :location "my-ext:skills/foo/SKILL.md"
+                             :body "the body"
+                             :extension "my-ext"}
+                            [:test :skills])
+        ((:send! agents) handle "hello" {:target :next-turn})
+        ((:when-idle agents) handle)
+        (is (fn? @seen) "the run bound a resolver")
+        (is (= "the body" (@seen "my-ext:skills/foo/SKILL.md"))
+            "and it answers the agent's extension skill locator")
+        (is (nil? (@seen "other-ext:skills/bar/SKILL.md"))
+            "a locator this registry does not hold answers nil")))))
 
 (deftest a-state-needs-a-prompt-builder
   ;; The builder has no default on purpose; a state without one fails here,

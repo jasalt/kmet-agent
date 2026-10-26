@@ -649,10 +649,7 @@
         ;; handling); persisted overrides load from keybindings.edn
         ;; (pi: KeybindingsManager.create)
          _ (let [kmgr (app-kb/create-agent-keybindings-manager)]
-             (tui-kb/set-global-keybindings! kmgr)
-             (app-kb/set-key-hint-theme-fns!
-              #(th/dim %)
-              #(th/fg (config-theme config) :muted %)))
+             (tui-kb/set-global-keybindings! kmgr))
 
         ;; Components (define before agent state so on-event can reference them)
          sp1 (spacer/make-spacer 1)
@@ -811,10 +808,7 @@
                (fn [msg] (tui/tui-flash! t msg :duration-ms 3000))
                (fn []
                  (let [current-theme (th/get-current-theme)]
-                  ;; key-hint theme fns first — the header rebuild re-runs
-                  ;; the content fns that use them
-                   (app-kb/set-key-hint-theme-fns!
-                    #(th/dim %) #(th/fg current-theme :muted %))
+                  ;; key hints read the live theme themselves (kmet.app.keybindings)
                   ;; transcript components subscribe to ui.subs/theme-sub —
                   ;; no walk needed (Stage 5); footer/indicator/resources
                   ;; keep their setter paths

@@ -17,6 +17,7 @@
             [kmet.app.tools.bash :as bash-tool]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.invoke :as invoke]
+            [kmet.app.tools.read :as read-tool]
             [kmet.app.tools.util :as tool-util]
             [kmet.app.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
@@ -705,6 +706,16 @@
   ;; calls than workers and derefs them in reverse waits for the queue ahead
   ;; of it. Bridge submissions cannot nest (script is excluded from the
   ;; surface), so the pool cannot deadlock on itself.
+  ;;
+  ;; Kept process-wide on purpose (landing 9b's decision): this is a *bound*,
+  ;; not a setting. Everything an inner call needs to know — the cwd, the
+  ;; shell, the skill resolver, the cancel signal, the hooks — travels per
+  ;; submission in the invocation pipeline's :bindings, so two agents sharing
+  ;; the pool still run in their own cwd and shell. A pool per agent would
+  ;; multiply platform threads by the number of agents (the thread *cap* is
+  ;; the reason the pool exists), and a per-agent pool would have to be
+  ;; disposed with its agent or leak its workers. Bounding concurrency
+  ;; process-wide is what a server of N connections wants anyway.
   (delay
     (let [q (java.util.concurrent.LinkedBlockingQueue.)]
       (dotimes [_ bridge-worker-count] (start-bridge-worker! q))
@@ -715,7 +726,8 @@
    pool and return the promise the script derefs. Unknown/inactive names
    settle immediately with {:is-error true} and the active list. The pool
    worker conveys no dynamic bindings, so the bridge passes the run's cancel
-   signal, session env, shell and cwd as the invocation pipeline's :bindings
+   signal, session env, shell, skill resolver and cwd as the invocation
+   pipeline's :bindings
    (bash reads *cancel-signal* and *shell*; read/write/edit resolve against
    *cwd*). The call
    runs through the shared pipeline (kmet.app.tools.invoke) with the run's
@@ -725,8 +737,8 @@
    assistant message. A call picked up after the script aborted — or whose
    before hook ran past the abort — is settled as cancelled and never
    executes: the pool queue cannot fire side effects past the deadline."
-  [{:keys [surface execute-tool signal ctx cwd session-env-fn shell hooks assistant-message
-           trace on-update]} name args]
+  [{:keys [surface execute-tool signal ctx cwd session-env-fn shell skill-resolver hooks
+           assistant-message trace on-update]} name args]
   (let [name (tool-name name)
         p (promise)]
     (if-not (contains? surface name)
@@ -766,6 +778,7 @@
                                                  :bindings {:signal signal
                                                             :session-env-fn session-env-fn
                                                             :shell shell
+                                                            :skill-resolver skill-resolver
                                                             :cwd cwd})))
                               result (invoke/finish-tool-call
                                       (assoc call :after-hook (:after hooks))
@@ -960,6 +973,7 @@
         cwd (tool-util/cwd)
         session-env-fn bash-tool/*session-env-fn*
         shell bash-tool/*shell*
+        skill-resolver read-tool/*skill-resolver*
         hooks *tool-hooks*
         assistant-message *assistant-message*
         live? (atom true)
@@ -994,6 +1008,7 @@
                             :cwd cwd
                             :session-env-fn session-env-fn
                             :shell shell
+                            :skill-resolver skill-resolver
                             :hooks hooks
                             :assistant-message assistant-message
                             :on-update on-update

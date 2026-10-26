@@ -216,26 +216,25 @@
 
 ;; ─── Tool implementation ───────────────────────────────────────────────────
 
-;; Extension skill content resolver (set by kmet.app.skills). read cannot
-;; require skills (skills -> registry -> read would cycle), so skills pushes
-;; a locator resolver here at load time. Extension skills (ext:path locators,
-;; jar artifacts) have no filesystem path — the <location> in
-;; <available_skills> resolves through read from memory instead.
-(defonce ^:private skill-content-resolver (atom nil))
+(def ^:dynamic *skill-resolver*
+  "A fn of the raw read path answering an extension skill's SKILL.md text, or
+   nil — bound by a run from the agent's own `:skills` registry
+   (`kmet.app.skills/content-resolver`).
 
-(defn set-skill-content-resolver!
-  "Set the fn serving extension skill bodies through read. F receives the
-   raw read path and returns the SKILL.md text, or nil when the path is not
-   a known extension skill locator."
-  [f]
-  (reset! skill-content-resolver f)
+   Extension skills (an `ext:path` locator, a jar artifact) have no filesystem
+   path, so the <location> in <available_skills> resolves through read from
+   memory instead. This is a binding and not a process cell (landing 9b) for
+   the same reason the shell settings are: two agents may hold different skill
+   sets, and a tool's `execute` receives only its arguments — the run conveys
+   what it alone knows. A read outside a run (a test, a snapshot) simply has no
+   resolver and treats the path as a file."
   nil)
 
 (defn- resolve-skill-text
-  "The in-memory SKILL.md text for RAW-PATH when it names a registered
-   extension skill locator, or nil."
+  "The in-memory SKILL.md text for RAW-PATH when a bound resolver knows it, or
+   nil."
   [raw-path]
-  (when-let [f @skill-content-resolver]
+  (when-let [f *skill-resolver*]
     (try (f raw-path) (catch Exception _ nil))))
 
 (defn title

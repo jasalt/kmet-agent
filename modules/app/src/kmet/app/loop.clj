@@ -71,7 +71,9 @@
             [kmet.app.retry :as retry]
             [kmet.app.loop.stages :as loop-stages]
             [kmet.app.tools.util :as tools-util]
+            [kmet.app.skills :as skills]
             [kmet.app.tools.bash :as bash-tool]
+            [kmet.app.tools.read :as read-tool]
             [kmet.app.tools.run-code :as run-code-tool]
             [kmet.ai.auth :as auth]
             [kmet.app.session.core :as session]
@@ -1068,6 +1070,11 @@
                 ;; the agent's own :shell value (the row's, or one a preset
                 ;; shadowed on its ctx) — two agents run two shells
                 bash-tool/*shell* (some-> (srce/get (:ctx agent) :shell) deref)
+                ;; and its own skills: an extension skill's <location> is
+                ;; served through read from this agent's registry, not the
+                ;; process's (landing 9b)
+                read-tool/*skill-resolver*
+                (some-> (srce/get (:ctx agent) :skills) skills/content-resolver)
                 bash-tool/*session-env-fn*
                 (fn []
                   (bash-tool/session-env {:session (:session agent)

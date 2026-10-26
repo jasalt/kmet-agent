@@ -23,7 +23,6 @@
             [babashka.fs :as fs]
             [kmet.app.debug :as debug]
             [kmet.app.registry :as registry]
-            [kmet.app.tools.read :as read]
             [kmet.app.system-prompt :as system-prompt]
             [kmet.app.tools.registry :as tools-registry]
             [kmet.libs.yaml :as yaml]))
@@ -301,14 +300,14 @@
         (or deregister (fn [] nil)))
       (fn [] nil))))
 
-(defn- skill-content-for-path
-  "The SKILL.md text for RAW-PATH when it names a registered extension
-   skill locator, or nil. Matches the exact <location> (e.g.
+(defn skill-content-for-path
+  "The SKILL.md text for RAW-PATH when SKILL-LIST holds an extension skill
+   with that locator, or nil. Matches the exact <location> (e.g.
    `my-ext:skills/foo/SKILL.md`) and a cwd-joined absolute form (the model
    may join the location onto the working directory). Backslashes normalize
    to `/` first so Windows-joined paths resolve. File skills need no
    handling — they exist on disk."
-  [raw-path]
+  [skill-list raw-path]
   (let [p (str/replace (str raw-path) "\\" "/")]
     (some (fn [s]
             (when (and (:extension s) (seq (:location s)))
@@ -316,18 +315,21 @@
                 (when (or (= p loc)
                           (str/ends-with? p (str "/" loc)))
                   (or (:raw s) (:body s))))))
-          (registered-skills))))
+          skill-list)))
 
-;; tools.read cannot require this namespace (skills -> registry -> read
-;; would cycle), so the locator resolver is pushed there at load time.
-;;
-;; MARKED — a load side effect standing in for a dependency (new-app.md,
-;; "Drift found while planning"): every namespace that requires this one
-;; rewires the process's read tool, and a composition that never loaded skills
-;; would still read the first one's table. Landing 9b removes the push: the
-;; :tools row takes a :skill-resolver in its config, injected from :skills, so
-;; the factory builds the tool with it and the cycle never exists.
-(read/set-skill-content-resolver! (fn [p] (skill-content-for-path p)))
+(defn content-resolver
+  "A fn serving extension skill bodies from SKILLS, a `:skills` registry handle:
+   raw read path → SKILL.md text, or nil.
+
+   The handle is the argument (not the process registry) so a run binds the
+   resolver from the agent's own `:skills` service into
+   `kmet.app.tools.read/*skill-resolver*` — per run, so two agents may hold
+   different skill sets, and no require cycle: read never names this namespace."
+  [skills]
+  (fn [raw-path]
+    (skill-content-for-path
+     (mapv second (registry/entries skills :kmet/skill))
+     raw-path)))
 
 (defn get-skills
   []
