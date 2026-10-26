@@ -271,7 +271,10 @@ By default `:execute` receives `(fn [args])`. A tool that declares
               ;; signal      — the run's abort atom (true = user cancelled;
               ;;               poll it to abort long work, e.g. kill a child
               ;;               process — pi: AbortSignal)
-              ;; ctx         — the extension context (pi: ToolExecuteContext)
+              ;; ctx         — the extension context (pi: ToolExecuteContext),
+              ;;               plus `:srce-ctx`: the ctx the run executes in
+              ;;               (the agent's own, or the script's sandbox realm
+              ;;               — see § Sandbox realms below)
               {:content "..."})})
 ```
 
@@ -353,6 +356,19 @@ Other pi tool fields:
    ;; no model sets supportsOpenAIGrammarTools).
    :execute (fn [args] {:content "..."})})
 ```
+
+#### Sandbox realms (the `:srce-ctx` a tool context carries)
+
+Every tool call the loop runs hands its tool the run's own context under
+`:srce-ctx` — the agent's ctx, or, inside a `run_code` script, that run's
+**sandbox realm**: a child ctx where the agent's `:sandbox` value (`{:isolate
+#{…}}`, `kmet.app.sandbox`) says which service names do not resolve. A script
+therefore cannot read the composition's `:tools` table, `:shell` or
+`:workspace` through a tool it calls, while the run's own values — its tool
+surface, shell, cwd and skills — still reach the call through the tool
+invocation bindings. A tool that needs a service reads it from `:srce-ctx`; the
+key is absent when a caller runs a tool outside a run (an extension calling
+`ext/execute-tool` directly), and absent means no ctx, not a process default.
 
 #### Custom bash tools (`create-bash-tool`)
 

@@ -54,6 +54,24 @@
                          :content content
                          :is-partial true}))))
 
+(defn- tool-ctx
+  "The context a tool call executes with: the extension context (pi:
+   ToolExecuteContext) plus `:srce-ctx` — the ctx the run executes in, the
+   agent's own.
+
+   Rebuilt per call, so a tool sees the run it is part of rather than a
+   captured one; the loop hands it over because only the loop knows which
+   agent the call belongs to. A tool that reads a service reads it from here
+   (a process default is not a fallback), and `run_code` replaces the value
+   with its sandbox realm before a script's inner call goes out, so what a
+   script can reach through a tool is the boundary and not the composition
+   (`kmet.app.sandbox`, new-app.md 9c). Key absent — a caller outside a run —
+   means no ctx, not the process's."
+  [agent]
+  (cond-> (extensions/build-extension-context)
+    ;; absent when the state has no ctx, so "no :srce-ctx" reads as "no ctx"
+    (:ctx agent) (assoc :srce-ctx (:ctx agent))))
+
 (defn- prepare-tool-call!
   "Run one tool call's preparation: emit :tool-execution-start, then either settle
    it immediately when the tool is not in the request's captured tool map (pi:
@@ -166,7 +184,7 @@
                                                    :tool-call-id tc-id
                                                    :assistant-message assistant-msg
                                                    :signal (:signal agent)
-                                                   :ctx (extensions/build-extension-context)
+                                                   :ctx (tool-ctx agent)
                                                    :tools declared-tools
                                                    :on-update (tool-on-update agent tc-id)}))]
                                      (settle! tc result)
@@ -216,7 +234,7 @@
                     :tool-call-id tc-id
                     :assistant-message assistant-msg
                     :signal (:signal agent)
-                    :ctx (extensions/build-extension-context)
+                    :ctx (tool-ctx agent)
                     :tools declared-tools
                     :on-update (tool-on-update agent tc-id)}))
             result (finish-tool-call! agent assistant-msg prepared args raw)

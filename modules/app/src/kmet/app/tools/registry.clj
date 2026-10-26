@@ -226,7 +226,10 @@
    opts — {:on-update (fn [partial]) streaming callback (passed to the
    tool's execute when it declares :streams?); :signal — cancel atom; :ctx
    — extension context map for :contextual? tools (pi: execute(toolCallId,
-   params, signal, onUpdate, ctx)); :tools — a name → tool map override for
+   params, signal, onUpdate, ctx)), carrying the run's ctx under :srce-ctx
+   when the call belongs to one (`kmet.app.loop.tool-exec`, and the sandbox
+   realm `run_code` substitutes for a script's inner calls — `kmet.app.sandbox`);
+   :tools — a name → tool map override for
    the run_code sandbox, which passes its own surface so the script's listing
    is authoritative for dispatch (contributed sandbox tools are not in
    get-all-tools). A :contextual? tool's execute always receives 4 args

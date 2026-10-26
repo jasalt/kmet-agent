@@ -21,6 +21,7 @@
             [kmet.app.packages :as packages]
             [kmet.app.model-resolver :as resolver]
             [kmet.app.project-context :as context]
+            [kmet.app.sandbox :as sandbox]
             [kmet.app.session.compaction :as manual]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.core :as session]
@@ -255,6 +256,13 @@
         ;; child shadowing an ancestor's service), which is why this is not a
         ;; root row — the same reason :permissions is not one (new-app.md 9a).
         _ (srce/provide! child :shell (atom (shell/value config)))
+        ;; The script boundary is this agent's too (9c), and the same rule
+        ;; applies: a root row could never be narrowed for one agent. A
+        ;; preset runs in `:setup`, before this factory, so a preset that
+        ;; named a boundary already provided it — the factory fills in the
+        ;; default for every agent that did not (kmet.app.sandbox).
+        _ (when-not (srce/get child :sandbox)
+            (srce/provide! child :sandbox sandbox/default-value))
         engine-ref (atom nil)
         {:keys [state] runtime-cwd :cwd}
         (agent-state config child

@@ -19,11 +19,13 @@
             [kmet.app.tools.invoke :as invoke]
             [kmet.app.tools.read :as read-tool]
             [kmet.app.tools.util :as tool-util]
+            [kmet.app.sandbox :as sandbox]
             [kmet.app.debug :as debug]
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.host :as host]
             [kmet.libs.process :as kprocess]
             [kmet.libs.text :as text]
+            [kmet.srce.core :as srce]
             [sci.core :as sci]))
 
 ;; ─── Constants ────────────────────────────────────────────────────────────
@@ -963,7 +965,40 @@
                         (seq calls) (assoc :calls calls))}
       truncation (assoc :truncation truncation))))
 
+(declare run-code*)
+
+(defn- script-realm
+  "The realm the script's inner tool calls execute in: a child of the run's
+   ctx blocked for the names the agent's `:sandbox` value names, so a tool a
+   script calls cannot read the composition's services from the ctx it was
+   handed (`kmet.app.sandbox`, new-app.md 9c).
+
+   nil when there is nothing to add — the caller passed no run ctx (extension
+   code calling the tool outside a run), or the value isolates nothing (a
+   composition that said so)."
+  [ctx]
+  (when-let [base (:srce-ctx ctx)]
+    (let [realm (sandbox/realm base (or (srce/get base :sandbox)
+                                        sandbox/default-value))]
+      (when-not (identical? realm base) realm))))
+
 (defn- run-code
+  "RUN-CODE* under the run's sandbox realm. The realm exists for the call's
+   lifetime and is detached when the script returns; a fire-and-forget inner
+   call still holds the ctx value, which keeps resolving exactly as it did."
+  [opts]
+  (let [realm (script-realm (:ctx opts))]
+    (try
+      (run-code* (if realm (update opts :ctx assoc :srce-ctx realm) opts))
+      (finally
+        (when realm
+          ;; a detach failure is a leak in the tree, not the script's result:
+          ;; reported, never thrown over the call
+          (try (srce/detach! realm)
+               (catch Throwable t
+                 (debug/log "run_code: sandbox realm detach failed: " t))))))))
+
+(defn- run-code*
   [{:keys [code timeout limits signal ctx on-update
            get-all-tools get-contributed-tools select-tools execute-tool]}]
   (let [timeout-ms (normalize-timeout timeout)

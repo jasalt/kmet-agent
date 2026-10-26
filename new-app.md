@@ -353,7 +353,7 @@ rewrite.
 | `:events` `:hooks` | three event domains (session/agent/capability) + 5 dispatch modes + hook chains | `event-bus.clj`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
-| `:workspace` `:fs` `:shell` `:subprocess` `:sandbox` `:permissions` | cwd/project identity, filesystem, shell, process groups, sandbox policy, approval policy | `:permissions` **landed** (4c-iii-a, `kmet.app.permissions`: a policy value the gate reads per agent; no default policy is mounted — see below); the rest is `tools/bash`, `bash-executor`, `libs/path`, `tools/read/write/edit` |
+| `:workspace` `:fs` `:shell` `:subprocess` `:sandbox` `:permissions` | cwd/project identity, filesystem, shell, process groups, sandbox policy, approval policy | `:permissions` **landed** (4c-iii-a, `kmet.app.permissions`: a policy value the gate reads per agent; no default policy is mounted — see below); `:shell` **landed** (9a, `kmet.app.tools.shell`: a value per agent) and `:sandbox` at 9c (`kmet.app.sandbox`); `:workspace`/`:fs` needed no service — `kmet.libs.path` already resolves against `(:cwd ctx)` and the run binds `*cwd*`, verified at 9d; `:subprocess` is the tool layer's own spawn (`tools/bash`, `bash-executor` — one spawn per execution, no cell) |
 | `:config` `:auth` | layered settings, credentials | `config.clj`, `ai/auth.clj` |
 
 **One key per seam, one implementation per scope.** Plugins write
@@ -609,17 +609,20 @@ difference between "two sessions" and "two isolated sessions":
 
 | State | Where | Fix |
 |---|---|---|
-| `shell-options` | `bash_executor.clj` `defonce` | per-context `:shell`/`:subprocess` service value |
+| `shell-options` | `bash_executor.clj` `defonce` | **done in 9a**: a per-agent `:shell` value (`kmet.app.tools.shell`), bound by the run and by the `!` path |
+| `srce/isolate` unused | the kernel had realms and no app caller | **done in 9c**: a per-agent `:sandbox` value; `run_code`'s bridge executes a script's inner calls in a realm of the run's ctx |
 | `System/getProperty "user.dir"` fallback | `libs/path.clj` | **done** — it resolves against `(:cwd ctx)`; the remaining reads are defaults (see 9's audit) |
 | `cli-flag-values`, `extension-binding`, `extensions` | `modules/app/src/kmet/app/extensions/core.cljc` | **superseded by 5i**: the host's bindings are process-wide by design, and the ctx is the per-agent world; landing 9 leaves them with a written reason |
 | `bridge-queue` | `tools/run_code.cljc` | **decided in 9b, kept**: a bound, not a setting — settings travel per submission in `:bindings`, and a pool per agent multiplies the threads it exists to cap |
 | `skill-content-resolver` | `tools/read` | **done in 9b**: a binding (`read/*skill-resolver*`) the run sets from the agent's `:skills`; the load-time push is gone |
 | `theme-fns-atom` | `keybindings` | **done in 9b**: derived from the live theme at call time; nothing is installed |
 
-The tool-layer rows are `modules/app/src/kmet/agent/tools/` since 4f; the
-extension rows are `modules/agent/src/kmet/agent/extensions/`. Moving a file
-did not take a seam: `shell-options` is still a `defonce` in `bash_executor`,
-and landing 6 is what makes it a service.
+The tool-layer rows are `modules/app/src/kmet/app/tools/` since 4f; the
+extension rows are `modules/app/src/kmet/app/extensions/`. Moving a file did
+not take a seam, but landing 9 did: `shell-options` is gone, `read`'s resolver
+and the key-hint theme are derived, and the cells that remain are the ones
+`kmet.app.test-process-state` holds with a reason each — the extension host's
+own bindings, the debug switch, the caches, and the one published root.
 
 Already per-session and safe: `Engine/:cwd`, tool `:cwd` resolution,
 `subscribe!` delivery, session files (EDNL on disk).
@@ -3504,40 +3507,26 @@ own, not a tweak.
 
 ## The remaining plan
 
-The ledger above ends at 7b-ii. This is the work that is left, in the order the
-dependencies allow, with the measurement that decided each cut. Four landings,
-five decisions, and an explicit list of what the plan does *not* reopen.
+The ledger above ends at 7b-ii. Landings 5a–5n, 6, 8, T, 9 and 11 have landed
+since; this section is the current answer to "what is left", with the
+measurement behind each cut.
 
 ### What is left, measured
 
-`modules/agent/src` is 8 files and 1,823 lines, and every one of them is
-kmet1's to delete at retirement — no edge blocks it any more:
+Everything kmet1 carried is gone, and 9's execution seams are in: `:shell`,
+`:workspace`/`:fs`, `:sandbox`, `:llm`/`:models` and `:modes` are services or
+verifications now, and `kmet.app.test-process-state` is the ledger of the
+process cells that remain, each with a written reason. What is left is the
+server's own work, plus two loose ends:
 
-| Block | Files | Lines | Edges that hold it | Cut |
-|---|---|---|---|---|
-| kmet1's own modes (`modes/print`, `modes/rpc`, `modes/rpc_client`) | 3 | 1,150 | — | deleted at retirement, untouched until then |
-| kmet1's entry and process (`cli`, `core`, `jvm_main`, `app_runtime`, `tools/core`) | 5 | 739 | — | deleted at retirement; both successors landed at 5l-ii: `kmet.app.root` for the process root, `kmet.app.registries/process-handle` for the registry routing |
-
-Three things are missing rather than blocked, and they are the rest of the plan:
-
-- **`:ui` has its providers; the server's per-connection port is left.** 5k
-  landed the contract (`kmet.app.ui`) and `kmet.ui.headless`, and 5l-iii landed
-  `kmet.ui.tui`'s terminal provider (`:kind :terminal`, dialogs answered by the
-  running TUI) with the approval seam. A second toolkit provider (`ui-tk`) is
-  separate development, not this plan's. The server stacks the headless bundle
-  but binds no port: two connections cannot bind different ones until 8's
-  per-agent surface (the host's front-end binding is one process atom); rpc's
-  dialog `:request` over the wire is 10a's command table.
-- **The execution seams are absent** — `:shell`, `:subprocess`, `:workspace`,
-  `:fs`, `:sandbox`, `:llm`/`:models`, `:config`/`:auth`, `:modes` — and the
-  cells they replace are all still there: `tools/bash_executor.clj:31`
-  (`shell-options`), `tools/read.clj` (`skill-content-resolver`),
-  `tools/run_code.cljc` (`bridge-queue`), `keybindings.clj`
-  (`theme-fns-atom`), `libs/path.clj` (`user.dir`).
-- **The submission point and the durable agent have no consumer.**
-  `kmet.app.runtime/boundary!` has no non-test caller (`submit!`'s only reader
-  is `kmet.app.test-runtime`), and `resume!` still refuses
-  `:kmet.app/unsupported-op`.
+| What | Where | Why it is left | Cut |
+|---|---|---|---|
+| `resume!` by session id | `kmet.app.loop.driver`'s factory throws `:kmet.app/unsupported-op` on `:resume` | a handle id is not a session: the registry's `resume!` passes the id it once published, and an agent brought back as a fresh session would answer with a different conversation and say nothing | 10a's last gate item — needs an agent record that outlives the handle |
+| the boundary drain | `kmet.app.runtime/submit!` and `boundary!` have no production caller (`submit!`'s only reader is `kmet.app.test-runtime`); the loop emits through `kmet.app.event-bus` → `srce/boundary!` | nothing drains the submission queue at `:agent-settled`, so a tool thread's mount is invisible mid-turn and live only by the queue's single consumer | 10b, with the static submit guard promised at 7b-i |
+| transport hardening | `kmet.app.modes.server` | no bearer token, no `--max-sessions`, no per-client bounded queue with the `:lag` policy and a visible `:stream-gap`, no idle reaping; `:remember!` is called and nothing stores the decision at its scope | 10c |
+| `scripts/bench/`'s three harnesses | `scripts/bench/kmet_frame_bench.clj`, `kmet_perf_bench.clj`, `kmet_render_bench.clj` | they require `kmet.agent.modes.interactive` and `kmet.agent.tools.core`, which went at 5l-iii and 11 (deleted module), so they have not loaded since — and they are outside every gate, so nothing noticed | rewrite against `kmet.ui.tui.interactive` and the handle-taking registry, or delete |
+| the server's user-facing page | `docs/` | `profiles.md` documents `--profile server --port` and `rpc.md` the protocol, but the connection rules — one session per connection, the approval route, the token, `--max-sessions` — belong on a page of their own | with 10c |
+| the `:config`/`:auth` half of 9 | `kmet.app.config/load-config` is process-global; `:auth` is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal) | with 10c, where a connection first has a config of its own |
 
 ### The interactive front end first
 
@@ -3635,22 +3624,20 @@ row's docstring describes the handle path a reader will find.
 | 5n | **landed** — `app` (the entry + the modes), no move | ~450 src, ~250 test | 5l | `-p @tasks.md`, `/skill:` expansion, `--thinking`/`--list-models`/`--debug`/`--generate-models`/`--session-dir`/`--my-ext-flag`, and `config` with no rank-4 load |
 | 8 | `ui`, `app` (the handle's op set, the mode listeners) | ~900 changed | 5n | a TUI run's agent is in `:agents`; no `session.driver` mutator left in `kmet.ui.tui.*`; two print runs settle their own promises |
 | T | **landed** — `ui`, `app` (the preset seam, the last driver edges, the tests' home) | ~450 src, ~4,800 tests moved | 8 | every TUI path a test drives creates through `:agents`; a preset reaches a run's child ctx; no `session.driver` in `kmet.ui.tui.*` |
-| 9 | `app`, `libs` | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells |
-| 10 | `app` | ~1,100 | 8 (10a); 9 (10b/10c) | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
-| 11 | all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
+| 9 | **landed** — `app` (`:shell`, `:sandbox`, the tool context's `:srce-ctx`), `libs` (verified) | ~1,500 adapted | 8 | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) |
+| 10 | `app` | ~1,100 | 10b/10c are the remainder | every `docs/rpc.md` command answers (or is a documented refusal); a tool thread's mount lands at the next turn; two sessions isolated |
+| 11 | **landed** — all modules | −8,500, ~240 renames | 8, 10a | full gates + pi-alignment, no `kmet.agent.*` but the ABI |
 
-**The execution order is T → 10a → 11 → 9 → 10b/10c** (8 is done). The
-interactive front end goes first: it is what the app is used through, its
-remaining work is small and measured, and 10a's table is invisible to a TUI
-user. Then retirement is wanted as soon as it can be taken, so the schedule
-follows what each landing actually blocks on, not the landing numbers. 11's
-hard prerequisites were a complete 8 (the TUI reads a handle, so
-`session.driver`'s engine path can go — T-4 took the last TUI call out) and 10a (kmet1's rpc modes are deleted by 11, and
-kmet2 must already answer the whole `docs/rpc.md` table, or the protocol
-regresses). 10b and 10c are kmet2's own boundary and transport
-work — the old app has no server to compare against — so they follow
-retirement; 9's isolation seams are also kmet2-only and now land after the
-rename pass, which keeps that pass out of files 9 would touch.
+**The execution order was T → 10a → 11 → 9 → 10b/10c, and all but the last
+have landed.** The interactive front end went first because it is what the app
+is used through; 10a's table is invisible to a TUI user. Retirement followed as
+soon as it could be taken: its hard prerequisites were a complete 8 (the TUI
+reads a handle, so `session.driver`'s engine path could go — T-4 took the last
+TUI call out) and 10a (kmet1's rpc modes were deleted by 11, and kmet2 must
+already answer the whole `docs/rpc.md` table, or the protocol regresses). 9's
+isolation seams landed after the rename pass, which kept that pass out of the
+files 9 would touch. 10b and 10c are kmet2's own boundary and transport work —
+the old app has no server to compare against — so they are what remains.
 
 `ui-tk` is not scheduled here: it is its own development, and when it resumes
 it lands over the handle-based front end 8 produces — a second toolkit is worth
@@ -4205,9 +4192,9 @@ stale and one was already true):
 | seam | what stands in today | the slice |
 |---|---|---|
 | `:shell` / `:subprocess` | `bash_executor`'s `defonce shell-options`, applied inside `execute-bash` as a default; written once per process by `config/load-config`, read by the tool (`tools/bash.clj`) and the TUI's `!` path (`ui/…/turn.clj`) | a `:shell` row provides `{:shell-path :command-prefix}`; both call sites read the service and pass the values explicitly (which `execute-bash` already accepts, and pi reads them at tool creation too); the cell dies |
-| `:workspace` / `:fs` | **already true**: `kmet.libs.path` resolves against `(:cwd ctx)`, the tool layer threads `*cwd*`, `execute-bash` takes `:cwd` | a verification, not a refactor — prove two agents in two cwds touch no common file; the remaining `System/getProperty "user.dir"` reads are *defaults* (a temp-file dir, a UI's base path) and get a written reason or a `:cwd` |
-| `:sandbox` | nothing: `srce/isolate` exists in the kernel and no app code calls it | `run_code`'s tool bridge mounts in an isolated realm, so the script cannot see the host's `:tools`/`:shell`/`:workspace`; the realm boundary is the row's value |
-| `:llm` / `:models` | the catalog is data, and a run's model lives on its handle | verification only: two agents on two models, no cell to move |
+| `:workspace` / `:fs` | **already true**: `kmet.libs.path` resolves against `(:cwd ctx)`, the tool layer threads `*cwd*`, `execute-bash` takes `:cwd` | a verification, not a refactor — **9d** proves two agents in two cwds touch no common file; the remaining `System/getProperty "user.dir"` reads are *defaults* (a temp-file dir, a UI's base path) and get a written reason or a `:cwd` |
+| `:sandbox` | nothing: `srce/isolate` exists in the kernel and no app code calls it | **landed at 9c**: `run_code`'s tool bridge mounts in an isolated realm, so the script cannot see the host's `:tools`/`:shell`/`:workspace`; the realm boundary is the `:sandbox` value |
+| `:llm` / `:models` | the catalog is data, and a run's model lives on its handle | verification only: two agents on two models, no cell to move — asserted by `kmet.app.test-isolation` |
 | `:config` / `:auth` | `config/load-config` is process-global (and is what writes the shell cell); auth is one token cache for one principal | the config a connection brings belongs to the agent that connection created; `:auth` stays process-wide **by decision** (one principal, documented) |
 | `:modes` | a row since 5j | the server row creates one mode per connection (6b) — nothing to move |
 
@@ -4232,20 +4219,26 @@ stale and one was already true):
   so neither `layout.clj` install site is needed and a theme change re-renders
   through the same path it always did.
 
-**What the gate measures.** `modules/app/src` holds 23 `defonce`s; 15 are the
-ones the gate keeps (the extension host's nine bindings and caches, the debug
-cells and log paths, the session store's debug flag, `server.clj`'s ask route —
-`root.clj`'s process-root atom stays by decision: it is the one place a process
-root lives). The other eight were this landing. **Gone after 9a and 9b** (five
-cells): `bash_executor`'s shell options, `read`'s resolver, `keybindings`' cell,
-and — by decision, with the reason written at the site — `run_code`'s bridge
-queue, which is a thread *bound*, not a setting: it stays a `defonce` and joins
-the gate's kept list. **Still scheduled**: `event_bus`'s listener table (10b's
+**What the gate measures.** The landing was measured against `modules/app/src`,
+which held 23 `defonce`s; three went at 9a/9b (`bash_executor`'s shell options,
+`read`'s resolver, `keybindings`' theme cell), and 20 remain there — plus the
+two `modules/ui/src` holds, the one terminal a process runs. The gate is
+`kmet.app.test-process-state`, and it is a ledger rather than a count: every
+cell is listed with the reason it is the process's, and both directions are
+checked — a cell with no reason fails, and a reason whose cell is gone fails
+too, so a stale entry cannot let the next cell of that name slip in. It reads
+the sources instead of loading them, and fails loudly on a `(defonce` it cannot
+read.
+
+**By decision, with the reason written at the cell**: `run_code`'s bridge queue
+is a thread *bound*, not a setting — the worker count caps concurrent tool
+executions process-wide, and everything per-run travels in the submission's
+`:bindings` (9b). **Still scheduled**: `event_bus`'s listener table (10b's
 boundary drain, not a row) and `registry.clj`'s process-handle pair (the
 fallback a rpc or server connection reads, the `:config`/`:auth` half of the
-re-point).
+re-point). Both are in the ledger with those reasons.
 
-**The slices — 9a and 9b are landed.** The shell settings are `:shell` now: a value
+**The slices — 9a, 9b, 9c and 9d are landed.** 9a made the shell settings `:shell`: a value
 each agent carries on its own ctx, provided by the agents factory from that
 agent's config, with `kmet.app.tools.bash/*shell*` bound by the run (and by the
 `!` path, and conveyed to `run_code`'s bridge workers through the pipeline's
@@ -4301,18 +4294,50 @@ of slicing them together:
   platform threads the bound exists to cap. The reason is written at the cell
   and the cell moves to the gate's kept list.
 
-- **9c, `:sandbox`** — `run_code`'s bridge in an isolated realm, which is also
-  where "a script sees the host it was mounted over" becomes a test rather than
-  a promise.
-- **9d, the verification and the guard** — two agents, two cwds, two shells, two
-  filesystems as one test; and `kmet.app.test-process-state`, which holds the
-  23-name `defonce` list with a reason per entry, so the gate is a test that
-  fails when someone adds a cell instead of a sentence in a markdown table.
+**9c is landed: `:sandbox`, and the realm the bridge runs in.** A script is
+not a ctx — it is an SCI context with a tool surface — so the boundary around
+it is the context its inner tool calls execute against. The seam is `:srce-ctx`
+in the tool context: the loop hands every call the run's own ctx, and
+`run_code` replaces it with a **realm** (`srce/isolate`) of that ctx blocked
+for the names the agent's `:sandbox` value names — `:tools`, `:shell`,
+`:workspace` by default (`kmet.app.sandbox`). A tool a script calls therefore
+cannot read the composition's table or seams from the ctx it was handed, while
+what a script *does* reach — its filtered surface, the run's shell, cwd and
+skills — travels in the invocation pipeline's bindings, which is exactly what
+9a/9b established them for. The realm is per call and detached when the
+script returns; a fire-and-forget inner call keeps resolving, it just stops
+being in the tree.
 
-Gate: two agents in one process run bash in two cwds with two shells and read two
-filesystems; `kmet.app.test-process-state` holds every remaining `defonce` with
-its reason, and the eight above are gone — five at 9a/9b, the bridge queue kept
-for its written reason, the last two at 9c/9d and 10b.
+Placement follows the kernel rule 9a learned: a child may not shadow a service
+its ancestor provides, so the value is **per agent**, like `:shell` and
+`:permissions`. The agents factory provides the default on every agent's ctx
+and a preset that mounts the `kmet.app.sandbox/plugin` row on the child ctx
+first wins — a preset names a bundle, and a bundle is how a profile says what
+one agent's world is. The safe default is the boundary, not no boundary: a
+composition that mounted nothing still gives each script a realm, the way the
+`:approvals` row's default denies rather than allows.
+
+`kmet.app.test-sandbox` is the gate, mutation-checked at both links: a
+`:contextual?` probe called by the loop sees the agent's `:tools`/`:shell`/
+`:workspace`, and the same probe called from inside a script sees none of them
+— dropping either the loop's `:srce-ctx` or the realm substitution fails it.
+The tool context's new key is documented in the extension contract
+(`extension.md` § Sandbox realms).
+
+**9d is landed: the verification and the guard.** `kmet.app.test-isolation`
+boots the app's own rows and creates two agents with two sessions (two cwds),
+two shell prefixes and two models, then runs a turn on each asking for `bash`
+(`pwd`) and `read` (a relative `marker.txt`): each agent answered in its own
+shell, its own cwd and its own filesystem, and each read its own file. The
+`:workspace`/`:fs` and `:llm`/`:models` rows of the audit are exactly this
+test — nothing moved for them, and that is the finding. `kmet.app.test-process-state`
+is the ledger described above.
+
+Gate: two agents in one process run bash in two cwds with two shells and read
+two filesystems (`kmet.app.test-isolation`); `kmet.app.test-process-state`
+holds every remaining `defonce` with its reason, both directions, and a new
+cell without a sentence fails it; a script's inner tool call resolves no host
+service (`kmet.app.test-sandbox`).
 
 ### 10 — the server's phase 1
 
