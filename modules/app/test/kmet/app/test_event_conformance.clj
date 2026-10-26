@@ -14,7 +14,10 @@
             [kmet.app.events :as app-events]
             [kmet.app.loop :as loop]
             [kmet.app.loop.test-support :as support]
-            [kmet.app.config :as cfg]))
+            [kmet.app.config :as cfg]
+            [kmet.test-utils :as tu]))
+
+(t/use-fixtures :each tu/with-extension-host)
 
 ;; ─── The headless renderer ────────────────────────────────────────────────
 

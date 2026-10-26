@@ -39,10 +39,6 @@
     'process-handle
     "The one handle a process publishes (`publish-process-handle!`): the extension host and the extension ABI address registries by name, outside any one agent's ctx. The publishing owner hands back the handle it replaced."}
 
-   "modules/app/src/kmet/app/event_bus.clj"
-   {'listeners
-    "The extension ABI's process listener table: extensions subscribe at load, before any agent exists, and their lifetime is load → unload. The kernel's `:events` service is the composition's copy; the two converge at 10b's boundary drain."}
-
    "modules/app/src/kmet/app/extensions/core.cljc"
    {'extensions
     "The loaded extension records. An extension installs into the process's host and unloads from it; the host is process-level by decision (new-app.md § The extension host)."
@@ -129,7 +125,7 @@
 (deftest the-guard-sees-the-trees-it-guards
   (is (every? fs/directory? source-root)
       "every scanned tree exists — the guard cannot silently narrow")
-  (is (= 22 (count (mapcat (fn [[file cells]] (map (fn [n] [file n]) (keys cells)))
+  (is (= 21 (count (mapcat (fn [[file cells]] (map (fn [n] [file n]) (keys cells)))
                            process-cells)))
       "the ledger's own size; a cell added or removed updates the map")
   (testing "the scan finds the cells the ledger lists"
