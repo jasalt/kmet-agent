@@ -7,9 +7,8 @@ rather than in the user-facing `docs/` directory: see
 [`modules/loader/src/kmet/loader/loader.md`](../modules/loader/src/kmet/loader/loader.md),
 [`modules/srce/src/kmet/srce/srce.md`](../modules/srce/src/kmet/srce/srce.md),
 [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md), and
-[`pi-alignment.md`](pi-alignment.md). The app's own design and landing ledger
-is [`new-app.md`](../new-app.md); temporary analysis notes (`run_code.md`,
-`perf.md`, `jolt-bugs.md`, `tcl.md`, `fix.md`) remain at the repository root by
+[`pi-alignment.md`](pi-alignment.md). Temporary analysis notes (`run_code.md`,
+`perf.md`, `jolt-bugs.md`, `tcl.md`) remain at the repository root by
 convention.
 
 ## Project structure
@@ -114,9 +113,6 @@ kmet/app/
 Each row names its own file (`tools.clj`, `sessions.clj`, `extensions.clj`,
 `agents.clj`, …): a row is a `srce` plugin whose `apply` provides its service,
 and `registries.clj` is the router behind them.
-
-`new-app.md` is the app's own map: each landing's design and the file/namespace
-rules live there, and its ledger is the authority on what a row provides.
 
 ### The front ends (`modules/ui/src/kmet/ui`)
 

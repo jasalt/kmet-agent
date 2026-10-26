@@ -2,7 +2,7 @@
 
 Implementation note for the `kmet.srce.*` module, beside its code. kmet2's
 application architecture — services, agents, sessions, profiles, landings — is
-in [`new-app.md`](../../../../../new-app.md); this file is the kernel only: its
+in `new-app.md`; this file is the kernel only: its
 ctx model, the lifecycle, the plugin contract, the contracts the tests pin, and
 what was deliberately left out.
 
@@ -16,7 +16,7 @@ thing every other part is wired through. It stays clear of `kmet.kernel`,
 Port the **concepts** that make Cordis a meta-framework, not the vendored
 member list. A mechanism is in the kernel only if all three hold:
 
-1. [`new-app.md`](../../../../../new-app.md) needs it (a service, an agent, a profile, a UI
+1. `new-app.md` needs it (a service, an agent, a profile, a UI
    provider),
 2. it is what separates a kernel from a service locator, and
 3. it cannot be added later without changing every caller.
@@ -292,7 +292,7 @@ spelling. One shape, thrown — `normalize-inject` is not total, and
 An optional dependency participates in the **provider set** like a required
 one: absent contributes `:srce/absent`, present contributes the provider fiber's
 `uid`. The set is the epoch, and the epoch is what makes `{:ui :optional}`
-"upgrade when a richer UI attaches" ([`new-app.md`](../../../../../new-app.md), "Pluggable
+"upgrade when a richer UI attaches" (`new-app.md`, "Pluggable
 UI").
 
 ### refresh: a fixpoint pass, not an epoch race
@@ -583,7 +583,7 @@ deleted: a file in the load path for data that is already in code), and gave
 kmet2 the modes over the ctx table;
 `kmet.app.event-bus` re-exports the names and keeps its process-level table,
 its owner/scope and its three emitters. That is the landing rule
-([`new-app.md`](../../../../../new-app.md): "kmet2 uses the new mechanism, kmet1 still uses the old
+(`new-app.md`: "kmet2 uses the new mechanism, kmet1 still uses the old
 one"), and one contract test asserts the same delivery behaviors against both
 backends so the pair cannot drift. Delegating instead would have taught the
 app's bus kmet1's store-node scoping — a value that dies with the store at
@@ -711,7 +711,7 @@ an awaitable queue. The light kernel answers with a rule:
   whole distinction; "safe but late" is not a licence for `dispose!`.
 - **The app marshals.** Plugin work, reloads and approvals are submitted to the
   loop; a tool thread that must mutate the kernel asks the loop to do it. This
-  is app policy, recorded in [`new-app.md`](../../../../../new-app.md), and
+  is app policy, recorded in `new-app.md`, and
   `kmet.app.test-submit-guard` holds it: the five calls that run plugin code
   (`plugin!`, `restart!`, `dispose!`, `dispose-plugin!`, `dispose-subtree!`)
   have a ledger of the owner-side call sites, each with a written reason, and
@@ -774,7 +774,7 @@ What the app loses with `ordered-registrations` is per-tag display order written
 in one place: each registry now owns its own (the atom handle's registration
 order), and `deregister-owner!` walks tags instead of matching key heads. The
 value-guarded stale deregister is the handle's entry-identity disposer. `/units`
-was not lost: 4d re-rendered it from the ctx tree ([`new-app.md`](../../../../../new-app.md),
+was not lost: 4d re-rendered it from the ctx tree (`new-app.md`,
 "Inspection"). `scope.md` went with the code in the same change: its surviving
 rules moved to the homes that implement them (ownership and display order into
 `kmet.app.registry`'s docstring, the snapshot and tool-capture rules into

@@ -11,7 +11,7 @@ change when behavior changes.
 |------|-------------------------|
 | Application layout and contributor workflow | [`docs/architecture.md`](docs/architecture.md) |
 | Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
-| kmet2 application: services, agents, sessions, profiles, landings | [`new-app.md`](new-app.md) |
+| kmet2 application: services, agents, sessions, profiles, landings | [`docs/architecture.md`](docs/architecture.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
@@ -24,7 +24,7 @@ change when behavior changes.
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
-`jolt-bugs.md`, `tcl.md`, `new-app.md` (kmet2's application side), and `fix.md`
+`jolt-bugs.md`, and `tcl.md`
 intentionally remain at the project root. (`engine.md` was folded/retired once
 the session-runtime split’s GUI-independent steps landed.)
 
@@ -33,7 +33,7 @@ the session-runtime split’s GUI-independent steps landed.)
 - `bb start` starts `kmet.app.core/-main`, the process entry; `jolt start` is
   the native-host equivalent. There is one app: kmet1 was retired with the
   module that carried it, so the `--app` flag is gone and every host runs the
-  same composition (the ledger is [`new-app.md`](new-app.md)).
+  same composition.
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
 - `bb nrepl` starts the development server on port 7801, blocks, and writes
