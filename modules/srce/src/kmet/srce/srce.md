@@ -575,22 +575,26 @@ at all: a listener hears what is emitted from the ctx it registered on and that
 ctx's subtree — the same rule as kmet1's node scoping, expressed by the tree
 instead of a stored node.
 
-**kmet1 keeps its own table until the loop lands.** Landing 2 moved the
-*vocabulary* (three fifths of `event-bus.clj`, pure data) into
+**The app's process-level table is the extension ABI's.** The *vocabulary*
+(three fifths of what was `event-bus.clj`, pure data) lives in
 `kmet.app.events`, declared as `:events` in the `:events` plugin map and read
 from that declaration (not from a generated projection — one was tried and
-deleted: a file in the load path for data that is already in code), and gave
-kmet2 the modes over the ctx table;
-`kmet.app.event-bus` re-exports the names and keeps its process-level table,
-its owner/scope and its three emitters. That is the landing rule
-(`new-app.md`: "kmet2 uses the new mechanism, kmet1 still uses the old
-one"), and one contract test asserts the same delivery behaviors against both
-backends so the pair cannot drift. Delegating instead would have taught the
-app's bus kmet1's store-node scoping — a value that dies with the store at
-4e — and the re-point belongs with the loop that is the last caller
-(landing 7). The two buses now agree on the *value* too: 4c-ii-b made a
-subscription's scope a ctx (`srce/inside?`), so kmet1 and kmet2 differ on the
-table and its lifetime, not on what a scope means.
+deleted: a file in the load path for data that is already in code), and the
+modes over the ctx table are the kernel's. `kmet.app.event-bus` re-exports the
+names and keeps the app's process-level table, its owner/scope and its three
+emitters, because the extension ABI registers there: an extension subscribes
+at load, before any agent exists, and its lifetime is load → unload rather
+than a fiber's. One contract test asserts the same delivery behaviors against
+both tables so the pair cannot drift. The two agree on the *value*: a
+subscription's scope is a ctx (`srce/inside?`), so the app table and the
+kernel table differ on where a listener lives, not on what a scope means.
+
+Retiring the app table is therefore not a mechanical re-point: the kernel
+dispatch walks *up* from the emitting ctx, while the app table also lets a
+process-wide emission reach a listener registered on a child ctx, so a
+retirement has to decide that rule as well as where an unscoped registration
+lands. The kernel's own rule is the one `srce.md` documents, and adopting it is
+what the retirement waits on.
 
 **Declaration lives above the kernel.** `:events` on a plugin is the
 declaration form: `plugin!` checks the shape (`{event {:mode :doc …}}`), the

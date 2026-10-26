@@ -128,9 +128,7 @@
          :system-prompt-fn (fn the state calls to rebuild the prompt when it must
          — an active-tools change — with :system-prompt-opts as its keyword
          arguments; default kmet.app.system-prompt/build-system-prompt, and a
-         process-bound caller passes its own — kmet1's Engine passes
-         kmet.app.skills/build-system-prompt, whose :skills default reads the
-         process registry),
+         caller that builds its own passes that instead —
          :system-prompt-opts (build-system-prompt options map, pi:
          _baseSystemPromptOptions),
          :compact-token-threshold, :auto-compact (default true, pi:
@@ -235,12 +233,12 @@ Be precise and concise in your responses."}}]
                     :ctx ctx}))
 
 (defn emit
-  "Route an event to the UI callback (:on-event) and to the listeners of both
-   event layers a kmet process can have: the kernel's, resolved from the run's
-   own ctx upward (kmet2's `:events` row, so a listener registered at the app's
-   scope hears what any agent under it did), and kmet1's process-level table
-   (`event-bus/emit-event!`), which is where the extension ABI still registers.
-   The two hold different listeners, so one event reaches each listener once.
+  "Route an event to the UI callback (:on-event) and to both listener tables a
+   process has: the composition's kernel table, resolved from the run's own ctx
+   upward (the `:events` row, so a listener registered at the app's scope hears
+   what any agent under it did), and the app's process-level table
+   (`event-bus/emit-event!`), which is where the extension ABI registers. The two
+   hold different listeners, so one event reaches each listener once.
 
    Neither sink can kill the loop: `emit-event!` reports a broken extension and
    the kernel's `invoke!` a broken listener.
@@ -249,10 +247,9 @@ Be precise and concise in your responses."}}]
    table — pi's agent_end split (`_emit` vs `_emitExtensionEvent`), where the
    public copy is decorated (`:will-retry`) and the extension runner's is
    emitted before the decoration. The app's layer is public — it is where a
-   kmet2 front end listens — so it gets the decorated copy, and only the table
-   gets the bare one. That split becomes per-listener when the extension ABI
-   moves onto the kernel: pi's two emissions, per subscription instead of per
-   arity."
+   front end listens — so it gets the decorated copy, and only the table gets
+   the bare one. That split becomes per-listener when the extension ABI moves
+   onto the kernel: pi's two emissions, per subscription instead of per arity."
   ([agent event] (emit agent event event))
   ([agent ui-event ext-event]
    (when-let [cb (:on-event agent)]

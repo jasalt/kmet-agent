@@ -7,9 +7,9 @@
    injection of drained messages into the context).
 
    Emits lifecycle events (see kmet.app.event-bus) to the :on-event callback
-   (UI) and to both event layers a process can have: the kernel's, from the
-   run's own ctx, and kmet1's process-level table that the extension ABI still
-   registers in (new-app.md, 7b-i).
+   (UI) and to both listener tables a process has: the composition's kernel
+   table, resolved from the run's own ctx upward, and the app's process-level
+   table that the extension ABI registers in.
 
    Auto-retry (pi: agent-session auto-retry): transient LLM errors are retried
    with exponential backoff (base-delay-ms * 2^(attempt-1)), up to max-retries.

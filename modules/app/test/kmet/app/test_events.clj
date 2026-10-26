@@ -1,17 +1,17 @@
 (ns kmet.app.test-events
   "kmet.app.events — the app's bus: the vocabulary and its wire projections, the
-   owner a registration carries, and the contract asserted over **both delivery
-   paths**.
+   owner a registration carries, and the contract asserted over **both listener
+   tables**.
 
    All six non-awaiting modes are the kernel's (`kmet.srce.core`, `srce.md` §5);
    what this namespace adds is what a kernel must not know — the event names,
-   and the owner kmet attaches to a registration (`{:data owner}`, reported by
+   and the owner an app registration carries (`{:data owner}`, reported by
    `srce/collect-all!`).
 
-   kmet2 dispatches over the kernel's listener table; kmet1 keeps its
-   process-level table until the loop re-points (`new-app.md`, landing 2). One
-   set of assertions over two backends is what keeps the pair in step while
-   both exist: a behavior added to one path and not the other fails here."
+   The composition dispatches over the kernel's ctx table; `kmet.app.event-bus`
+   keeps the app's process-level table, which is where the extension ABI
+   registers. One set of assertions over the two tables is what keeps them in
+   step: a behavior added to one and not the other fails here."
   (:require [clojure.test :refer [deftest is testing]]
             [kmet.app.event-bus :as bus]
             [kmet.app.events :as events]
@@ -95,11 +95,13 @@
       (finally (clear)))))
 
 (defn- bus-backend
-  "kmet1's process-level table, through its public API."
+  "The app's process-level table, through its public API — where the extension
+   ABI registers."
   []
   {:name "kmet.app.event-bus"
    :register (fn [type owner f] (bus/on-event type owner f))
-   ;; kmet1's emitters take the event only (its table is per type)
+   ;; the app table's emitters take the event only (its subscriptions are
+   ;; process-level, so there is no emitting ctx to scope by)
    :emit-last (fn [_type event] (bus/emit-event! event))
    :emit-all (fn [_type event] (bus/emit-event-collect! event))
    :boundary (fn [_type event] (bus/emit-boundary! event))
@@ -107,9 +109,9 @@
    :types bus/get-event-types})
 
 (defn- app-backend
-  "kmet2's ctx table. A fresh root per `:clear` — a root ctx is a value, so
-   clearing is dropping one, and the root fiber is already active, which is
-   what a registration needs."
+  "The composition's ctx table (`kmet.app.events/on!` over the kernel). A fresh
+   root per `:clear` — a root ctx is a value, so clearing is dropping one, and
+   the root fiber is already active, which is what a registration needs."
   []
   (let [ctx (atom (srce/root))
         at (fn [] @ctx)]

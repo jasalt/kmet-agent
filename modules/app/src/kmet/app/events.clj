@@ -23,9 +23,8 @@
    provision sits above the kernel.
 
    The **wire projections** (`wire-event`, `wire-error`) are not here: they are
-   transport, so they live with the transport that serializes (kmet1's
-   `kmet.app.event-bus` until `kmet.mode.print`/`kmet.mode.rpc` land), not
-   with the bus."
+   transport, so they live with the transport that serializes
+   (`kmet.app.event-bus`), not with the bus."
   (:require [kmet.srce.core :as srce]))
 ;; ── declarations ─────────────────────────────────────────────────────────
 ;; The vocabulary is declared by the plugin map at the end of this file and read

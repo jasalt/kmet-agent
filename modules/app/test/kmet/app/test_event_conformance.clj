@@ -180,12 +180,14 @@
    declaration with itself."
   #{:turn-end :agent-before-settle})
 
-(t/deftest test-the-two-dispatch-paths-agree-with-the-vocabulary
-  ;; The loop dispatches plain events as :emit on both event layers and the two
-  ;; actionable ones as boundaries (new-app.md, 7b-i). The vocabulary declares
-  ;; each name's mode, so a name sent down the wrong path would be dispatched by
-  ;; a different fold on one layer than on the other. A live turn produces both
-  ;; paths' events, and each one is checked against its declaration.
+(t/deftest test-every-emitted-event-matches-its-declared-mode
+  ;; The vocabulary declares each event's dispatch mode, and the loop dispatches
+  ;; plain events as :emit and the actionable ones (loop-boundary-names) as
+  ;; boundaries. The declaration is only honest if what a live turn emits goes
+  ;; down the path its own entry names — a name sent down the other fold would
+  ;; contradict its documentation. Both listener tables receive the same
+  ;; dispatch, so this is a property of the vocabulary plus the loop, not a
+  ;; comparison between two layers.
   (let [modes (into {} (map (juxt :name :mode)) (app-events/declared-events))
         emitted (set (map :type (run-scenario (stub-tool-then-text (atom 0)))))]
     (t/is (contains? emitted :turn-end) "the scenario reaches the boundary path")
