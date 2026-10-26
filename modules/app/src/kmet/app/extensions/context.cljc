@@ -737,7 +737,8 @@
        :path (canonical-path f)})))
 
 (defn- file-extension
-  "Resolve a single-file extension at F."
+  "Resolve a single-file extension at F. It has no manifest: the file's own
+   namespace is the entry, and the plugin var is found there by name."
   [f]
   {:name (fs/file-name f)
    :kind :file

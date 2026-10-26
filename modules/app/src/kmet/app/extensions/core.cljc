@@ -1439,10 +1439,13 @@
                                                 'plugin))]
                 (when-not plugin-var
                   (throw (ex-info (str "Extension " (:name ext) " does not define "
-                                       (if plugin-sym plugin-sym 'plugin)
-                                       " — an extension names a plugin var in "
-                                       "extension.edn, and a single-file extension "
-                                       "defines (def plugin {...}) in its namespace")
+                                       (if plugin-sym
+                                         (str plugin-sym " — that is the var its "
+                                              "extension.edn :plugin names")
+                                         (str "plugin — a single file has no "
+                                              "extension.edn, so its namespace "
+                                              "defines (def plugin {:name … "
+                                              ":apply …}) itself")))
                                   {:path path})))
                 (let [plugin (deref plugin-var)]
                   (when-not (and (map? plugin)

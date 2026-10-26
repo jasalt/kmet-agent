@@ -117,11 +117,12 @@ shipped layout (`src/` is the artifact root) and the catalog.
 
 ## Single-file extensions
 
-A `.clj` file in the extensions directory:
+A `.clj` file in the extensions directory — no manifest, so the plugin var is
+found by name:
 
 ```
 ~/.kmet/agent/extensions/
-└── hello_ext.clj        ; namespace must start with (ns ...) and define plugin
+└── hello_ext.clj        ; (ns ...) and (def plugin {:name … :apply …})
 ```
 
 ## Directory extensions (multi-file, `extension.edn`)

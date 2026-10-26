@@ -773,6 +773,31 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                        :else nil))))
            (fs/list-dir d)))))
 
+(defn- form-symbols
+  "Every top-level form of the Clojure file at PATH, read with reader
+   conditionals allowed. Throws nothing: an unreadable file reports as nil."
+  [path]
+  (try
+    (with-open [r (java.io.PushbackReader. (io/reader (fs/file path)))]
+      (loop [acc []]
+        (let [form (read {:eof ::eof :read-cond :allow :features #{:bb}} r)]
+          (if (= ::eof form) acc (recur (conj acc form))))))
+    (catch Exception _ nil)))
+
+(defn- defines-var?
+  "Does the Clojure file at PATH define VAR-NAME, either as `(def name …)` or
+   as `(<alias>/defplugin name …)`? The static half of the loader's `:plugin`
+   requirement."
+  [path var-name]
+  (boolean
+   (some (fn [form]
+           (and (list? form)
+                (let [head (first form)
+                      head-name (when (symbol? head) (clojure.core/name head))]
+                  (and (contains? #{"def" "defplugin"} head-name)
+                       (= var-name (second form))))))
+         (form-symbols path))))
+
 (defn- validate-bundled-dir!
   "D8 checks for one :dir artifact root: extension.edn with :name + a qualified
    :plugin var + a :loader vector that includes :sci, every source file's
@@ -807,7 +832,12 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
                              [".cljc" ".clj" ".bb"])]
         (when-not entry-file
           (bundle-error! (str "bundled extension " name
-                              ": plugin/entry namespace not found: " entry-ns))))
+                              ": plugin/entry namespace not found: " entry-ns)))
+        (when-not (defines-var? entry-file (symbol (clojure.core/name plugin)))
+          (bundle-error! (str "bundled extension " name ": " entry-file
+                              " does not define " (clojure.core/name plugin)
+                              " — the manifest's :plugin must name a var the "
+                              "namespace defines"))))
       (doseq [f (sort-by str (mapcat #(fs/glob root (str "**." %)) ["clj" "cljc" "bb"]))]
         (let [rel (str/replace (str (fs/relativize root f)) "\\" "/")
               expected (strict-ns-for-path rel)
@@ -834,16 +864,20 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" --jar \"$BIN\" -- \"$
    has no stable root in a binary")))))))))
 
 (defn- validate-bundled-file!
-  "A :file artifact is a single-file extension: the file must exist and
-   start with an (ns ...) form."
+  "A :file artifact is a single-file extension: the file must exist, start with
+   an (ns ...) form, and define its `plugin` var — a single file has no
+   extension.edn to name one."
   [name root]
   (when-not (fs/regular-file? (io/file root))
     (bundle-error! (str "bundled extension " name ": missing file " root)))
   (let [form (with-open [r (java.io.PushbackReader. (io/reader (fs/file root)))]
-               (read r))]
+               (read {:read-cond :allow :features #{:bb}} r))]
     (when-not (and (list? form) (= 'ns (first form)))
       (bundle-error! (str "bundled extension " name ": " root
-                          " does not start with an (ns ...) form")))))
+                          " does not start with an (ns ...) form"))))
+  (when-not (defines-var? root 'plugin)
+    (bundle-error! (str "bundled extension " name ": " root
+                        " does not define a plugin var (def plugin {…})"))))
 
 (defn validate-bundled-extensions!
   "Validate the committed bundled-extensions manifest against the checkout:

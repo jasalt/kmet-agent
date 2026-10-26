@@ -3,6 +3,7 @@
    per-extension ownership of registrations and resource paths, and rollback when
    loading or init fails."
   (:require [clojure.test :as t :refer [testing]]
+            [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.libs.host :as host]
             [kmet.app.extensions.core :as extensions]
@@ -33,6 +34,25 @@
                   " :apply (fn [_ctx api] (init api) nil)})\n")
         :append true)
   path)
+
+(t/deftest a-single-file-without-a-plugin-is-a-load-error
+  ;; a single file has no manifest to name the var, so the namespace defines it
+  (let [dir "target/test-ext-no-plugin"
+        f (str dir "/noplugin_ext.clj")]
+    (fs/delete-tree dir)
+    (fs/create-dirs dir)
+    (spit f "(ns noplugin-ext)\n(defn init [api] nil)\n")
+    (try
+      (let [result (extensions/load-extension! f)]
+        (t/is (some? (:error result)) "the load fails")
+        (t/is (str/includes? (str (:error result)) "no extension.edn")
+              "it says the single-file form defines the var itself")
+        (t/is (str/includes? (str (:error result)) "plugin"))
+        (t/is (not (some #(= "noplugin_ext.clj" (:name %))
+                         (extensions/get-loaded-extensions)))))
+      (finally
+        (extensions/clear-extensions!)
+        (fs/delete-tree dir)))))
 
 (t/deftest test-load-single-file-extension
   (extensions/clear-extensions!)

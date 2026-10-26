@@ -360,7 +360,8 @@
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/bad"))
       (spit (str dir "/bundle/extension.edn") "{:name \"bad\" :plugin bad.main/plugin :loader [:jolt]}")
-      (spit (str dir "/bundle/bad/main.clj") "(ns bad.main)\n(defn init [api] nil)\n")
+      (spit (str dir "/bundle/bad/main.clj")
+            "(ns bad.main)\n(def plugin {:name :ext/bad :apply (fn [_ _] nil)})\n")
       (is (thrown-with-msg? Exception #"must include :sci"
                             (@#'build/validate-bundled-dir! "bad" (str dir "/bundle"))))
       (fs/delete-tree dir)))
@@ -369,7 +370,8 @@
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/sloppy"))
       (spit (str dir "/bundle/extension.edn") "{:name \"sloppy\" :plugin sloppy.main/plugin :loader [:sci]}")
-      (spit (str dir "/bundle/sloppy/main.clj") "(ns wrong.place)\n(defn init [api] nil)\n")
+      (spit (str dir "/bundle/sloppy/main.clj")
+            "(ns wrong.place)\n(def plugin {:name :ext/sloppy :apply (fn [_ _] nil)})\n")
       (is (thrown-with-msg? Exception #"strict layout violation"
                             (@#'build/validate-bundled-dir! "sloppy" (str dir "/bundle"))))
       (fs/delete-tree dir)))
@@ -378,7 +380,8 @@
       (fs/delete-tree dir)
       (fs/create-dirs (str dir "/bundle/lr"))
       (spit (str dir "/bundle/extension.edn") "{:name \"lr\" :plugin lr.main/plugin :loader [:sci]}")
-      (spit (str dir "/bundle/lr/main.clj") "(ns lr.main)\n(defn init [api] nil)\n")
+      (spit (str dir "/bundle/lr/main.clj")
+            "(ns lr.main)\n(def plugin {:name :ext/lr :apply (fn [_ _] nil)})\n")
       (spit (str dir "/bundle/deps.edn") "{:deps {foo/bar {:local/root \"../x\"}}}")
       (is (thrown-with-msg? Exception #":local/root"
                             (@#'build/validate-bundled-dir! "lr" (str dir "/bundle"))))
@@ -391,7 +394,25 @@
       (spit f "(println :x)\n")
       (is (thrown-with-msg? Exception #"does not start with"
                             (@#'build/validate-bundled-file! "badfile" f)))
-      (fs/delete-if-exists f))))
+      (fs/delete-if-exists f)))
+  (testing "a single-file artifact without a plugin var"
+    ;; a single file has no extension.edn to name the var, so the check is
+    ;; that its namespace defines `plugin` itself
+    (let [f "target/test-bundle-noplugin.clj"]
+      (spit f "(ns noplugin)\n(defn init [api] nil)\n")
+      (is (thrown-with-msg? Exception #"does not define a plugin var"
+                            (@#'build/validate-bundled-file! "noplugin" f)))
+      (fs/delete-if-exists f)))
+  (testing "a dir artifact whose manifest names a var the namespace lacks"
+    (let [dir "target/test-bundle-novar"]
+      (fs/delete-tree dir)
+      (fs/create-dirs (str dir "/bundle/novar"))
+      (spit (str dir "/bundle/extension.edn")
+            "{:name \"novar\" :plugin novar.main/plugin :loader [:sci]}")
+      (spit (str dir "/bundle/novar/main.clj") "(ns novar.main)\n")
+      (is (thrown-with-msg? Exception #"does not define plugin"
+                            (@#'build/validate-bundled-dir! "novar" (str dir "/bundle"))))
+      (fs/delete-tree dir))))
 
 (deftest ^:bb-only stage-bundled-extensions-embeds-the-artifact-roots
   (let [root (build/stage-bundled-extensions!)]
