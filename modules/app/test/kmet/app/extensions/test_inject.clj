@@ -185,6 +185,44 @@
           (extensions/clear-extensions!)
           (fs/delete-tree dir))))))
 
+(t/deftest a-defplugin-var-mounts-like-a-plain-map
+  ;; the documented form: the extension requires kmet.srce.core and uses the
+  ;; macro, whose expansion must reach public kernel API only (a private-ns
+  ;; reference would fail here, inside the sandbox, not at the kernel's tests)
+  (let [name "defplugin-ext"
+        stem (str/replace name "-" "_")
+        entry-ns (str stem ".main")
+        dir "target/test-ext-defplugin"
+        file (str dir "/" stem "/main.clj")]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/" stem))
+    (spit (str dir "/extension.edn")
+          (str "{:name \"" name "\" :plugin " entry-ns "/plugin"
+               " :loader [:sci]}\n"))
+    (spit file
+          (str "(ns " entry-ns "\n"
+               "  (:require [kmet.extension :as ext]\n"
+               "            [kmet.srce.core :as srce]))\n\n"
+               "(srce/defplugin plugin\n"
+               "  {:name  :ext/defplugin-ext\n"
+               "   :inject {:tools nil}\n"
+               "   :apply (fn [_ctx api]\n"
+               "            (ext/on-input api\n"
+               "                          (fn [{:keys [text]}]\n"
+               "                            {:action :transform :text (str text \"+macro\")}))\n"
+               "            nil)})\n"))
+    (try
+      (let [result (extensions/load-extension! dir)]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (let [fiber (mount-fiber :ext/defplugin-ext)]
+          (t/is (some? fiber) "the defplugin var mounted as a fiber")
+          (t/is (= :active (:state fiber)) "its :inject was satisfied"))
+        (t/is (= "hi+macro" (:text (extensions/apply-input-hooks "hi" :interactive)))
+              "the macro-defined body ran"))
+      (finally
+        (extensions/clear-extensions!)
+        (fs/delete-tree dir)))))
+
 (t/deftest a-malformed-plugin-manifest-is-refused-before-evaluation
   (testing ":plugin must be a qualified var"
     (doseq [[name plugin-form]

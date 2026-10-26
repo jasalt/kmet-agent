@@ -490,10 +490,9 @@ when a drop site forgets `dispose`. That backstop is not a contract —
 `ui-set-widget` replacement, dialog close and `/reload` dispose
 deterministically, and anything GC cannot release (timers, subprocesses,
 listeners, `with-let` cleanups) still requires `dispose`. A `kmet.tui.*` require that
-is not part of the shared set (or a `kmet.agent.*`/`kmet.agent.modes.*`/`kmet.libs.*`/
-`kmet.srce.*` (except `kmet.srce.core`) require) fails the load with an explicit error. The loader
-(`kmet.loader*`) is host machinery — never part of the shared set, so
-requiring it fails like any other internal.
+is not part of the shared set (or a `kmet.app.*` / `kmet.srce.*` (except
+`kmet.srce.core`) / `kmet.loader*` require) fails the load with an explicit
+error — the loader is host machinery, never part of the shared set.
 
 Mount the component with `ui-custom` (the pattern and its options are in the
 contract reference's § UI, and

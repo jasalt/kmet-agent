@@ -47,8 +47,8 @@ argument and dispatches to the runtime; extensions never require kmet internals.
 
 The table of wrappers and the host's api map are contract-tested as a pair: a
 key a wrapper reads (`(:notify (ui api))` reads `[:ui :notify]`) must exist in
-the api the host builds, or an extension fails inside `init`'s later calls with
-a nil-invoke. `kmet.agent.extensions.test-api-contract` reads every such path
+the api the host builds, or an extension fails inside its plugin body with
+a nil-invoke. `kmet.app.extensions.test-api-contract` reads every such path
 out of this file, loads a real extension and asserts the host carries them all
 — so adding a wrapper means adding the capability, in one change.
 
@@ -79,8 +79,8 @@ What an extension may require is a fixed, enforced list:
   `kmet.app.keybindings`.
 - `clojure.*` and `babashka.*` builtins, and the fixed bundled set below.
 
-Any other kmet namespace — internals such as `kmet.agent.*` /
-`kmet.agent.modes.*`, `kmet.app.*`, `kmet.srce.*` (except `kmet.srce.core`),
+Any other kmet namespace — internals such as `kmet.app.*`, `kmet.srce.*`
+(except `kmet.srce.core`),
 and the loader `kmet.loader*` (host machinery) — fails the load with an
 explicit error.
 
@@ -137,26 +137,25 @@ runtime (e.g. from another extension or a REPL):
 
 | Operation | Function | Effect |
 |---|---|---|
-| Load | `kmet.agent.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt :pending bool}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
-| Unload | `kmet.agent.extensions.core/unload-extension!` (record) | run `shutdown`, dispose the extension's registrations, remove namespaces |
-| Reload | `kmet.agent.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
-| List | `kmet.agent.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind .. :fiber-state ..}]` |
+| Load | `kmet.app.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt :pending bool}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
+| Unload | `kmet.app.extensions.core/unload-extension!` (record) | run `shutdown`, dispose the extension's registrations, remove namespaces |
+| Reload | `kmet.app.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
+| List | `kmet.app.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind .. :fiber-state ..}]` |
 
-A failing `init` is rolled back: the loader unloads whatever was registered
-before the error and reports `{:extension nil :error msg}` — no partial state
-lingers. That holds whether `init` ran at load (no `:inject`) or inside the
-plugin mount it declares: a mount that fails immediately is turned back into a
+A failing plugin body is rolled back: the loader unloads whatever was
+registered before the error and reports `{:extension nil :error msg}` — no
+partial state lingers. A mount that fails immediately is turned back into a
 load error. A mount that activates *later* (its dependency appeared after the
 load returned) cannot be a load error any more — the kernel owns it, the fiber
 is `:failed` with the throwable, and `get-loaded-extensions` reports that as
 `:fiber-state :failed` plus `:error`.
 
-An extension may declare `:inject` in its `extension.edn` — the app services
-`init` waits for ([extensions.md](../../../docs/extensions.md)). With it the
-extension mounts as a kernel plugin: it stays pending until the ctx provides
-the names, `init` runs at activation, and unloading disposes the fiber after
-`shutdown`. Without it nothing changes: the load is immediate and
-`get-loaded-extensions` reports `:fiber-state nil`.
+Every extension is a kernel plugin, so its `:inject` (declared in the plugin
+map, not the manifest — the app services it waits for,
+[extensions.md](../../../docs/extensions.md)) decides when it activates: with
+an unsatisfied dependency the mount stays pending until the ctx provides the
+names, and with `{}` it is active as soon as it loads. Unloading disposes the
+fiber after `shutdown`, whatever state it was in.
 
 What the plugin's `:apply` registers is **owned**: commands, tools and tool sources,
 skills, prompts, hooks, renderers, flags, and the resources a
@@ -542,7 +541,7 @@ memory and serves extension skills through the `read` tool under their
 `name:path` location (pass the `<location>` verbatim) as well as via
 `/skill:name` expansion. Themes need no new api:
 `kmet.tui.theme` is shared by reference — call `make-theme` +
-`register-theme!` in `init` and `unregister-theme!` on unload. Every
+`register-theme!` in the plugin body and `unregister-theme!` on unload. Every
 registration goes under the extension's owner, so unload disposes it; the
 returned deregister fn drops it earlier.
 
@@ -914,7 +913,7 @@ timeout policy and answers with the default when its deadline elapses).
 
 ##### RPC mode
 
-The RPC front end (`kmet.agent.modes.rpc`) binds `{:mode :rpc :has-ui true}` and
+The RPC front end (`kmet.app.modes.rpc`) binds `{:mode :rpc :has-ui true}` and
 bridges the methods the protocol can carry (pi: `rpc-extension-ui.md`):
 
 - **dialogs** — `:select`/`:confirm`/`:input`/`:editor` requests become
@@ -1124,8 +1123,7 @@ extension shell commands. Headless runs fall back to the process cwd.
 
 Extensions are testable in isolation with the **nullable API** — a test fixture
 that captures every registration into a state atom, with no kmet runtime
-involved. Load the extension's `init` against it and assert what was
-registered:
+involved. Call the plugin's `:apply` with it and assert what was registered:
 
 ```clojure
 (ns my.hello-ext-test
@@ -1133,9 +1131,9 @@ registered:
             [kmet.extension :as ext]
             [my.hello-ext :as sut]))
 
-(deftest init-registers-hello-command
+(deftest the-plugin-registers-hello-command
   (let [{:keys [api state]} (ext/create-nullable-api)]
-    (sut/init api)
+    ((:apply sut/plugin) nil api)
     (is (contains? (:commands @state) "hello"))
     ;; deregister fns remove registrations (unload replay)
     (is (= 1 (count (get-in @state [:handlers :session-start]))))))
@@ -1149,4 +1147,4 @@ registration function returns a deregister fn; the nullable api's deregister
 fns remove the corresponding registration.
 
 For runtime integration tests, `load-extension!` + `unload-extension!` against
-the real registries (see `modules/agent/test/kmet/agent/extensions/`).
+the real registries (see `modules/app/test/kmet/app/extensions/`).
