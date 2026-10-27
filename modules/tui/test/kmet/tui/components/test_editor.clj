@@ -877,9 +877,12 @@
     (t/is (nil? @(:autocomplete-state e)))))
 
 (t/deftest test-submit-expands-collapsed-pastes
-  (doseq [autocomplete? [false true]]
+  (doseq [autocomplete? [false true]
+          line ["original text"
+                "[user@machine:~]$ curl --connect-timeout 5 http://123.234.345.456:7780/v1/models"
+                "$1 ${HOME} C:\\Users\\user\\file.txt \\n"]]
     (let [e (make-ac-editor)
-          pasted (clojure.string/join "\n" (repeat 15 "original text"))
+          pasted (clojure.string/join "\n" (repeat 15 line))
           submitted (atom nil)]
       (core/editor-set-on-submit! e #(reset! submitted %))
       (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
@@ -1101,8 +1104,8 @@
 
 (t/deftest test-editor-get-expanded-text
   (let [e (editor/make-editor)
-        big1 (clojure.string/join "\n" (repeat 15 "one"))
-        big2 (clojure.string/join "\n" (repeat 15 "two"))]
+        big1 (clojure.string/join "\n" (repeat 15 "[user@machine:~]$ command"))
+        big2 (clojure.string/join "\n" (repeat 15 "$1 ${HOME} C:\\Users\\user"))]
     (core/handle-input e (str "\u001b[200~" big1 "\u001b[201~"))
     (core/handle-input e (str "\u001b[200~" big2 "\u001b[201~"))
     (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #1"))

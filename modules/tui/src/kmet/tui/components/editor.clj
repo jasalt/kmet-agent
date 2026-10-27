@@ -1740,7 +1740,7 @@
                (if content
                  (clojure.string/replace result
                                          (re-pattern (str "\\[paste #" id "[^\\]]*\\]"))
-                                         content)
+                                         (constantly content))
                  result))
              (editor-get-text editor)
              @(:paste-store editor)))
