@@ -95,8 +95,10 @@ single-file resources map their namespace directly to the exact embedded key
 
 The shipped set is enumerated in `modules/app/src/kmet/bundled-extensions.edn`;
 `bb check-bundled-extensions` validates it (every artifact under
-`extensions/` is listed or excluded, directory manifests declare `:sci`,
-strict ns-path layout, `deps.edn` with only `:deps` and no `:local/root`).
+`extensions/` is listed or excluded, a directory manifest names a qualified
+`:plugin` var its namespace defines and a `:loader` that includes `:sci`, a
+single file defines `plugin`, strict ns-path layout, `deps.edn` with only
+`:deps` and no `:local/root`).
 
 To develop against an edited copy, the classic paths still work — symlink
 (or copy) an extension into the global or project extensions dir:
@@ -161,8 +163,9 @@ symbol holding a `srce` plugin map (`kmet.srce.core/defplugin`) — and the
 loader backends the extension supports — `:loader` (see
 [Loader compatibility](#loader-compatibility-loader)). There is no separate
 init function: the plugin map's `:apply` **is** the extension body, and its
-`:inject` declares the app services it waits for (the manifest may not carry
-`:inject` — the map is the one declaration):
+`:inject` declares the app services it waits for. The manifest may not carry
+`:inject` or `:entry` (the retired form) — the map is the one declaration, and
+either key fails the load with the replacement spelled out:
 
 ```clojure
 ;; my_ext/main.clj
@@ -180,13 +183,18 @@ init function: the plugin map's `:apply` **is** the extension body, and its
 
 The kernel mounts the plugin, so the extension stays **pending** while a
 declared service is absent and `:apply` runs the moment the last one appears,
-and unloading disposes what it registered. A name is a service keyword the app
-provides — today `:tools`, `:commands`, `:prompts`, `:skills`, `:sessions`
-and `:sessionPersistence` — or one an app defines itself; `:optional` entries
-do not hold the mount, and a name nothing provides keeps the extension pending,
-so declare only what you need. (Each extension lists its state in
-`/extensions`: a pending one names what it waits for.) Everything else is
-required from there:
+and unloading disposes what it registered. A name is a service keyword the
+composition provides at the root — for the built-in profiles `:events`,
+`:tools`, `:commands`, `:prompts`, `:skills`, `:system-prompt`,
+`:sessionPersistence`, `:sessions`, `:projections`, `:agents`, `:agentLoop`,
+`:approvals` and `:ui` (`:permissions` in a gated profile) — or one an app
+defines itself; `:optional` entries do not hold the mount, and a name nothing
+provides keeps the extension pending, so declare only what you need. Per-agent
+services (`:shell`, `:sandbox`) mount under an agent's ctx, not the root, so an
+extension cannot wait for them. In an interactive session `/units` shows each
+mounted fiber — a pending one names its `waiting-for`, a failed one its error —
+and `kmet.app.extensions.core/get-loaded-extensions` reports the same as
+`:fiber-state`/`:error`. Everything else is required from there:
 internal namespaces resolve by strict ns-path lookup under the extension
 root, and declared library dependencies resolve to the jars in `deps.edn`
 (see [External library dependencies](#external-library-dependencies-depsedn)).

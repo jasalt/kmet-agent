@@ -5,18 +5,36 @@ and implementation rules live beside the package they govern. Read the
 relevant topic document before changing that area, and update it in the same
 change when behavior changes.
 
+kmet is inspired by two reference harnesses, and both stay visible in its
+design. Its **functionality** follows pi (the maintained gap list is
+[`docs/pi-alignment.md`](docs/pi-alignment.md); the reference checkout is
+`~/src/cvstree/pi/`). Its **application architecture** follows DeepSeek Harness
+(`dsh`) on Cordis (the reference checkout is
+`~/src/cvstree/deepseek-harness/`) — one context tree, services found by key,
+dependencies declared with `inject`, effects that unwind, declared event
+modes, and **everything is a plugin**: the loop, tools, sessions, model access
+and modes are replaceable rows, and an extension mounts beside them instead of
+patching a privileged core. The comparison, the module map and the one
+composition promise still open (`:ext/…` rows) are in
+[`new-app.md`](new-app.md); the kernel's deliberate differences from Cordis
+are in [`srce.md`](modules/srce/src/kmet/srce/srce.md) §5/§10. The architectural
+consequence for changes: new behavior attaches to a documented seam — a plugin
+row, a service, an event, or the extension contract — not to a branch in the
+entry or a new global.
+
 ## Topic map
 
 | Area | Authoritative reference |
 |------|-------------------------|
 | Application layout and contributor workflow | [`docs/architecture.md`](docs/architecture.md) |
 | Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
-| kmet2 application: services, agents, sessions, profiles, landings | [`docs/architecture.md`](docs/architecture.md) |
+| kmet2 application: services, agents, sessions, profiles, landings | [`docs/architecture.md`](docs/architecture.md); design record and migration ledger in [`new-app.md`](new-app.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`, Jolt-only) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |
 | Extension contract (`kmet.extension` API, allowed namespaces, lifecycle) | [`modules/app/src/kmet/extension.md`](modules/app/src/kmet/extension.md) |
 | Extension authoring guide (layouts, loaders, deps, UI, testing) | [`docs/extensions.md`](docs/extensions.md) |
 | pi alignment and feature-gap analysis | [`docs/pi-alignment.md`](docs/pi-alignment.md) |
+| Architecture lineage: pi functionality, dsh's Cordis "everything is a plugin" model | [`new-app.md`](new-app.md) § Prior art: DSH and § Reconciliation; [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
 | Loader design and backends | [`modules/loader/src/kmet/loader/loader.md`](modules/loader/src/kmet/loader/loader.md) |
 | Jolt provider scaffolding and host integration | [`jolt/src/jolt/kmet/README.md`](jolt/src/jolt/kmet/README.md) |
 | User guides and examples | [`docs/README.md`](docs/README.md), [`docs/examples/README.md`](docs/examples/README.md) |
@@ -24,16 +42,17 @@ change when behavior changes.
 
 User-facing documentation belongs in `docs/`. Implementation notes belong next
 to their source package. The temporary notes `run_code.md`, `perf.md`,
-`jolt-bugs.md`, and `tcl.md`
-intentionally remain at the project root. (`engine.md` was folded/retired once
-the session-runtime split’s GUI-independent steps landed.)
+`jolt-bugs.md`, `tcl.md`, and `new-app.md` (the kmet2 design record and
+landing ledger, recovered and reconciled to HEAD) intentionally remain at the
+project root. (`engine.md` was folded/retired once the session-runtime split’s
+GUI-independent steps landed.)
 
 ## Basic development flow
 
 - `bb start` starts `kmet.app.core/-main`, the process entry; `jolt start` is
   the native-host equivalent. There is one app: kmet1 was retired with the
   module that carried it, so the `--app` flag is gone and every host runs the
-  same composition.
+  same composition. The migration that got there is [`new-app.md`](new-app.md).
 - `bb clean` removes build output and caches; `bb clean --dry-run` lists what
   it would remove. `jolt clean` is the native-host equivalent.
 - `bb nrepl` starts the development server on port 7801, blocks, and writes
@@ -205,6 +224,8 @@ the session-runtime split’s GUI-independent steps landed.)
   this file, the coding-agent defaults, then general best practices. Explain a
   conflict and ask for confirmation rather than silently overriding it.
 - Before implementing a new feature, consult the relevant package document
-  and the reference implementation in `~/src/cvstree/pi/` when useful; the
-  maintained gap list is
-  [`docs/pi-alignment.md`](docs/pi-alignment.md).
+  and the reference implementations when useful — `~/src/cvstree/pi/` for
+  functionality (the maintained gap list is
+  [`docs/pi-alignment.md`](docs/pi-alignment.md)) and
+  `~/src/cvstree/deepseek-harness/` for the plugin architecture (the
+  comparison is [`new-app.md`](new-app.md) § Prior art: DSH).

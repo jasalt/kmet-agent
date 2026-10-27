@@ -152,7 +152,7 @@ is `:failed` with the throwable, and `get-loaded-extensions` reports that as
 
 Every extension is a kernel plugin, so its `:inject` (declared in the plugin
 map, not the manifest — the app services it waits for,
-[extensions.md](../../../docs/extensions.md)) decides when it activates: with
+[extensions.md](../../../../docs/extensions.md)) decides when it activates: with
 an unsatisfied dependency the mount stays pending until the ctx provides the
 names, and with `{}` it is active as soon as it loads. Unloading disposes the
 fiber after `shutdown`, whatever state it was in.

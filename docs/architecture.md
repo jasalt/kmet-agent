@@ -7,9 +7,11 @@ rather than in the user-facing `docs/` directory: see
 [`modules/loader/src/kmet/loader/loader.md`](../modules/loader/src/kmet/loader/loader.md),
 [`modules/srce/src/kmet/srce/srce.md`](../modules/srce/src/kmet/srce/srce.md),
 [`modules/app/src/kmet/extension.md`](../modules/app/src/kmet/extension.md), and
-[`pi-alignment.md`](pi-alignment.md). Temporary analysis notes (`run_code.md`,
-`perf.md`, `jolt-bugs.md`, `tcl.md`) remain at the repository root by
-convention.
+[`pi-alignment.md`](pi-alignment.md). The app's design record and migration
+ledger — reconciled to HEAD, and the only place that records what did *not*
+ship — is [`new-app.md`](../new-app.md); this file is the current map.
+Temporary analysis notes (`run_code.md`, `perf.md`, `jolt-bugs.md`, `tcl.md`)
+remain at the repository root by convention.
 
 ## Project structure
 
@@ -113,6 +115,12 @@ kmet/app/
 Each row names its own file (`tools.clj`, `sessions.clj`, `extensions.clj`,
 `agents.clj`, …): a row is a `srce` plugin whose `apply` provides its service,
 and `registries.clj` is the router behind them.
+
+[`new-app.md`](../new-app.md) is the app's design record and migration ledger:
+why the rows are what they are, what each landing shipped, and the items that
+did not ship (`:ext/…` composition rows, the profile file layers beyond
+`--patch`). Its "Reconciliation" section maps the historical names to HEAD;
+this file stays the current map.
 
 ### The front ends (`modules/ui/src/kmet/ui`)
 
@@ -270,7 +278,7 @@ front end:
   ask through
   `request-ui!`/`respond!`, so an asynchronous client can answer later; the
   degraded headless answers and the per-front-end capability table are in
-  [`extension.md`](extension.md).
+  [`extension.md`](../modules/app/src/kmet/extension.md).
 - The RPC front end ([`rpc.md`](rpc.md)) is the headless consumer;
   `kmet.test-layer-guard` asserts the front ends reach no interactive, TUI, or
   Tk namespace at all.
@@ -329,7 +337,7 @@ pins its exact public surface. Two consequences for tests and REPL work:
 
 The task implementation lives in `tasks/kmet/tasks/`; packaging and
 cross-host build details are covered in the user-facing
-[`docs/building.md`](../../../../docs/building.md) guide.
+[`docs/building.md`](building.md) guide.
 
 ```sh
 bb start           # Interactive TUI
