@@ -190,7 +190,6 @@
   '[kmet.tui.autocomplete
     kmet.tui.border
     kmet.tui.core
-    kmet.tui.fuzzy
     kmet.tui.hikap
     kmet.tui.keybindings
     kmet.tui.keys
@@ -198,7 +197,6 @@
     kmet.tui.protocols
     kmet.tui.terminal
     kmet.tui.terminal-escape
-    kmet.tui.theme
     kmet.tui.timers
     kmet.tui.utils
     kmet.tui.wake
@@ -249,6 +247,7 @@
     kmet.libs.edit-diff
     kmet.libs.edn-store
     kmet.libs.fs
+    kmet.libs.fuzzy
     kmet.libs.highlight
     kmet.libs.host
     kmet.libs.http
@@ -269,6 +268,7 @@
     kmet.libs.terminal
     kmet.libs.terminal-image
     kmet.libs.text
+    kmet.libs.theme
     kmet.libs.yaml
     ;; the framework modules the libs compose
     kmet.reakt.core
@@ -1238,14 +1238,14 @@
   nil)
 
 (defn load-themes-from-dir!
-  "Apply THEME-DIR's theme files through the shared kmet.tui.theme library and
+  "Apply THEME-DIR's theme files through the shared kmet.libs.theme library and
    return the themes that loaded. The theme store is an extension-ABI shared
    library — host-requires! loads it with the rest of the TUI layer on the
    first extension load — and this namespace owns that call-time door, so
    plain app code (resource discovery in kmet.app.extensions.core) never
    requires kmet.tui.* at the ns level."
   [dir]
-  ((requiring-resolve 'kmet.tui.theme/load-themes-from-dir) dir))
+  ((requiring-resolve 'kmet.libs.theme/load-themes-from-dir) dir))
 
 (defn unregister-theme!
   "Remove THEME from the shared theme store while NAME still holds it — the
@@ -1253,7 +1253,7 @@
    teardown cannot drop a later contributor's registration.
    Returns nil."
   [name theme]
-  ((requiring-resolve 'kmet.tui.theme/unregister-theme!) name theme)
+  ((requiring-resolve 'kmet.libs.theme/unregister-theme!) name theme)
   nil)
 
 ;; ─── The shared base context (per-extension forks) ───────────────────────

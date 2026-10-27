@@ -24,7 +24,7 @@
   (:require [kmet.extension :as ext]
             [kmet.srce.core :as srce]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.hikap :as h]))
 

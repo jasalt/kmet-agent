@@ -8,7 +8,7 @@
             [kmet.extensions.clojure.eval-tool :as eval-tool]
             [kmet.extensions.clojure.nrepl :as nrepl]
             [kmet.tui.core :as core]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as utils]))
 
 (defn- plain

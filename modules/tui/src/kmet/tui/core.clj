@@ -5,7 +5,7 @@
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [kmet.tui.border :as border]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.reakt.core :as reakt]

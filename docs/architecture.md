@@ -38,10 +38,10 @@ is the one module with two prefixes: its business tree is `kmet.app.*`, and
 Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
 may depend only on strictly lower-ranked ones, and a *namespace* may require
 only a file in a strictly lower-ranked module — `reakt`/`libs`/`loader` 0,
-`hikap`/`ai`/`srce` 1, `tui`/`tk` 2, `app` 3. A shared leaf both `app` and
-`tui` read therefore lives in `libs`, which is why `kmet.tui.theme` and
-`kmet.tui.fuzzy` sit in `modules/libs` under a `kmet.tui.*` name: the rule is
-about the module, not the prefix.
+`hikap`/`ai`/`srce` 1, `tui`/`tk` 2, `app` 3. A leaf that both the app and the
+components read therefore lives in `libs`, never in either of them:
+`kmet.libs.theme` (the world load reads it, the widgets style from it) and
+`kmet.libs.fuzzy` (the selectors and the `--list-models` filter) are the two.
 
 The guard holds the declaration in both directions: every module its `src`
 requires must be in the module's `deps.edn`, and nothing may be there that

@@ -10,7 +10,7 @@
             [kmet.tui.hikap :as h]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── pi helpers (ThemeSubmenu file-private functions) ─────────────────────
 

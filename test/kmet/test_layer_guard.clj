@@ -103,14 +103,6 @@
   []
   (sort (concat (mode-source-files) (ui-source-files))))
 
-(def ^:private libs-namespaces
-  "The rank-0 leaves by namespace. A `kmet.tui.*` name under `modules/libs` is
-   not the TUI module: the theme-name handling and the fuzzy matcher are shared
-   leaves the app and the TUI both read (the shared-leaf rule put them there),
-   and the prefix is only where they were first written. The rule below is about
-   the *module*, so it reads the tree rather than the prefix alone."
-  (delay (into #{} (map path->ns) (source-files-under "modules/libs/src"))))
-
 (def ^:private mode-prefixes
   "The modes' namespace prefixes: the rows live in this module but are front
    ends, so a business file reaching one is the same inversion as reaching the
@@ -119,20 +111,17 @@
 
 (deftest app-layer-does-not-require-front-ends
   (testing "no app business namespace reaches the TUI/Tk/UI layers or a mode"
-    (let [shared @libs-namespaces]
-      (doseq [f (app-source-files)
-              :let [ns-name (path->ns f)
-                    deps (required-kmet f)
-                    forbidden (remove shared
-                                      (filter (fn [d]
-                                                (or (str/starts-with? d "kmet.tui.")
-                                                    (str/starts-with? d "kmet.tk.")
-                                                    (str/starts-with? d "kmet.ui.")
-                                                    (some #(str/starts-with? d %) mode-prefixes)))
-                                              deps))]]
-        (is (empty? forbidden)
-            (str ns-name " requires forbidden namespaces: " (vec (sort forbidden))))))))
-
+    (doseq [f (app-source-files)
+            :let [ns-name (path->ns f)
+                  deps (required-kmet f)
+                  forbidden (filter (fn [d]
+                                      (or (str/starts-with? d "kmet.tui.")
+                                          (str/starts-with? d "kmet.tk.")
+                                          (str/starts-with? d "kmet.ui.")
+                                          (some #(str/starts-with? d %) mode-prefixes)))
+                                    deps)]]
+      (is (empty? forbidden)
+          (str ns-name " requires forbidden namespaces: " (vec (sort forbidden)))))))
 (def ^:private front-end-forbidden
   "Prefixes a front end must not require, and the files the rule binds — the
    scope is the point:

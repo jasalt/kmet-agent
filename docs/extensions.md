@@ -469,7 +469,7 @@ reimplement.
   (:require [kmet.tui.protocols :as protocols]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
@@ -485,11 +485,11 @@ What is available: the core protocol records (`container`, `box`, `text`,
 `settings-list`, `filter-panel` (the filterable list panel the simple
 selectors share — the caller supplies rows, filtering and chrome), `stack`,
 `v-stack`, `h-stack`, `expandable-text`, `image`,
-`spinner`, ...), `kmet.tui.theme` (styling — including
+`spinner`, ...), `kmet.libs.theme` (styling — including
 `theme/get-settings-list-theme` for the selector look),
 `kmet.hikap.component` (`track!`/`track-deps` reactive caching,
 `with-let`), `kmet.tui.macros` (`defcomponent`), `kmet.tui.keybindings`, `kmet.tui.keys`,
-`kmet.tui.fuzzy` and `kmet.tui.autocomplete`. Extension components must follow
+`kmet.libs.fuzzy` and `kmet.tui.autocomplete`. Extension components must follow
 the duck-typed `{:render :handle-input :invalidate}` contract accepted by
 `ui/custom` (returning a real record is also fine). Extension components are
 weakly watched: the `track!` and reaction registries hold them weakly, so a

@@ -541,7 +541,7 @@ self-contained single files (no relative refs); the host stores the body in
 memory and serves extension skills through the `read` tool under their
 `name:path` location (pass the `<location>` verbatim) as well as via
 `/skill:name` expansion. Themes need no new api:
-`kmet.tui.theme` is shared by reference — call `make-theme` +
+`kmet.libs.theme` is shared by reference — call `make-theme` +
 `register-theme!` in the plugin body and `unregister-theme!` on unload. Every
 registration goes under the extension's owner, so unload disposes it; the
 returned deregister fn drops it earlier.
@@ -810,7 +810,7 @@ binding exists (library use outside a runtime) stay inert no-ops.
 
 There are **no host-built dialogs**: dialogs/selectors/editors are components you
 compose yourself from the shared `kmet.tui.*` layer and mount with
-`ui-custom`; theme objects come from `kmet.tui.theme` directly
+`ui-custom`; theme objects come from `kmet.libs.theme` directly
 (`get-theme`/`get-all-themes`/`get-theme-by-name`/`get-current-theme`), not
 from the api.
 

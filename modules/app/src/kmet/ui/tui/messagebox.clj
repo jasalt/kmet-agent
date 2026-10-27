@@ -1,7 +1,7 @@
 (ns kmet.ui.tui.messagebox
   "Shared box-theme plumbing for custom message components whose children are rebuilt when theme or expansion changes."
   (:require [kmet.tui.components.box :as box]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (defn themed-box!
   "Set the box background for THM and rebuild COMP's content. REBUILD is the component-specific callback."

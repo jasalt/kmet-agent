@@ -1,4 +1,4 @@
-(ns kmet.tui.fuzzy
+(ns kmet.libs.fuzzy
   "Fuzzy matching utilities. Port of @earendil-works/pi-tui fuzzy.ts.
    Matches if all query characters appear in order (not necessarily
    consecutive). Lower score = better match."

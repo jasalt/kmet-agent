@@ -12,7 +12,7 @@
             [kmet.ai.image-models :as image-models]
             [kmet.ai.model-gen :as model-gen]
             [kmet.ai.models :as models]
-            [kmet.tui.fuzzy :as fuzzy]))
+            [kmet.libs.fuzzy :as fuzzy]))
 
 (defn generate-models!
   "Fetch the current provider and image-model catalogs into the user-level

@@ -7,7 +7,7 @@
             [kmet.libs.json :as json]
             [kmet.libs.path :as path]
             [kmet.libs.text :as text]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as utils]
             [kmet.libs.terminal-image :as timg]
             [kmet.libs.edit-diff :as edit-diff]

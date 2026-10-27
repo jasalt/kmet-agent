@@ -4,7 +4,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
             [kmet.tui.hikap :as h]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as u]
             [kmet.tui.components.markdown :as md]))
 

@@ -17,7 +17,7 @@
             [kmet.ai.image-models :as image-models]
             [kmet.ai.models :as models]
             [kmet.app.root :as root]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (defn load!
   "Load the process world and return the config.

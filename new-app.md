@@ -56,6 +56,13 @@ names, and the app/front-end split is the path rule in
 `kmet.test-layer-guard` rather than a module edge. `app` moved to rank 3 for
 it — it now sits above the component backend the widgets build on.
 
+**Names follow modules again.** `kmet.tui.theme` and `kmet.tui.fuzzy` were the
+last two names that did not: shared leaves living in `modules/libs` under a
+`kmet.tui.*` prefix, kept because moves did not rename. They are
+`kmet.libs.theme` and `kmet.libs.fuzzy` now (pre-1.0, and extensions are
+plugin-side only, so the rename was free), which leaves the module/prefix rule
+with no exception; the layer guard's libs carve-out went with them.
+
 No `mode` module ever existed: the four modes are rows in `app` —
 `kmet.app.modes.print`, `kmet.app.modes.rpc`, `kmet.app.modes.server`, and
 `kmet.ui.tui` for interactive — selected by `--profile`. There is no `:modes`

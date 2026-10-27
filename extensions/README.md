@@ -132,7 +132,7 @@ Only host-owned bridges remain api capabilities: `:custom`, `:notify`
 of the live transcript, nothing to dismiss, never sent to the LLM and
 not persisted across restarts), and integrations with the
 host layout/editor/status/theme-controller state. Theme lookups come from
-`kmet.tui.theme` directly (`get-theme` / `get-all-themes` /
+`kmet.libs.theme` directly (`get-theme` / `get-all-themes` /
 `get-theme-by-name` / `get-current-theme`). `ui-custom` forwards its opts
 map untouched — `{:overlay ... :overlay-options {:anchor :center :width
 82}}` matches pi's overlay placement. Floating overlays get a full

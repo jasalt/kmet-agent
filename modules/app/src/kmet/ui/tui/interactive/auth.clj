@@ -6,7 +6,7 @@
    are registered by kmet.ui.tui.interactive.builtins."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
-            [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.fuzzy :as fuzzy]
             [kmet.ui.tui.auth-selector :as auth-selector]
             [kmet.ui.tui.chat-history :as chat-history]
             [kmet.ui.tui.dock :as dock]

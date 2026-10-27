@@ -12,7 +12,7 @@
   (:require [clojure.string :as str]
             [kmet.ui.tui.subs :as s]
             [kmet.tui.core :as core]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.components.markdown :as md]
             [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]

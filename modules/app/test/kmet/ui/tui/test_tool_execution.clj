@@ -6,7 +6,7 @@
    [kmet.tui.core :as core]
    [kmet.tui.utils :as utils]
    [kmet.libs.terminal-image :as timg]
-   [kmet.tui.theme :as theme]
+   [kmet.libs.theme :as theme]
    [kmet.tui.timers :as timers]
    [kmet.hikap.component :as component]
    [kmet.ui.tui.subs :as subs]

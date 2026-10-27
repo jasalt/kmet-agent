@@ -11,7 +11,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.core :as core]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.app.session.runtime :as runtime]
             [kmet.ui.tui.interactive.test-handle-support :as hs]))
 

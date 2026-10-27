@@ -15,7 +15,7 @@
             [kmet.tui.keys :as keys]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Pure window/selection helpers ─────────────────────────────────────────
 

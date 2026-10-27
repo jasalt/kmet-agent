@@ -6,7 +6,7 @@
 (require '[clojure.string :as str]
          '[kmet.tui.core :as core]
          '[kmet.tui.keybindings :as kb]
-         '[kmet.tui.theme :as theme]
+         '[kmet.libs.theme :as theme]
          '[kmet.extensions.mcp-adapter.metadata :as metadata]
          '[kmet.extensions.mcp-adapter.panel :as panel])
 

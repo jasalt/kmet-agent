@@ -28,7 +28,7 @@
             [kmet.tui.hikap :as h]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as th]))
+            [kmet.libs.theme :as th]))
 
 ;; pi: HTTP_IDLE_TIMEOUT_CHOICES (http-dispatcher.ts)
 (def ^:private http-idle-timeout-choices

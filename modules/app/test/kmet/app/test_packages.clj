@@ -13,7 +13,7 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
             [kmet.app.config :as cfg]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.test-utils :as tu :refer [slash spit-plugin]]))
 
 (defn- tmp-dir []

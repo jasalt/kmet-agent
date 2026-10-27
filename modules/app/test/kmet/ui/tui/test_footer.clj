@@ -7,7 +7,7 @@
             [kmet.app.session.core :as s]
             [kmet.ui.tui.footer :as ft]
             [kmet.ui.tui.footer-data-provider :as fdp]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))

@@ -16,9 +16,9 @@
             [kmet.app.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.core :as tui]
-            [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (defn- full-id [m]
   (model-catalog/model-full-id m))

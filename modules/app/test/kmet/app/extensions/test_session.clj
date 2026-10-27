@@ -17,7 +17,7 @@
             [kmet.app.skills :as skills]
             [kmet.app.test-support :as support]
             [kmet.test-utils :refer [spit-plugin]]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.app.tools.registry :as tools-registry]))
 
 ;; The extension host is the composition's: boot one for the namespace.

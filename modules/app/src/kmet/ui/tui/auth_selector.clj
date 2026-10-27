@@ -11,11 +11,11 @@
             [kmet.reakt.core :as r]
             [kmet.tui.components.filter-panel :as fp]
             [kmet.tui.hikap :as h]
-            [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (def ^:private max-visible 8)
 

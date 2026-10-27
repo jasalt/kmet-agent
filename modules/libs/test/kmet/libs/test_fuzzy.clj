@@ -1,7 +1,7 @@
-(ns kmet.tui.test-fuzzy
-  "Tests for kmet.tui.fuzzy — port of pi's fuzzy.test.ts."
+(ns kmet.libs.test-fuzzy
+  "Tests for kmet.libs.fuzzy — port of pi's fuzzy.test.ts."
   (:require [clojure.test :as t]
-            [kmet.tui.fuzzy :as f]))
+            [kmet.libs.fuzzy :as f]))
 
 (t/deftest fuzzy-match-empty-query
   (t/is (= {:matches true :score 0} (f/fuzzy-match "" "anything"))))

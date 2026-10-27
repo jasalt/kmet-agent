@@ -10,7 +10,7 @@
             [kmet.app.root :as root]
             [kmet.app.world :as world]
             [kmet.srce.core :as srce]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (t/deftest the-world-loads-in-order-and-publishes-its-root
   (let [calls (atom [])

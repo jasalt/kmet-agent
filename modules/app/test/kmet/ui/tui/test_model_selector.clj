@@ -13,7 +13,7 @@
             [kmet.tui.keybindings :as tui-kb]
             [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.tui.utils :as u]))
 
 (defn- model [provider id]

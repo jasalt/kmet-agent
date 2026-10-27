@@ -50,8 +50,9 @@
    universe, host backends included so the test can pin their exclusion."
   []
   (let [roots [["kmet.tui" "modules/tui/src/kmet/tui"]
-               ;; the whole module: the theme loader lives here now, under its
-               ;; kmet.tui name, because app (rank 2) and tui (rank 2) both read it
+               ;; the whole libs module: the theme loader and the fuzzy matcher
+               ;; are kmet.libs.* leaves that the components and the world load
+               ;; share
                ["" "modules/libs/src"]
                ["kmet.hikap" "modules/hikap/src/kmet/hikap"]
                ["kmet.reakt" "modules/reakt/src/kmet/reakt"]]]

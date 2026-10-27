@@ -13,9 +13,9 @@
             [kmet.ui.tui.dock :as dock]
             [kmet.app.config :as cfg]
             [kmet.tui.components.filter-panel :as fp]
-            [kmet.tui.fuzzy :as fuzzy]
+            [kmet.libs.fuzzy :as fuzzy]
             [kmet.tui.keybindings :as kb]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Level metadata (pi THINKING_DESCRIPTIONS) ────────────────────────────
 

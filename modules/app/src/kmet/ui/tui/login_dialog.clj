@@ -24,7 +24,7 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.reakt.core :as r]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as u]))
 
 ;; ─── Browser (pi utils/open-browser.ts) ────────────────────────────────────

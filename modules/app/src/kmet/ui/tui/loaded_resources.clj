@@ -7,7 +7,7 @@
    Sections carry raw items; styling happens in render (theme-atom) so theme
    changes re-style without a rebuild."
   (:require [clojure.string :as str]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as u]
             [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))

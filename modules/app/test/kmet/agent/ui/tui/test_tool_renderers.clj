@@ -9,7 +9,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.utils :as utils]
             [kmet.agent.ui.tui.tool-renderers :as r]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (def ^:private th theme/dark-theme)
 

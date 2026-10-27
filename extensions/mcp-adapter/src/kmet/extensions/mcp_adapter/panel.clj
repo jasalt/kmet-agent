@@ -18,7 +18,7 @@
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.hikap :as h]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as u]
             [kmet.tui.components.input :as input]
             [kmet.libs.clipboard :as clipboard]

@@ -3,7 +3,7 @@
    :render-result on the registered tools). Result rendering consumes the
    structured :details maps emitted by the execute step and falls back to a
    plain preview when they are absent (replayed sessions, error results).
-   All styling goes through kmet.tui.theme; paths are shortened +
+   All styling goes through kmet.libs.theme; paths are shortened +
    hyperlinked via the shared host helpers in kmet.agent.ui.tui.tool-renderers."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
@@ -14,7 +14,7 @@
             [kmet.tui.components.text :as text]
             [kmet.libs.highlight :as hl]
             [kmet.libs.path :as path]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.utils :as utils]))
 
 ;; ─── Small helpers ────────────────────────────────────────────────────────

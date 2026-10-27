@@ -11,7 +11,7 @@
             ;; The hint's styling is the live theme's, read at render time: a
             ;; theme change re-renders the hint, so there is nothing to install
             ;; and no process cell two terminals could disagree about (9b).
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── App keybinding definitions ──────────────────────────────────────────
 ;; Extends the TUI definitions with agent-specific actions.

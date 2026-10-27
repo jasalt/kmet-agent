@@ -136,7 +136,7 @@ atom change → reaction dirty → queued → frame flush runs it →
 | `kmet.hikap.alias` | qualified-keyword tag aliases: process-global registry, resolution, `defalias` (§2.9) |
 | `kmet.tui.hikap` | the TUI backend: tag table, `*width*`/`*comp*`, IComponent extension for the engine's ComponentFn, and the TUI-bound entry points (`root`, `compile-tree`, `reconcile!`, `render-lines`, `materialize-ref!`) |
 | `kmet.tui.components.*` | host elements (see §10) |
-| `kmet.tui.theme` | color/styling API, active theme atom, theme files — a leaf library in `libs` (the world load and the components both read it; it may reach neither side) |
+| `kmet.libs.theme` | color/styling API, active theme atom, theme files — a leaf library in `libs` (the world load and the components both read it; it may reach neither side) |
 | `kmet.tui.keys` / `keybindings` | key names, Kitty protocol decoding, keybinding manager |
 | `kmet.tui.autocomplete` / `fuzzy` | editor autocomplete dropdown: slash commands + arguments, plain path completion, gitignore-aware fuzzy `@` file search scoped to the session cwd (tree snapshot refreshed on each new `@` token, cleared on submit/clear via `invalidate-file-cache!`), fuzzy matching |
 | `kmet.tui.utils` | text wrapping, visible width, truncation helpers |
@@ -1338,7 +1338,7 @@ chords with `/`. `key-hint` renders through the label form, so a hint line
 and the tree help cannot drift; the tree selector's private prettify pass
 was replaced by the shared table. It styles with the active theme **read at
 render time** (`kmet.app.keybindings` derives dim/muted from
-`kmet.tui.theme` per call), so nothing is installed at layout time and a
+`kmet.libs.theme` per call), so nothing is installed at layout time and a
 theme change reaches the next hint through the ordinary render.
 
 ---
@@ -1392,7 +1392,7 @@ Notes:
 
 ## 9. Theming
 
-All styling goes through `kmet.tui.theme`; raw ANSI escapes are banned
+All styling goes through `kmet.libs.theme`; raw ANSI escapes are banned
 outside `modules/tui/src/kmet/tui/` and `kmet.tui.terminal-escape`.
 
 ```clojure

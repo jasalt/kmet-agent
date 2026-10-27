@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [kmet.test-utils :as tu]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.core :as core]
             [kmet.libs.terminal-image :as timg]
             [kmet.ui.tui.subs :as subs]

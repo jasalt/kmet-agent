@@ -11,7 +11,7 @@
             [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.footer-data-provider :as fdp]
             [kmet.ui.tui.dock :as dock]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.tui.terminal :as term]
             [kmet.libs.host :as host]))
 

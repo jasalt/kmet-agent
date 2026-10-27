@@ -27,7 +27,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.libs.mcp.client :as mcp]
             [kmet.libs.mcp.protocol :as protocol]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (def ^:private state-atom (atom nil))
 

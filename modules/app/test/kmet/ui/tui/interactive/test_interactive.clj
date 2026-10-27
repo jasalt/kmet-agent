@@ -46,7 +46,7 @@
             [kmet.tui.components.spinner :as spinner]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.core :as tui]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.timers :as timers]

@@ -5,7 +5,7 @@
             [babashka.fs :as fs]
             [kmet.app.config :as cfg]
             [kmet.libs.terminal-image :as timg]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Theme record ──────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@
 
 (t/deftest test-theme-record
   (let [t theme/dark-theme]
-    (t/is (instance? kmet.tui.theme.Theme t))
+    (t/is (instance? kmet.libs.theme.Theme t))
     (t/is (= "dark" (:name t)))
     (t/is (string? (get-in t [:fg-colors :text])))
     (t/is (string? (get-in t [:fg-colors :accent])))
@@ -29,7 +29,7 @@
 
 (t/deftest test-light-theme
   (let [t theme/light-theme]
-    (t/is (instance? kmet.tui.theme.Theme t))
+    (t/is (instance? kmet.libs.theme.Theme t))
     (t/is (= "light" (:name t)))
     (t/is (string? (get-in t [:fg-colors :accent])))))
 

@@ -14,7 +14,7 @@
             [kmet.extensions.clojure.edit-util :as util]
             [kmet.extensions.clojure.nrepl :as nrepl]
             [kmet.libs.text :as text]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Args ─────────────────────────────────────────────────────────────────
 

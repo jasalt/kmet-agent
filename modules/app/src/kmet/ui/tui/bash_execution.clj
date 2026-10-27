@@ -15,7 +15,7 @@
             [kmet.hikap.component :as component]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.tui.timers :as timers]
             [kmet.tui.utils :as u]
             [kmet.tui.components.spinner :as spinner]

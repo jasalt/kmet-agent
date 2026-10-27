@@ -14,7 +14,7 @@
             [kmet.libs.process :as process]
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Section data ─────────────────────────────────────────────────────────
 

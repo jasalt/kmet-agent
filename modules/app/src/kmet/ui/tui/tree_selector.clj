@@ -32,7 +32,7 @@
             [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.tui.terminal :as terminal]
             [kmet.tui.utils :as u]
             [kmet.ui.tui.list-screen :as ls]))

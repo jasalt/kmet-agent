@@ -23,7 +23,7 @@
             [kmet.extensions.review.prompts :as prompts]
             [kmet.libs.concurrent :as concurrent]
             [kmet.tui.hikap :as h]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (def ^:private spawn concurrent/spawn)
 

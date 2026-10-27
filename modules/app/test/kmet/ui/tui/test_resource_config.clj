@@ -14,7 +14,7 @@
             [kmet.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.tui.utils :as u]
             [kmet.test-utils :refer [slash]]))
 

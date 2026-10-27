@@ -1,13 +1,14 @@
-(ns kmet.tui.theme
+(ns kmet.libs.theme
   "Theme system — identical structure to pi's theme.ts.
    EDN-only loading with the same :vars/:colors schema and color values
    (hex, OKHSL, OKLCH, 256-color index, variable refs, terminal default)
    as pi's JSON.
 
-   A leaf library even though its name says tui: both the process world load
-   (`kmet.app.world`) and the components read it, so it lives in `libs` and may
-   reach neither side. The name is the axis — moving the file changes the
-   module only."
+   A `kmet.libs.*` leaf read from both sides: the process world load
+   (`kmet.app.world`) reads `load-theme-paths!`, and the components that style
+   themselves read the rest, so it lives below both and may reach neither. It
+   was `kmet.tui.theme` while `app` and `tui` shared rank 2; the name followed
+   the module once that exception stopped being worth its keep."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]

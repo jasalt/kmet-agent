@@ -14,7 +14,7 @@
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
             [kmet.ui.tui.chat-history :as ui]
-            [kmet.tui.theme :as th]
+            [kmet.libs.theme :as th]
             [kmet.app.loop.test-support :as support]))
 
 (t/use-fixtures

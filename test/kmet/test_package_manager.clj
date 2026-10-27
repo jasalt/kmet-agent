@@ -15,7 +15,7 @@
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as term]
-            [kmet.tui.theme :as theme]
+            [kmet.libs.theme :as theme]
             [kmet.test-utils :refer [slash]]))
 
 (defn- tmp-dir []

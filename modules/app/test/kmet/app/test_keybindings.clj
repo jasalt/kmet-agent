@@ -5,7 +5,7 @@
             [clojure.string :as str]
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.tui.theme :as theme]))
+            [kmet.libs.theme :as theme]))
 
 (defn- temp-agent-dir
   "Create a throwaway agent dir under target/ (with optional keybindings.edn
