@@ -24,9 +24,9 @@
             [rewrite-clj.parser :as p]))
 
 (def ^:private source-roots
-  "The trees a kmet2 kernel mutation can live in: the app the server embeds, and
+  "The tree a kmet2 kernel mutation can live in: the app the server embeds, and
    the front end a terminal runs."
-  ["modules/app/src" "modules/ui/src"])
+  ["modules/app/src"])
 
 (def ^:private structural-mutators
   "The `kmet.srce.core` calls that run plugin code, and are therefore the
@@ -181,10 +181,10 @@
     (let [files (filter (fn [f]
                           (or (str/includes? f "/kmet/app/tools/")
                               (str/includes? f "/kmet/app/modes/")
-                              (str/starts-with? f "modules/ui/src/")))
+                              (str/includes? f "/kmet/ui/")))
                         (source-files))]
       (is (seq files) "the tool layer, the mode rows and the UI are scanned")
-      (is (some #(str/starts-with? % "modules/ui/src/kmet/ui/") files)
+      (is (some #(str/includes? % "/kmet/ui/") files)
           "the UI root contributes")
       (doseq [f files
               {:keys [fn row]} (call-sites f)]

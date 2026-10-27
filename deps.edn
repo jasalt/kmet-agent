@@ -32,7 +32,7 @@
  ;; extensions/<name>/src layout, so io/resource reads a bundled extension at
  ;; the same path in a binary as in a checkout. A
  ;; missing root embeds nothing — the runtime then offers no bundled set.
- :jolt/build {:embed ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/srce/src" "modules/app/src" "modules/ui/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
+ :jolt/build {:embed ["modules/reakt/src" "modules/hikap/src" "modules/libs/src" "modules/tui/src" "modules/ai/src" "modules/loader/src" "modules/srce/src" "modules/app/src" "modules/tk/src" "target/kmet-version" "target/kmet-bundled"]}
 
  ;; OpenSSL stays dynamically loaded for run/repl and for the default dist mode
  ;; on Linux (including WSL), macOS, and other non-Windows platforms. Windows
@@ -62,11 +62,12 @@
                 :windows ["libssl-3-x64.dll" "libssl-3.dll"
                           "libssl-1_1-x64.dll" "libssl.dll"]}]
 
- :deps {kmet/ui {:local/root "modules/ui"}
+ :deps {kmet/app {:local/root "modules/app"}
 
-        ;; The module roots chain: ui → app → (libs, hikap, srce, ai, loader),
-        ;; and tui/reakt through them. babashka uses bb.edn's flat :paths; a JVM
-        ;; classpath resolves the same sources through these local roots.
+        ;; The module roots chain: app → (libs, hikap, srce, ai, loader, tui,
+        ;; reakt), and tk through the :jvm alias below (no module depends on
+        ;; it). babashka uses bb.edn's flat :paths; a JVM classpath resolves the
+        ;; same sources through these local roots.
         ;; babashka.fs / babashka.process are deliberately NOT deps: babashka
         ;; bundles them, and jolt vendors the same namespaces (built-in,
         ;; resolving ahead of any deps.edn copy). A Maven copy is redundant on
@@ -171,12 +172,14 @@
   ;; kmet.app.extensions.context/jars-for) and babashka.ffi (the Windows
   ;; clipboard backend). `bb start-jvm`, the JVM test tasks and the JVM
   ;; packager (which resolves its basis with this alias) opt in.
-  :jvm {:extra-deps {org.clojure/tools.deps {:mvn/version "0.28.1569"}
-                     ;; The Windows clipboard backend (kmet.libs.clipboard-win)
-                     ;; calls into the host FFI: babashka bundles babashka.ffi,
-                     ;; Jolt has jolt.ffi, and the JVM uses the standalone
-                     ;; library. It needs the Class-File/FFM API of JDK 22+;
-                     ;; an older JVM falls back to the platform tools.
+  :jvm {:extra-deps {kmet/tk {:local/root "modules/tk"}
+                     org.clojure/tools.deps {:mvn/version "0.28.1569"}
+                     ;; The host FFI on the JVM: the Windows clipboard backend
+                     ;; (kmet.libs.clipboard-win) and the Tk adapter
+                     ;; (kmet.tk.tcl) both call into it — babashka bundles
+                     ;; babashka.ffi and Jolt has jolt.ffi natively. It needs
+                     ;; the Class-File/FFM API of JDK 22+; an older JVM falls
+                     ;; back to the platform tools.
                      org.babashka/ffi {:mvn/version "0.1.2"}}
         ;; Foreign calls need native access on modern JDKs (older ones ignore
         ;; the flag). The packaged jar carries the same grant as the

@@ -65,8 +65,8 @@
    components, the app UI's (the `ui` module's two subtrees — landing 5i moved
    the last one out of `agent`) and the Tk skeleton's."
   ["modules/tui/src/kmet/tui/components"
-   "modules/ui/src/kmet/ui/tui"
-   "modules/ui/src/kmet/agent/ui/tui"
+   "modules/app/src/kmet/ui/tui"
+   "modules/app/src/kmet/agent/ui/tui"
    "modules/tk/src/kmet/gui_sample"])
 
 ;; ─── Top-level form splitting (paren-balanced, strings/comments skipped) ──

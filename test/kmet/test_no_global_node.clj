@@ -18,7 +18,7 @@
 
 (def ^:private new-module-srcs
   "The modules that share the ctx tree."
-  ["modules/srce/src" "modules/app/src" "modules/ui/src"])
+  ["modules/srce/src" "modules/app/src"])
 
 (def ^:private store-namespaces
   "kmet1's process-global state: the root-ctx resolver and the retired store."

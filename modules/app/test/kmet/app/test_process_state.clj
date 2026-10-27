@@ -14,18 +14,18 @@
    slip in. It reads the sources rather than loading them — the subject is what
    a file declares, and a guard that loaded the app would boot half of it.
 
-   `modules/ui/src` is scanned beside `modules/app/src`: the two cells there are
-   the one terminal a process runs, and a second session on a server never
-   loads that tree — which is exactly why their reasons are the terminal's and
-   not the app's."
+   `modules/app/src/kmet/ui` holds the front end beside the business tree: the
+   two cells there are the one terminal a process runs, and a second session on
+   a server never loads that tree — which is exactly why their reasons are the
+   terminal's and not the app's."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]))
 
 (def ^:private source-root
-  "The trees a process cell can live in: the app the server embeds, and the
+  "The tree a process cell can live in: the app the server embeds, and the
    front end a terminal runs."
-  ["modules/app/src" "modules/ui/src"])
+  ["modules/app/src"])
 
 (def ^:private process-cells
   "Every `defonce` the app and UI sources hold, and why each is the process's
@@ -87,7 +87,7 @@
    {'app-root
     "The one place a process names its root (new-app.md's decision: root.clj's process-root atom stays). A second root is a second app; a test that publishes its own puts the previous one back."}
 
-   "modules/ui/src/kmet/ui/tui/interactive.clj"
+   "modules/app/src/kmet/ui/tui/interactive.clj"
    {'live-mode
     "The running terminal mode. One interactive TUI per process because the terminal is: a server's headless profiles never load this tree."
     'pending-answers

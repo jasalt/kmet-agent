@@ -80,7 +80,7 @@
       (t/is (empty? (filter entries host-backend-namespaces))
             "host backends stay out of the eagerly-required lists")
       (t/is (every? fs/exists? ["modules/app/src/kmet/app/keybindings.clj"
-                                "modules/ui/src/kmet/agent/ui/tui/tool_renderers.clj"])
+                                "modules/app/src/kmet/agent/ui/tui/tool_renderers.clj"])
             "the shared-layer list entries have source files"))))
 
 (t/deftest ^:slow ^:bb-only test-packed-clojure-jar-roundtrip

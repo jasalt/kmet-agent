@@ -44,16 +44,17 @@
    the callable is :collect-safe and the eval that parks is :blocking (the
    same contract glimmer-gtk uses for g_application_run).
 
-   babashka.ffi and jolt.ffi expose the same FFM-style seam: both build the
+   The FFI seam is `babashka.ffi` (bundled in babashka, the standalone
+   org.babashka/ffi on the JVM) or `jolt.ffi`: all three build the
    trampoline with `callback`, Jolt keeping it :collect-safe across the
    parked vwait. The host differences are narrow and marked below —
-   babashka hands callback pointers to C arrays zero-size (so `argv`
-   reinterprets them) and a Jolt string may move across a blocking call (so
-   the parking eval passes Tcl a C copy, while babashka's :string argument
-   is already call-scoped)."
+   the babashka FFI hands callback pointers to C arrays zero-size (so
+   `argv` reinterprets them) and a Jolt string may move across a blocking
+   call (so the parking eval passes Tcl a C copy, while the babashka
+   FFI's :string argument is already call-scoped)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [#?(:bb babashka.ffi :jolt jolt.ffi) :as ffi]
+            [#?(:jolt jolt.ffi :default babashka.ffi) :as ffi]
             [kmet.tk.core :as tk])
   (:refer-clojure :exclude [run!]))
 
@@ -255,8 +256,7 @@
    first."
   [objv objc]
   (let [psize (ffi/sizeof :pointer)
-        objv* #?(:bb (ffi/reinterpret objv (* objc psize))
-                 :jolt objv)]
+        objv* #?(:jolt objv :default (ffi/reinterpret objv (* objc psize)))]
     (mapv (fn [i] (tcl-get-string-from-obj
                    (ffi/read objv* :pointer (* i psize)) ffi/null))
           (range objc))))
@@ -278,18 +278,18 @@
 (defn- ensure-trampoline!
   "The process-lifetime trampoline pointer. The arena holds it: Jolt's
    collector may run while the parked vwait waits for a callback, so the
-   callable is :collect-safe there; babashka's arena keeps the Clojure fn
-   reachable."
+   callable is :collect-safe there; the babashka FFI's arena keeps the
+   Clojure fn reachable."
   []
   (or @trampoline-callable
       (let [arena (ffi/global-arena)
             ;; the argtypes vector is literal on purpose: Jolt's callback is
             ;; a macro and does not take it through a local
-            callable #?(:bb (ffi/callback arena trampoline-proc
-                                          [:pointer :pointer :int :pointer] :int)
-                        :jolt (ffi/callback arena trampoline-proc
+            callable #?(:jolt (ffi/callback arena trampoline-proc
                                             [:pointer :pointer :int :pointer] :int
-                                            :collect-safe))]
+                                            :collect-safe)
+                        :default (ffi/callback arena trampoline-proc
+                                               [:pointer :pointer :int :pointer] :int))]
         (reset! trampoline-arena arena)
         (reset! trampoline-callable callable))))
 
@@ -375,12 +375,12 @@
   [script blocking?]
   (let [i (ensure-interp!)
         rc (if blocking?
-             #?(:bb (eval-script i script)
-                :jolt (let [p (ffi/string->ptr script)]
+             #?(:jolt (let [p (ffi/string->ptr script)]
                         (try
                           (tcl-eval-ex-blocking i p tcl-index-none 0)
                           (finally
-                            (ffi/free p)))))
+                            (ffi/free p))))
+                :default (eval-script i script))
              (eval-script i script))]
     (when-not (= rc tcl-ok)
       (throw (ex-info (str "kmet.tk.tcl: " (tcl-result i))

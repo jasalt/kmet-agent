@@ -8,7 +8,7 @@
 (deftest path->ns-mapping
   (testing "src files map to namespaces (underscores become dashes)"
     (is (= 'kmet.app.core (changed/path->ns "modules/app/src/kmet/app/core.clj")))
-    (is (= 'kmet.ui.tui.model-selector (changed/path->ns "modules/ui/src/kmet/ui/tui/model_selector.clj")))
+    (is (= 'kmet.ui.tui.model-selector (changed/path->ns "modules/app/src/kmet/ui/tui/model_selector.clj")))
     (is (= 'kmet.ai.api.openai-completions (changed/path->ns "modules/ai/src/kmet/ai/api/openai_completions.clj")))
     (is (= 'kmet.libs.text (changed/path->ns "modules/libs/src/kmet/libs/text.clj"))))
   (testing "test files map to test namespaces"
@@ -27,7 +27,7 @@
            (changed/path->ns "extensions/clojure/test/kmet/extensions/clojure/edit_util_test.clj"))))
   (testing "Windows fs/glob separators normalize — the graph keys are /-spelled"
     (is (= 'kmet.ui.tui.model-selector
-           (changed/path->ns "modules\\ui\\src\\kmet\\ui\\tui\\model_selector.clj")))
+           (changed/path->ns "modules\\app\\src\\kmet\\ui\\tui\\model_selector.clj")))
     (is (= 'kmet.tasks.test-lint
            (changed/path->ns "test\\kmet\\tasks\\test_lint.clj")))))
 

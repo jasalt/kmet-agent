@@ -25,7 +25,7 @@
   "The policy's two halves where a handle front end names them: the layout
    loads the process's resources before it creates its agent, and the handle
    factory names the expansion chain the engine applies."
-  {"modules/ui/src/kmet/ui/tui/interactive/layout.clj" 'packages/load-resources!
+  {"modules/app/src/kmet/ui/tui/interactive/layout.clj" 'packages/load-resources!
    "modules/app/src/kmet/app/loop/driver.clj" 'packages/expand-input})
 
 (defn- read-forms
@@ -50,8 +50,8 @@
    directory, and everything in it. Both roots, because `fs/glob`'s walk of the
    directory does not include its sibling file — a require in the row would
    otherwise go unseen."
-  ["modules/ui/src/kmet/ui/tui.clj"
-   "modules/ui/src/kmet/ui/tui"])
+  ["modules/app/src/kmet/ui/tui.clj"
+   "modules/app/src/kmet/ui/tui"])
 
 (t/deftest the-tui-reads-a-handle-and-not-kmet1s-session-driver
   (let [files (->> (mapcat (fn [root]

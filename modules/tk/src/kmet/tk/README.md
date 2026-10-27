@@ -1,12 +1,12 @@
 # kmet Tk backend (`kmet.tk.*`)
 
-bb/Jolt GUI backend for the toolkit-agnostic hiccup engine: **Tk**
+bb/JVM/Jolt GUI backend for the toolkit-agnostic hiccup engine: **Tk**
 (Tcl/Tk **8.6 or newer**; 9.1 preferred). `kmet.tk.core` is "hiccup-tk"
 — the backend itself plus the classic-widget tag set (`:tk/…`) —
 `kmet.tk.ttk` is the themed-widget set (`:ttk/…`),
 `kmet.tk.dsl` the widget machinery both are written against, and
-`kmet.tk.tcl` the host FFI adapter (`babashka.ffi` under babashka,
-`jolt.ffi` under Jolt) that owns a real Tcl interpreter and the Tk event
+`kmet.tk.tcl` the host FFI adapter (`babashka.ffi` on babashka and the
+JVM, `jolt.ffi` on Jolt) that owns a real Tcl interpreter and the Tk event
 loop. kmet's widget set (`:ui/…`) is demonstrated by the dependency-free
 sample `kmet.gui-sample.ui`: one scroll-container composite over the
 backend's extra-tag seam.
@@ -31,7 +31,8 @@ kmet.tk.core              the Tk backend + the classic widget set (:tk/…),
 kmet.tk.ttk               the themed widget set (:ttk/…)
 kmet.tk.ttk.style         the ttk style database: ttk::style configure/map
                           and theme switching, as Clojure data
-kmet.tk.tcl               the host FFI Tcl/Tk adapter (babashka.ffi / jolt.ffi)
+kmet.tk.tcl               the host FFI Tcl/Tk adapter (babashka.ffi on bb
+                          and the JVM, jolt.ffi on Jolt)
 kmet.gui-sample.ui        the widget skeleton: :ui/… over the backend
 ```
 
@@ -78,7 +79,7 @@ plus a pump on the UI thread. See `kmet.tk.core/run!`.
 
 ## Running the Tk backend
 
-Requirements: babashka or Jolt, plus Tcl/Tk **8.6 or newer** (`apt install
+Requirements: babashka, the JVM or Jolt, plus Tcl/Tk **8.6 or newer** (`apt install
 tcl tk`, `brew install tcl-tk`, or the MSYS2/Windows DLLs). The adapter
 tries the newest pair whose Tcl loads — 9.1, 9.0, then 8.6 — and throws
 with the names it tried when none is found. `KMET_TCL_LIB`/`KMET_TK_LIB`
@@ -705,14 +706,14 @@ read caches the tree and a click repaints nothing).
 
 ## Testing
 
-`kmet.tk.test-tk` (bb or Jolt) exercises the whole engine → backend →
+`kmet.tk.test-tk` (bb, the JVM or Jolt) exercises the whole engine → backend →
 script path against a recording adapter — no display needed — and
 `kmet.gui-sample.test-ui` does the same for the `:ui/…` widget skeleton over
 the sample UI backend, and `kmet.tk.test-ttk-style` records the `ttk::style`
 scripts headlessly and round-trips them — `use-theme!`/`define-style!`/
 `map-style!`/`apply!` — through a real Tk when a display is there (on Termux,
 under jolt + Xvfb).
-`kmet.tk.test-tcl` (bb or Jolt, skipping where libtcl is absent — the
+`kmet.tk.test-tcl` (bb, the JVM or Jolt, skipping where libtcl is absent — the
 miss is memoized, so the skip is one probe per process, not one per test)
 smoke-tests the real interpreter: eval, the command trampoline,
 `tcl-quote` round-tripping through the Tcl parser, the recorded Tcl/Tk

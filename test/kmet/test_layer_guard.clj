@@ -1,11 +1,14 @@
 (ns kmet.test-layer-guard
-  "Guard (app layer boundary): the app's business logic (`kmet.app.*`, minus the
-   UI tree it does not hold) must not require the terminal/Tk front ends or the
-   interactive mode, and the front-end layers (`kmet.app.modes.**`,
-   `kmet.ui.**`) drive the engine only through `kmet.app.session.runtime`.
+  "Guard (app layer boundary): the app's business logic (`kmet.app.*`, the
+   `kmet/ui` front-end subtree excluded) must not require the terminal/Tk front
+   ends or the interactive mode, and the front-end layers
+   (`kmet.app.modes.**`, `kmet.ui.**`) drive the engine only through
+   `kmet.app.session.runtime`.
 
-   Its subject is the app and UI source trees, not one module's tests, so it
-   lives beside the other cross-cutting guards."
+   The `ui` module merged into `app`, so the split is a path rule here rather
+   than a module rank: both trees live under `modules/app/src`. Its subject is
+   the app source tree, not one module's tests, so it lives beside the other
+   cross-cutting guards."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
@@ -34,18 +37,12 @@
            (sort)))))
 
 (defn- app-source-files
-  "The app's business logic: every source file under the app tree's root, minus
-   the mode rows and the UI subtree (the front-end layers the rules below
-   constrain separately)."
+  "The app's business logic: every source file under the business tree, minus
+   the mode rows (the front-end layer the rules below constrain separately).
+   The UI subtree is not under this root — it is `modules/app/src/kmet/ui`."
   []
   (->> (source-files-under "modules/app/src/kmet/app")
-       (remove #(str/includes? % "/ui/"))
-       (remove #(str/includes? % "/modes/"))
-       ;; cli.clj is the composition root: it wires the modes and the TUI
-       ;; engines, so it legitimately requires them. Everything else in the
-       ;; app tree is scanned — core.clj included: the bootstrap above cli.clj
-       ;; requires neither app and no front end.
-       (remove #(= "cli.clj" (fs/file-name %)))))
+       (remove #(str/includes? % "/modes/"))))
 
 (defn- ns-form [path]
   (sr/read-ns-form path "layer guard"))
@@ -79,28 +76,26 @@
   (source-files-under "modules/app/src/kmet/app/modes"))
 
 (def ^:private ui-roots
-  "Where the app-UI layer's files are: the `ui` module, in two subtrees — the
-   files that moved under `kmet.ui.*`, and the one that kept its
-   `kmet.agent.ui.*` name because shipped extensions require it by that name.
-   `agent` holds no UI tree since landing 5i moved `resource_config`, its last
-   file."
-  ["modules/ui/src/kmet/ui"
-   "modules/ui/src/kmet/agent/ui"])
+  "Where the app-UI layer's files are, inside the app module since the `ui`
+   module merged: the `kmet.ui.*` subtree, and the one that kept its
+   `kmet.agent.ui.*` name because shipped extensions require it by that name."
+  ["modules/app/src/kmet/ui"
+   "modules/app/src/kmet/agent/ui"])
 
 (defn- ui-source-files
   "Every app-UI namespace file, both halves. One layer, so every rule below
-   applies to all of it: the rank guard catches a `ui` file reaching `agent`,
-   but not a `ui` file reaching `kmet.app.loop` (rank 2, below it)."
+   applies to all of it: the rank guard sees no module edge inside `app`, so a
+   `ui` file reaching `kmet.app.loop` is this rule's job."
   []
   (sort (mapcat source-files-under ui-roots)))
 
 (defn- ui-mode-files
-  "The front ends that live under `ui` after 5l-iii: the TUI's provider/mode row
+  "The front ends that live under `ui`: the TUI's provider/mode row
    (`kmet.ui.tui`) and its interactive cluster. They are modes — they own a run
    and drive the engine — so the widget-scoped `:ui` rules do not bind them."
   []
-  (filter #(or (= "modules/ui/src/kmet/ui/tui.clj" %)
-               (str/starts-with? % "modules/ui/src/kmet/ui/tui/interactive"))
+  (filter #(or (= "modules/app/src/kmet/ui/tui.clj" %)
+               (str/starts-with? % "modules/app/src/kmet/ui/tui/interactive"))
           (ui-source-files)))
 
 (defn- front-end-source-files
@@ -149,10 +144,9 @@
    - `:ui` (the app-UI widgets alone): the session driver. It starts work —
      prompts, turns, session switching, disposal — and a mode owns a run and may
      drive it, while a widget reads the engine instead
-     (`kmet.app.session.runtime`, one rank below the driver). The TUI mode
-     entry and its interactive cluster are front ends that *are* a mode: 5l-iii
-     moved them under `ui`, so they keep the `:front-ends` rule and this one
-     skips them (`ui-mode-files`)."
+     (`kmet.app.session.runtime`). The TUI mode entry and its interactive
+     cluster are front ends that *are* a mode: they keep the `:front-ends` rule
+     and this one skips them (`ui-mode-files`)."
   [{:scope :front-ends
     :prefixes ["kmet.app.loop" "kmet.app.compaction.stage"]
     :why "front ends reach the engine through the session runtime"}

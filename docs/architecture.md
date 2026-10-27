@@ -24,20 +24,21 @@ modules/
 ├── ai/     — provider/auth library                  (kmet.ai.*)
 ├── srce/   — the kernel: ctx, services, fibers      (kmet.srce.*; srce.md)
 ├── loader/ — extension loader                       (kmet.loader.*; loader.md)
-├── app/    — the application, below every front end (kmet.app.*)
-├── ui/     — the front ends                         (kmet.ui.*)
-└── tk/     — Tk backend + widget sample, Jolt-only  (kmet.tk.*, kmet.gui-sample.*)
+├── app/    — the application + its TUI front end   (kmet.app.*, kmet.ui.*)
+└── tk/     — Tk backend + widget sample            (kmet.tk.*, kmet.gui-sample.*)
 ```
 
 `modules.edn` is the workspace manifest: it lists the module trees and the
 extra source roots, and the tasks read it instead of repeating the paths
 (`kmet.tasks.modules`). A module's namespaces sit under the root it is
-named for: `reakt` holds `kmet.reakt.*`, `hikap` holds `kmet.hikap.*`.
+named for: `reakt` holds `kmet.reakt.*`, `hikap` holds `kmet.hikap.*`. `app`
+is the one module with two prefixes: its business tree is `kmet.app.*`, and
+`kmet.ui.*` is the TUI front end that merged into it (it was the `ui` module).
 
 Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
 may depend only on strictly lower-ranked ones, and a *namespace* may require
 only a file in a strictly lower-ranked module — `reakt`/`libs`/`loader` 0,
-`hikap`/`ai`/`srce` 1, `tui`/`app` 2, `ui` 3. A shared leaf both `app` and
+`hikap`/`ai`/`srce` 1, `tui`/`tk` 2, `app` 3. A shared leaf both `app` and
 `tui` read therefore lives in `libs`, which is why `kmet.tui.theme` and
 `kmet.tui.fuzzy` sit in `modules/libs` under a `kmet.tui.*` name: the rule is
 about the module, not the prefix.
@@ -56,8 +57,8 @@ keeps the repeated pins from drifting. Test-only libraries belong to the test
 project (`deps.edn`'s `:dev` alias; babashka bundles the ones the suites use
 and Jolt vendors them): a module `deps.edn` is a `:local/root` dependency, and
 tools.deps never applies a dependency's aliases, so a test alias there could
-not reach a test classpath. Test trees are still cross-cutting (`ui`'s tests
-require `app`) and often point upward; the classpath is their union, so they
+not reach a test classpath. Test trees are still cross-cutting (`libs`'
+tests require `tui`) and often point upward; the classpath is their union, so they
 use modules no module `deps.edn` declares. It reads both hosts' reader
 branches, so a `#?(:jolt …)` require counts.
 
@@ -67,7 +68,8 @@ namespace an extension may depend on; `kmet.app.extensions` is its runtime.
 
 ### The app tree (`modules/app/src/kmet/app`)
 
-One application, ranked below every front end. Its parts, coarse to fine:
+One application, top of the module ladder (rank 3) and holding its front end.
+Its parts, coarse to fine:
 
 ```
 kmet/app/
@@ -121,12 +123,12 @@ did not ship (`:ext/…` composition rows, the profile file layers beyond
 `--patch`). Its "Reconciliation" section maps the historical names to HEAD;
 this file stays the current map.
 
-### The front ends (`modules/ui/src/kmet/ui`)
+### The front end (`modules/app/src/kmet/ui`)
 
 ```
 kmet/ui/
-├── tui.clj             — the TUI provider + mode row (one artifact: the ui
-│                         module's `:ui` surface and its `:mode` entry)
+├── tui.clj             — the TUI provider + mode row (one artifact: the
+│                         `:ui` surface and its `:mode` entry)
 └── tui/
     ├── interactive/    — the interactive cluster: layout, turn, session admin,
     │                     builtins, state (CoreState), status, auth, resources,
@@ -139,7 +141,7 @@ kmet/ui/
 
 One file keeps a pre-rename name on purpose:
 `kmet/agent/ui/tui/tool_renderers.clj` — shipped extensions require
-`kmet.agent.ui.tui.tool-renderers` by that name, so the module carries the old
+`kmet.agent.ui.tui.tool-renderers` by that name, so the tree carries the old
 prefix at the path a require resolves.
 
 ```
@@ -188,7 +190,7 @@ root `AGENTS.md` topic map.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
   `kmet.hikap.core`). It may depend on `kmet.libs.*`, `kmet.reakt.*` and
   `kmet.hikap.*`, never on app, LLM, or session concepts.
-- `kmet.tk.*` is the Tk GUI backend (Jolt-only; kmet.tk.core with the
+- `kmet.tk.*` is the Tk GUI backend (kmet.tk.core with the
   classic `:tk/…` widget set, kmet.tk.ttk the `:ttk/…` set, kmet.tk.dsl
   their shared machinery and kmet.tk.options the Tk option vocabulary —
   plus kmet.tk.tcl, the host FFI adapter). Like `kmet.tui.*`, `kmet.tk.*`
@@ -196,11 +198,12 @@ root `AGENTS.md` topic map.
   above it. The module also carries the `kmet.gui-sample.*` widget skeleton
   (the `:ui/…` widgets, today `:ui/transcript`), which is dependency-free
   like the backend; no app module requires the sample or Tk.
-- `kmet.app.*` is the application below every front end, and `kmet.app.modes.*`
-  is its mode-row layer: a mode row is what a profile runs, and the row mounts
-  the front end that does the work. The direction is front end → app services,
-  never app → front end; `kmet.ui.tui.theme-controller` sits in the UI layer
-  for exactly that reason and the rows call it from above.
+- `kmet.app.*` is the application, and `kmet.app.modes.*` is its mode-row layer:
+  a mode row is what a profile runs, and the row mounts the front end that does
+  the work. The front end (`kmet.ui.**`) lives in this module too, so the
+  direction rule is enforced by path rather than by rank
+  (`kmet.test-layer-guard`): the business tree never requires `kmet.ui.**`,
+  `kmet.tui.**`, `kmet.tk.**` or a mode row.
   `kmet.app.core` is the composition root: it owns the maintenance flags
   (`--version`, `--list-models`, `--generate-models`, whose order matters),
   parses the invocation and boots the composed profile, then runs the profile's

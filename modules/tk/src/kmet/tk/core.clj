@@ -22,7 +22,7 @@
       :destroy! (fn [] -> nil)}              ; optional teardown
 
    kmet.tk.tcl supplies the real host FFI adapter (babashka.ffi on
-   babashka, jolt.ffi on Jolt); tests bind a recording stub. The adapter's
+   babashka and the JVM, jolt.ffi on Jolt); tests bind a recording stub. The adapter's
    evaluator is installed into kmet.tk.dsl at load, so the widget sets
    script through it without depending on this namespace.
 

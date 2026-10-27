@@ -1039,7 +1039,7 @@ through the public accessors (`dock/top-component`,
 full contract lives in the `kmet.ui.tui.dock` namespace docstring; the
 regression test for the round trip this shape was built from is
 `test-oauth-login-dialog-covers-and-releases` in
-`modules/ui/test/kmet/ui/tui/interactive/test_layout.clj`.
+`modules/app/test/kmet/ui/tui/interactive/test_layout.clj`.
 
 ---
 
@@ -1647,7 +1647,7 @@ kmet.ui          fn components (shared def'd computes, with-let local state)
                 + hiccup/root mount points
 kmet.tui        the TUI backend: hiccup facade, macros, protocols, components
                 — generic; no app/chat/session concepts
-kmet.tk         the Tk GUI backend, Jolt-only (kmet.tk.core = the backend
+kmet.tk         the Tk GUI backend, bb/JVM/Jolt (kmet.tk.core = the backend
                 with the classic :tk/… widget set, kmet.tk.ttk = the
                 :ttk/… set, kmet.tk.dsl = their shared machinery,
                 kmet.tk.options = the Tk option vocabulary,

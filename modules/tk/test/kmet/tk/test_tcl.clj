@@ -1,8 +1,8 @@
 (ns kmet.tk.test-tcl
-  "Real host FFI Tcl adapter tests (babashka.ffi / jolt.ffi).
+  "Real host FFI Tcl adapter tests (babashka.ffi on bb/JVM, jolt.ffi).
 
-   The adapter loads libtcl at call time, so this namespace loads on both
-   hosts and the tests skip where libtcl is absent (and on the JVM).
+   The adapter loads libtcl at call time, so this namespace loads on every
+   host and the tests skip where libtcl is absent.
    The libtcl-absent start-up is covered by running it on a machine that
    has Tcl/Tk installed."
   (:require [clojure.string :as str]
@@ -13,7 +13,7 @@
             [kmet.hikap.core :as engine]))
 
 (defn- live-adapter
-  "The real Tcl adapter with libtcl loaded, or nil (JVM, or no libtcl)."
+  "The real Tcl adapter with libtcl loaded, or nil when libtcl is absent."
   []
   (try
     (require 'kmet.tk.tcl)
@@ -38,7 +38,7 @@
             "a Tcl error is rethrown as ExceptionInfo")
       (finally
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
-    (t/is true "skipped: libtcl is absent (or this is the JVM)")))
+    (t/is true "skipped: libtcl is absent")))
 
 (t/deftest loaded-pair-and-version
   ;; The adapter records the Tcl/Tk pair it chose, and the interpreter it
@@ -57,7 +57,7 @@
               (str "a supported Tcl version, got " patchlevel)))
       (finally
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
-    (t/is true "skipped: libtcl is absent (or this is the JVM)")))
+    (t/is true "skipped: libtcl is absent")))
 
 (t/deftest derived-tk-names-from-tcl-spelling
   ;; KMET_TCL_LIB without KMET_TK_LIB pairs with the Tk names derived
@@ -133,7 +133,7 @@
         (t/is (= 1 @pumps)))
       (finally
         ((deref (ns-resolve 'kmet.tk.tcl 'stop!)))))
-    (t/is true "skipped: libtcl is absent (or this is the JVM)")))
+    (t/is true "skipped: libtcl is absent")))
 
 ;; ─── the tag table against a real Tk ──────────────────────────────────────
 

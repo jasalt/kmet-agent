@@ -47,8 +47,14 @@ deleted: `modules/agent` is gone, `--app` is `:kmet.app/bad-args`
 |---|---|
 | 0 | `reakt`, `libs`, `loader` |
 | 1 | `hikap`, `ai`, `srce` |
-| 2 | `tui`, `tk`, `app` |
-| 3 | `ui` |
+| 2 | `tui`, `tk` |
+| 3 | `app` |
+
+The `ui` module that landing 5 created (rank 3, the TUI alone) merged back into
+`app`: its files are `modules/app/src/kmet/ui` under the same `kmet.ui.*`
+names, and the app/front-end split is the path rule in
+`kmet.test-layer-guard` rather than a module edge. `app` moved to rank 3 for
+it — it now sits above the component backend the widgets build on.
 
 No `mode` module ever existed: the four modes are rows in `app` —
 `kmet.app.modes.print`, `kmet.app.modes.rpc`, `kmet.app.modes.server`, and
@@ -335,17 +341,16 @@ profile's rows, loads the world and runs the selected mode.
 Ranks are `modules.edn`'s `:rank` guard: **a module may depend only on a
 strictly lower rank** (`kmet.test-module-deps`). `srce` at 1 may require
 `libs`, `reakt` and `loader`, and must not require `hikap`, `ai`, `tui`, `tk`
-or anything above. `ui` and `mode` at 3 may require `app` (2) and the backends
-(2), never each other — they meet at the `:ui` service key, which is a keyword,
-not a require.
+or anything above.
 
-`app` sits at **2** so the lifted registries, tool table, bus, extension host
-and session log are below everything that consumes them; `ui` is at 3 and `tk`
-sits with `tui` at 2 (nothing depends on it). The plan's temporary inversion —
-`agent` at 4 above `app`, plus a `mode` module at 3 — ended with kmet1: the
-modes are rows in `app`, and no `mode` module exists. The cost of `app` at 2 is
-that rank 2 mixes "UI backends" with "shared services"; the split into
-`services` (2) and `app` (3) was never needed, and is not planned.
+`app` sits at **3**, above the component backends: it holds the front end, and
+`kmet.ui.*` builds on `tui` (2), which brings jline and, through hikap, reakt.
+`tk` sits with `tui` at 2 with nothing depending on it. The plan's temporary
+inversion — `agent` at 4 above `app`, plus a `mode` module at 3 — ended with
+kmet1: the modes are rows in `app`, and no `mode` module exists. The `ui`
+module landing 5 created is gone for the same reason it was thin: with one
+front end, its only content was a rank edge, so it merged into `app` and the
+split is a path rule now.
 
 Two consequences of sharing rather than duplicating: `kmet.app.registry` was
 kmet1's registry too, so the contract tests (one set of assertions, two
@@ -586,7 +591,7 @@ providers that draw are:
 1. `:ui/terminal` — components over `kmet.hikap.core`, which already
    takes its backend map as an argument.
 2. `:ui/tk` — deferred to its own development: the same contract, second
-   toolkit (Tk through `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM),
+   toolkit (Tk through `babashka.ffi`/`jolt.ffi`: bb, the JVM and Jolt),
    starting from the existing `kmet.gui-sample` widget skeleton (in
    `modules/tk`) rather than a blank page.
 3. `:ui/web` — later; a third backend, no app change.

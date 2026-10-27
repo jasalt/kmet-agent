@@ -19,18 +19,18 @@
   {:name "ai" :src "modules/ai/src" :test "modules/ai/test" :rank 1}
   {:name "loader" :src "modules/loader/src" :test "modules/loader/test" :rank 0}
   {:name "srce" :src "modules/srce/src" :test "modules/srce/test" :rank 1}
-  ;; The kmet2 application: shared services, the session layer and the
-  ;; extension host (new-app.md). Every namespace here is kmet.app.* (landing
-  ;; 11 renamed the ones whose lifts had kept kmet1's names); kmet.extension is
-  ;; the ABI and keeps its name.
-  {:name "app" :src "modules/app/src" :test "modules/app/test" :rank 2}
-  ;; The front ends (new-app.md, landing 5): the TUI components in kmet.ui.*,
-  ;; moved out of `agent` as their requires stop reaching kmet1's runtime. Rank 3
-  ;; so it may reach `app` and the component backends, and never `agent`.
-  {:name "ui" :src "modules/ui/src" :test "modules/ui/test" :rank 3}
+  ;; The kmet2 application: shared services, the session layer, the extension
+  ;; host (new-app.md), and the front end. The TUI's widgets, selectors and
+  ;; mode row are `kmet.ui.*` under `modules/app/src/kmet/ui` — the module that
+  ;; was `ui` until it merged here; the layer guard rules on that subtree by
+  ;; path. Every other namespace is kmet.app.* (landing 11 renamed the ones
+  ;; whose lifts had kept kmet1's names); kmet.extension is the ABI and keeps
+  ;; its name.
+  {:name "app" :src "modules/app/src" :test "modules/app/test" :rank 3}
   ;; tk is the Tk backend plus its kmet.gui-sample.* widget skeleton (one
   ;; `:ui/transcript` composite over the backend's extra-tag seam). No module
-  ;; depends on it: the agent module deliberately carries no Tk dependency.
+  ;; depends on it: it reaches the JVM classpath through the root deps.edn
+  ;; :jvm alias (the host FFI and the module root), not a module edge.
   {:name "tk" :src "modules/tk/src" :test "modules/tk/test" :rank 2}]
 
  :extension-root "extensions"

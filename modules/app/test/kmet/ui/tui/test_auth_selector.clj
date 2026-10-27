@@ -27,7 +27,7 @@
    :method-name method-name
    :status status})
 
-(defn- selector
+(defn- make-selector
   "Auth provider selector over the given ENTRIES (defaults: two providers,
    both unconfigured)."
   [& {:keys [mode entries search on-select on-cancel]}]
@@ -74,11 +74,11 @@
 ;; ─── Provider selector (pi OAuthSelectorComponent) ────────────────────────
 
 (t/deftest test-login-layout-title-and-status-indicators
-  (let [sel (selector :entries [(entry "anthropic" :name "Anthropic"
-                                       :status {:type :oauth :source "OAuth"})
-                                (entry "openai" :name "OpenAI" :auth-type :api-key
-                                       :status {:type :api-key :source "OPENAI_API_KEY"})
-                                (entry "groq" :name "Groq" :auth-type :api-key)])]
+  (let [sel (make-selector :entries [(entry "anthropic" :name "Anthropic"
+                                            :status {:type :oauth :source "OAuth"})
+                                     (entry "openai" :name "OpenAI" :auth-type :api-key
+                                            :status {:type :api-key :source "OPENAI_API_KEY"})
+                                     (entry "groq" :name "Groq" :auth-type :api-key)])]
     (t/is (some #(str/includes? % "Select provider to configure:") (render-lines sel))
           "login title")
     (t/is (str/includes? (row-line sel 0) "→ Anthropic") "first row selected")
@@ -92,9 +92,9 @@
           "both auth types present → type labels shown")))
 
 (t/deftest test-logout-wording-and-mismatch-warning
-  (let [sel (selector :mode :logout
-                      :entries [(entry "anthropic" :name "Anthropic" :auth-type :api-key
-                                       :status {:type :oauth :source "OAuth"})])]
+  (let [sel (make-selector :mode :logout
+                           :entries [(entry "anthropic" :name "Anthropic" :auth-type :api-key
+                                            :status {:type :oauth :source "OAuth"})])]
     (t/is (some #(str/includes? % "Select provider to logout:") (render-lines sel))
           "logout title")
     (t/is (str/includes? (row-line sel 0) "• subscription configured")
@@ -103,13 +103,13 @@
           "a single auth type renders no type label")))
 
 (t/deftest test-empty-states
-  (let [login (selector :mode :login :entries [])
-        logout (selector :mode :logout :entries [])]
+  (let [login (make-selector :mode :login :entries [])
+        logout (make-selector :mode :logout :entries [])]
     (t/is (str/includes? (row-line login 0) "No providers available"))
     (t/is (str/includes? (row-line logout 0) "No providers logged in. Use /login first."))))
 
 (t/deftest test-navigation-clamps-without-wrapping
-  (let [sel (selector)]
+  (let [sel (make-selector)]
     (press sel "up")
     (t/is (str/includes? (arrow-line sel) "Anthropic") "up at the top stays")
     (press sel "down")
@@ -120,8 +120,8 @@
 
 (t/deftest test-enter-selects-and-escape-cancels
   (let [selected (atom ::none)
-        sel (selector :on-select (fn [id auth-type] (reset! selected [id auth-type]))
-                      :on-cancel (fn [] (reset! selected ::cancelled)))]
+        sel (make-selector :on-select (fn [id auth-type] (reset! selected [id auth-type]))
+                           :on-cancel (fn [] (reset! selected ::cancelled)))]
     (press sel "down")
     (press sel "enter")
     (t/is (= ["openai" :api-key] @selected) "Enter hands [id auth-type] to on-select")
@@ -129,9 +129,9 @@
     (t/is (= ::cancelled @selected) "Escape cancels")))
 
 (t/deftest test-search-filters-and-keeps-selection-in-bounds
-  (let [sel (selector :entries [(entry "anthropic" :name "Anthropic")
-                                (entry "openai" :name "OpenAI")
-                                (entry "groq" :name "Groq")])]
+  (let [sel (make-selector :entries [(entry "anthropic" :name "Anthropic")
+                                     (entry "openai" :name "OpenAI")
+                                     (entry "groq" :name "Groq")])]
     ;; move to the last row, then filter down to a single match
     (press sel "down")
     (press sel "down")
@@ -143,19 +143,19 @@
           "no match shows the empty state")))
 
 (t/deftest test-pre-filled-search
-  (let [sel (selector :search "open")]
+  (let [sel (make-selector :search "open")]
     (t/is (some #(str/includes? % "> open") (render-lines sel))
           "the pre-filled search is visible in the input")
     (t/is (str/includes? (row-line sel 0) "OpenAI") "the list starts filtered")))
 
 (t/deftest test-scroll-counter
   ;; more entries than the 8-row viewport: the counter shows (selected/total)
-  (let [sel (selector :entries (mapv (fn [i] (entry (str "p" i) :name (str "Provider " i)))
-                                     (range 20)))]
+  (let [sel (make-selector :entries (mapv (fn [i] (entry (str "p" i) :name (str "Provider " i)))
+                                          (range 20)))]
     (t/is (some #(str/includes? % "(1/20)") (rows sel)) "the scroll counter shows")))
 
 (t/deftest test-root-body-memoizes-idle-frames
-  (let [sel (selector)]
+  (let [sel (make-selector)]
     (protocols/render sel 120)
     (engine/reset-counters!)
     (protocols/render sel 120)
@@ -169,7 +169,7 @@
 (t/deftest test-navigation-does-not-leak-watches
   ;; re-derived rows must be disposed — a dropped Text keeps its track! watch
   ;; registered, which would grow the registry per keypress
-  (let [sel (selector)
+  (let [sel (make-selector)
         watchers component/live-watch-count]
     (protocols/render sel 120)
     (let [baseline (watchers)]
@@ -182,7 +182,7 @@
   ;; input) that must not outlive the panel — the dock drops foreign records
   ;; without disposing them, so an unwired root would keep the reaction and
   ;; its children alive forever.
-  (let [sel (selector)
+  (let [sel (make-selector)
         watchers component/live-watch-count
         before (watchers)]
     (protocols/render sel 120)
