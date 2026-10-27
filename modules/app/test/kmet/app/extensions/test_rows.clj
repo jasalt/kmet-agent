@@ -123,6 +123,27 @@
               (runtime/shutdown! booted)
               (is (empty? (extensions/registered-extensions))))))))))
 
+(deftest reload-after-a-wholesale-clear-does-not-double-unload
+  ;; `clear-extensions!` unloads the registry without touching the rows'
+  ;; entries; a later `/reload` must remount, not unload a record twice
+  (extensions/clear-extensions!)
+  (let [path (probe!)]
+    (with-installed [path]
+      (fn []
+        (let [booted (runtime/boot (composed {:plugin :ext/probe_ext
+                                              :config {:mode :test}}) {})]
+          (try
+            (extensions/clear-extensions!)
+            (is (empty? (extensions/registered-extensions)))
+            (is (= [{:extension "probe_ext.clj" :error nil}]
+                   (rows/reload-all!))
+                "the row's entry still mounts after a wholesale reset")
+            (is (= 1 (count (extensions/registered-extensions))))
+            (is (= {:mode :test} (:config (extensions/extension-api "probe_ext.clj"))))
+            (finally
+              (runtime/shutdown! booted)
+              (is (empty? (extensions/registered-extensions))))))))))
+
 (deftest a-load-failure-fails-the-row
   (extensions/clear-extensions!)
   (let [path (write-extension! "broken_ext.clj" "(ns broken-ext)\n(defn init [api] nil)\n")]

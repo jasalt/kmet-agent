@@ -330,6 +330,45 @@
           (t/is (true? (:enabled (first-item-row screen))))))
       {:user {:packages [f]}})))
 
+(t/deftest test-screen-project-only-extension-composes
+  ;; an extension discovered only in the project scope has no item in the user
+  ;; view; its inherited state is the composition's global one, so the first
+  ;; space composes it in the project layer instead of trying to unload it
+  (let [dir (tmp-dir)]
+    (fs/create-dirs (str (fs/path dir "extensions")))
+    (spit (str (fs/path dir "extensions" "one.clj")) "(ns pkg-one)\n")
+    (with-settings
+      (fn [ctx]
+        (let [screen (rc/make-resource-config-screen :rows 40
+                                                     :write-scope :project
+                                                     :project-mode? true)
+              row (first-item-row screen)]
+          (t/is (= :extensions (:resource-type (:item row))))
+          (t/is (false? (:inherited? row)) "no item in the user view")
+          (t/is (false? (:inherited-enabled row))
+                "the inherited state is the composition's, not 'settings say yes'")
+          (protocols/handle-input screen " ")
+          (t/is (= [{:id :ext/one :plugin :ext/one}]
+                   (:patch (layer-of (:project-patch ctx)))))
+          (t/is (true? (:enabled (first-item-row screen))))))
+      {:project {:packages [dir]}})))
+
+(t/deftest test-screen-unreadable-extension-is-marked
+  ;; a manifest that cannot be resolved cannot be composed: the row says so
+  ;; and the toggle is inert instead of silently doing nothing
+  (let [dir (tmp-dir)]
+    (spit (str (fs/path dir "extension.edn")) "{:name")
+    (with-settings
+      (fn [_]
+        (let [screen (rc/make-resource-config-screen :rows 40)
+              row (first-item-row screen)]
+          (t/is (true? (get-in row [:item :unreadable?])))
+          (t/is (some #(str/includes? % "unreadable manifest")
+                      (render-lines screen 100)))
+          (protocols/handle-input screen " ")
+          (t/is (false? (:enabled (first-item-row screen))))))
+      {:user {:packages [dir]}})))
+
 ;; ─── Search and scope switching ───────────────────────────────────────────
 
 (t/deftest test-screen-query-filter
@@ -342,6 +381,25 @@
             (t/is (= 1 (count items)))
             (t/is (str/includes? (:path (:item (first items))) "two.clj")))))
       {:user {:packages [dir]}})))
+
+(t/deftest test-screen-search-reuses-the-resolved-views
+  ;; a keystroke only filters the rows the screen has: re-resolving would
+  ;; re-read the settings and every extension manifest per character
+  (let [dir (make-package (tmp-dir))
+        real pkgs/resolve-package-items
+        calls (atom 0)]
+    (with-redefs [pkgs/resolve-package-items
+                  (fn [& args] (swap! calls inc) (apply real args))]
+      (with-settings
+        (fn [_]
+          (let [screen (rc/make-resource-config-screen :rows 40)
+                built @calls]
+            (t/is (pos? built))
+            (rc/screen-set-query! screen "one")
+            (t/is (= built @calls) "the query change reused the views")
+            (rc/screen-set-write-scope! screen :project)
+            (t/is (< built @calls) "a scope switch re-reads the files")))
+        {:user {:packages [dir]}}))))
 
 (t/deftest test-screen-tab-switches-scope
   (let [dir (make-package (tmp-dir))]

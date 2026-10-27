@@ -122,9 +122,11 @@ row's extension with the same config (a changed composition needs a restart).
 `kmet config` is the editor for these rows: space composes the selected
 extension in `~/.kmet/agent/patch.edn` or disables it with a remove patch
 (the row and its `:config` stay, so re-enabling is lossless); the project
-scope writes a project row or a remove patch in `.kmet/patch.edn`. The config
-screen also lists skills, prompts, themes and built-in tools, but those keep
-their settings-backed toggles.
+scope writes a project row or a remove patch in `.kmet/patch.edn`. A write
+re-renders the file's EDN and keeps its leading comments (inline comments
+inside the map are not preserved). The config screen also lists skills,
+prompts, themes and built-in tools, but those keep their settings-backed
+toggles.
 
 The extension's own plugin still mounts under the host ctx, so an `:ext/…` row
 belongs to a root profile, not an agent preset. Tool selection is not a row yet:
@@ -137,7 +139,10 @@ not.
 
 A patch that targets an id an earlier layer *removed* is a no-op (a project
 layer disabling a row the global layer already disabled does not fail); an id
-that was never present is still an error.
+that was never present is still an error. A `:remove` patch therefore needs a
+row to target somewhere earlier in the composition: `kmet config` keeps a
+disabled extension's row (with its config) and only adds the remove patch, so
+if you delete that row by hand, delete its remove patch too.
 
 Every mistake is refused by name before anything boots: an unknown row id, a
 duplicate id, a patch that changes nothing, a `:remove` that also sets config,

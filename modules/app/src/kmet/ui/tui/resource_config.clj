@@ -270,6 +270,8 @@
             name (if dimmed? (th/fg t :dim name) name)
             suffix (str (when (pkgs/bundled-item? item)
                           (th/fg t :dim "  bundled"))
+                        (when (:unreadable? item)
+                          (th/fg t :muted "  unreadable manifest"))
                         (override-suffix t write-scope ov inherited?))]
         (u/truncate-to-width
          (str cursor "    "
@@ -281,28 +283,33 @@
 
 (defn- mark-extension-items
   "Replace the settings-derived enabled state of every extension item with
-   the composition's. EXT-SOURCES is the set the view composes; GLOBAL and
-   PROJECT are both layers' sets, so the project view can name the tri-state.
-   An item whose manifest cannot be read is shown off: it cannot be
-   composed."
-  [items ext-sources global project]
+   the composition's (`kmet.app.extensions.layers/item-state`, which also
+   carries the global state a project override inherits). COMPOSED is the two
+   layers' composition and SCOPE (`:global` or `:project`) the view the items
+   belong to. An item whose manifest cannot be read is shown off and marked
+   `:unreadable?`: it cannot be composed."
+  [items composed scope]
   (update items :extensions
           (fn [xs]
             (mapv (fn [item]
                     (if-let [source (ext-rows/item-source item)]
-                      (let [global? (contains? global source)
-                            project? (contains? project source)]
-                        (assoc item
-                               :source source
-                               :enabled (contains? ext-sources source)
-                               :override-state (cond
-                                                 (and project? (not global?)) :load
-                                                 (and global? (not project?)) :unload
-                                                 :else :inherit)))
+                      (merge item {:source source}
+                             (ext-layers/item-state composed source scope))
                       ;; an unreadable manifest cannot be composed; show it
                       ;; off rather than keep a settings-derived checkbox
-                      (assoc item :enabled false :override-state :inherit)))
+                      (assoc item :enabled false :override-state :inherit
+                             :unreadable? true)))
                   xs))))
+
+(defn- warn-layer-errors!
+  "Report every unreadable composition layer on stderr, the way the run
+   reports the same file at compose; the screen itself still opens."
+  [layers]
+  (doseq [layer (vals layers)
+          :when (:error layer)]
+    (binding [*out* *err*]
+      (println "Warning: cannot read" (:path layer) "-"
+               (get-in layer [:error :message])))))
 
 (defn- read-views
   "Resolve both unified views from the files on disk:
@@ -317,13 +324,7 @@
         project-settings (cfg/read-project-settings-map)
         layers (ext-layers/layers)
         composed (ext-layers/composition layers)
-        global-sources (ext-layers/sources-of (:global composed))
-        project-sources (ext-layers/sources-of (:project composed))
-        _ (doseq [layer (vals layers)
-                  :when (:error layer)]
-            (binding [*out* *err*]
-              (println "Warning: cannot read" (:path layer) "-"
-                       (get-in layer [:error :message]))))
+        _ (warn-layer-errors! layers)
         ;; the built-in tools group joins each view: user-only settings for
         ;; the global view, the scope-merged :default-tools entries for the
         ;; project view (kmet.app.tools.config)
@@ -333,12 +334,12 @@
     {:user (assoc (mark-extension-items
                    (pkgs/resolve-package-items user-settings nil nil false
                                                (pkgs/bundled-items))
-                   global-sources global-sources project-sources)
+                   composed :global)
                   :tools (tools false))
      :project (assoc (mark-extension-items
                       (pkgs/resolve-package-items user-settings project-settings nil true
                                                   (pkgs/bundled-items))
-                      project-sources global-sources project-sources)
+                      composed :project)
                      :tools (tools true))}))
 
 (defn- override-state-of
@@ -358,14 +359,22 @@
    settings live at render time): the project override state, the inherited
    (global) enabled flag and the effective enabled flag. The override
    state is :inherit outside project scope (pi getProjectOverrideState
-   short-circuits), so the global view never reads the project entry."
+   short-circuits), so the global view never reads the project entry. An
+   extension's inherited state is the composition's global one (the item
+   carries it from `mark-extension-items`); a settings resource that the
+   user view does not define is inherited enabled."
   [item write-scope views inherited-keys]
   (let [scope (get-in item [:metadata :scope])
         key (pkgs/item-key item)
         inherited? (or (= scope :user) (contains? inherited-keys key))
-        inherited-enabled (if (contains? inherited-keys key)
+        inherited-enabled (cond
+                            (= :extensions (:resource-type item))
+                            (boolean (:inherited-enabled item))
+
+                            (contains? inherited-keys key)
                             (item-enabled-of item :user views)
-                            true)]
+
+                            :else true)]
     {:inherited? inherited?
      :inherited-enabled inherited-enabled
      :override-state (if (= write-scope :project)
@@ -374,40 +383,50 @@
      :enabled (item-enabled-of item write-scope views)}))
 
 (defn- rebuild-layout!
-  "(Re)build the screen's flat rows: re-read the settings files, resolve
-   both views and derive every row's state (pi: buildGroups +
-   buildFlatList + filterItems — run on construction, scope switches and
-   search changes; toggles update the rows in place like pi's updateItem,
-   they never re-resolve)."
+  "(Re)build the screen's flat rows from VIEWS (both resolved views; a fresh
+   read when nil) and the current query (pi: buildGroups + buildFlatList +
+   filterItems — run on construction, scope switches and search changes;
+   toggles update the rows in place like pi's updateItem, they never
+   re-resolve). A search change goes through `refilter!`, which passes the
+   views the screen already has: the files on disk did not change with the
+   query, and re-resolving them would re-read every extension's manifest per
+   keystroke."
+  ([this] (rebuild-layout! this nil))
+  ([this views]
+   (let [st @(:state-atom this)
+         views (or views (read-views))
+         write-scope (:write-scope st)
+         groups (build-groups (view-of views write-scope) (cfg/get-agent-dir))
+         {:keys [rows]} (build-flat groups (:query st))
+         inherited-keys (into #{}
+                              (map pkgs/item-key)
+                              (mapcat #(get (:user views) %)
+                                      (keys (:user views))))
+         enriched (mapv (fn [entry]
+                          (if (not= :item (:kind entry))
+                            entry
+                            (merge entry
+                                   (item-state-of (:item entry) write-scope
+                                                  views inherited-keys))))
+                        rows)
+         item-rows (filterv #(= :item (:kind %)) enriched)
+         ;; pi: the selection starts on the first item row (buildFlatList)
+         first-item (first (keep-indexed (fn [i r] (when (= :item (:kind r)) i)) enriched))
+         selected (if first-item
+                    first-item
+                    (min (or (:selected st) 0) (max 0 (dec (count enriched)))))]
+     (swap! (:state-atom this)
+            assoc :views views
+            :groups groups
+            :rows enriched
+            :item-rows item-rows
+            :selected selected))))
+
+(defn- refilter!
+  "Re-filter the rows from the views the screen already has (a search change
+   does not change the files)."
   [this]
-  (let [st @(:state-atom this)
-        views (read-views)
-        write-scope (:write-scope st)
-        groups (build-groups (view-of views write-scope) (cfg/get-agent-dir))
-        {:keys [rows]} (build-flat groups (:query st))
-        inherited-keys (into #{}
-                             (map pkgs/item-key)
-                             (mapcat #(get (:user views) %)
-                                     (keys (:user views))))
-        enriched (mapv (fn [entry]
-                         (if (not= :item (:kind entry))
-                           entry
-                           (merge entry
-                                  (item-state-of (:item entry) write-scope
-                                                 views inherited-keys))))
-                       rows)
-        item-rows (filterv #(= :item (:kind %)) enriched)
-        ;; pi: the selection starts on the first item row (buildFlatList)
-        first-item (first (keep-indexed (fn [i r] (when (= :item (:kind r)) i)) enriched))
-        selected (if first-item
-                   first-item
-                   (min (or (:selected st) 0) (max 0 (dec (count enriched)))))]
-    (swap! (:state-atom this)
-           assoc :views views
-           :groups groups
-           :rows enriched
-           :item-rows item-rows
-           :selected selected)))
+  (rebuild-layout! this (:views @(:state-atom this))))
 
 (defn- update-row-state!
   "pi updateItem — after a toggle, refresh the selected row's derived state
@@ -477,43 +496,49 @@
                (assoc st :selected found)
                st)))))
 
+(defn- apply-write!
+  "Run WRITE (a scope's writer, answering true when it changed the file),
+   reporting a failure on SCOPE's configuration and answering false. A failed
+   write leaves the row as it was."
+  [scope write]
+  (try (write)
+       (catch Exception e
+         (binding [*out* *err*]
+           (println "Warning: cannot write the" (name scope) "configuration:"
+                    (or (ex-message e) (str e))))
+         false)))
+
 (defn- global-toggle-row!
   "Flip ITEM's enabled state in global scope: call TOGGLE-FN and update
    the row in place (pi updateItem). A writer that reports failure leaves the
    row as it was."
   [this row item toggle-fn]
-  (let [enabled (not (:enabled row))
-        ok? (try (toggle-fn item enabled)
-                 (catch Exception e
-                   (binding [*out* *err*]
-                     (println "Warning: cannot write the global configuration:"
-                              (or (ex-message e) (str e))))
-                   false))]
-    (when ok?
+  (let [enabled (not (:enabled row))]
+    (when (apply-write! :global #(toggle-fn item enabled))
       (update-row-state! this {:enabled enabled
                                :override-state :inherit}))))
 
+(defn- project-write-row!
+  "Apply NEXT-STATE through OVERRIDE-FN and update the row in place (pi
+   updateItem); a writer that reports failure leaves the row as it was."
+  [this item override-fn next-state inherited-enabled]
+  (when (apply-write! :project #(override-fn item next-state))
+    (update-row-state! this
+                       {:override-state next-state
+                        :enabled (case next-state
+                                   :load true
+                                   :unload false
+                                   inherited-enabled)})))
+
 (defn- project-cycle-row!
   "Cycle ITEM through inherit/load/unload in project scope: compute the
-   next state; on change call OVERRIDE-FN and update the row in place. A
-   writer that reports failure leaves the row as it was."
+   next state and write it. A writer that reports failure leaves the row as
+   it was."
   [this row item override-fn inherited-enabled]
   (let [next-state (pkgs/next-override-state (:override-state row)
                                              inherited-enabled)]
     (when (not= next-state (:override-state row))
-      (let [ok? (try (override-fn item next-state)
-                     (catch Exception e
-                       (binding [*out* *err*]
-                         (println "Warning: cannot write the project configuration:"
-                                  (or (ex-message e) (str e))))
-                       false))]
-        (when ok?
-          (update-row-state!
-           this
-           {:override-state next-state
-            :enabled (if (= :inherit next-state)
-                       inherited-enabled
-                       (= :load next-state))}))))))
+      (project-write-row! this item override-fn next-state inherited-enabled))))
 
 (defn- project-toggle-row!
   "Toggle an extension in project scope: inherit composes the opposite of
@@ -524,20 +549,8 @@
   [this row item override-fn inherited-enabled]
   (let [next-state (if (= :inherit (:override-state row))
                      (if inherited-enabled :unload :load)
-                     :inherit)
-        ok? (try (override-fn item next-state)
-                 (catch Exception e
-                   (binding [*out* *err*]
-                     (println "Warning: cannot write the project configuration:"
-                              (or (ex-message e) (str e))))
-                   false))]
-    (when ok?
-      (update-row-state! this
-                         {:override-state next-state
-                          :enabled (case next-state
-                                     :load true
-                                     :unload false
-                                     inherited-enabled)}))))
+                     :inherit)]
+    (project-write-row! this item override-fn next-state inherited-enabled)))
 
 (defn- extension-toggle!
   "Toggle an extension item in WRITE-SCOPE: the global scope composes or
@@ -606,7 +619,7 @@
   (swap! (:state-atom this) assoc
          :query (input/input-get-value
                  (hiccup/materialize-ref! this (:search-ref this))))
-  (rebuild-layout! this))
+  (refilter! this))
 
 (defn- switch-scope!
   "Tab: switch the write scope and rebuild the layout from the settings of
@@ -860,7 +873,7 @@
    through the tag-owned field). The tree feeds :query back into the field."
   [screen query]
   (swap! (:state-atom screen) assoc :query (str query))
-  (rebuild-layout! screen))
+  (refilter! screen))
 
 (defn screen-set-rows!
   "Set the live terminal height (tests; the mounted screen's size watch

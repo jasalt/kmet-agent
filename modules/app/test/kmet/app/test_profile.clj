@@ -96,6 +96,16 @@
            (error-type #(profile/compose
                          [{:patch [{:id :tool/nope :remove true}]}]))))))
 
+(deftest layer-predicate
+  (is (profile/layer? {}) "both keys may be absent")
+  (is (profile/layer? {:rows [] :patch []}))
+  (is (profile/layer? {:rows (list {:id :tool/read :plugin 'kmet.app.test/read})})
+      "a sequential collection is a layer, as the run reads it")
+  (is (not (profile/layer? {:rows [] :patch [] :schema 1}))
+      "an extra top-level key is not a layer")
+  (is (not (profile/layer? {:rows 42})))
+  (is (not (profile/layer? [{:id :tool/read :plugin 'kmet.app.test/read}]))))
+
 (deftest bad-patches-throw
   (testing "an unknown row targeted by a config-only patch"
     (is (= :kmet.app/unknown-row

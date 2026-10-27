@@ -1725,9 +1725,11 @@
   nil)
 
 (defn clear-extensions!
-  "Unload all extensions (used by /reload and tests). The resources an
-   extension contributed were registered under its owner, so disposing that
-   owner already took them: nothing else needs resetting."
+  "Unload every extension — the wholesale reset a test fixture needs. A
+   composition row unloads its own extension on disposal, so a run does not
+   use this. The resources an extension contributed were registered under its
+   owner, so disposing that owner already took them: nothing else needs
+   resetting."
   []
   (unload-all-extensions!))
 

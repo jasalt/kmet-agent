@@ -1056,6 +1056,9 @@
 ;; inherited user packages with an inherit/load/unload tri-state cycle.
 ;; Top-level items write +/- patterns into the scope's settings resource
 ;; array instead (pi toggleTopLevelResource / setProjectTopLevelOverride).
+;; Extension items never write settings: they are composition rows, so the
+;; screen writes the patch layers (kmet.app.extensions.layers) — hence the
+;; `:extensions` guard in the two writers below.
 
 (def resource-type-labels
   "pi RESOURCE_TYPE_LABELS plus kmet's built-in tools type (the config
@@ -1090,12 +1093,6 @@
   "True when ITEM is an app-provided bundled extension (origin :bundled)."
   [item]
   (= :bundled (get-in item [:metadata :origin])))
-
-(defn bundled-item-name
-  "The manifest name of bundled ITEM."
-  [item]
-  (or (get-in item [:metadata :display-name])
-      (get-in item [:metadata :artifact :name])))
 
 (defn bundled-items
   "PackageItem-shaped items for the bundled extension layer, one per
