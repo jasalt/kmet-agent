@@ -1,12 +1,12 @@
 (ns kmet.ui.tui.test-external-editor
-  "The external editor ($EDITOR on the editor content) spawns in the
-   session's runtime working directory, so a session resumed or imported from
-   another project opens the editor there rather than in the launch dir."
+  "The external editor opens expanded text in the session's runtime directory."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [babashka.fs :as fs]
             [babashka.process :as proc]
+            [clojure.string :as str]
             [kmet.ui.tui.external-editor :as external-editor]
             [kmet.ui.tui.footer-data-provider :as fdp]
+            [kmet.tui.components.editor :as editor]
             [kmet.tui.core :as tui]))
 
 (deftest test-external-editor-spawns-in-the-runtime-cwd
@@ -35,3 +35,33 @@
         (is (= (str (fs/cwd)) (:dir (last @seen)))
             "no provider: the process cwd, as before")
         (finally (fs/delete-tree project))))))
+
+(deftest test-external-editor-preserves-literal-paste-markers
+  (let [ed (editor/make-editor)
+        pasted (str/join "\n" (cons "literal [paste #1 +15 lines]" (repeat 14 "payload")))
+        edited (str "edited " pasted)
+        submitted (atom nil)]
+    (tui/handle-input ed (str "\u001b[200~" pasted "\u001b[201~"))
+    (let [collapsed (tui/editor-get-text ed)]
+      (with-redefs [tui/tui-suspend! (fn [_] nil)
+                    tui/tui-resume! (fn [_] nil)
+                    proc/process (fn [argv _opts]
+                                   (is (= pasted (slurp (last argv))))
+                                   (spit (last argv) (str edited "\n"))
+                                   (delay {:exit 0}))]
+        (external-editor/handle-external-editor {:current-editor-atom (atom ed) :tui nil}))
+      (is (= edited (tui/editor-get-expanded-text ed)))
+      (tui/editor-set-on-submit! ed #(reset! submitted %))
+      (tui/handle-input ed "\r")
+      (is (= edited @submitted))
+      (tui/handle-input ed (str (char 31)))
+      (is (= collapsed (tui/editor-get-text ed)))
+      (is (= pasted (tui/editor-get-expanded-text ed)))
+      (is (= 1 @(:paste-counter ed)))
+      (tui/handle-input ed (str (char 26)))
+      (is (= edited (tui/editor-get-expanded-text ed)))
+      (is (zero? @(:paste-counter ed)))
+      (tui/handle-input ed (str (char 31)))
+      (let [next-paste (apply str (repeat 1001 "x"))]
+        (tui/handle-input ed (str "\u001b[200~" next-paste "\u001b[201~"))
+        (is (= (str pasted next-paste) (tui/editor-get-expanded-text ed)))))))

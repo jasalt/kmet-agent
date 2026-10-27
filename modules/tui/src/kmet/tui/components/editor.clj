@@ -197,7 +197,8 @@
   [editor]
   (let [s @(:state-atom editor)]
     {:lines (:lines s) :cursor-line (:cursor-line s) :cursor-col (:cursor-col s)
-     :paste-store @(:paste-store editor)}))
+     :paste-store @(:paste-store editor)
+     :paste-counter @(:paste-counter editor)}))
 
 (defn- undo-push [stack-atom snapshot]
   (swap! stack-atom conj snapshot))
@@ -220,6 +221,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -232,6 +234,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -985,6 +988,7 @@
   (if-let [draft @(:history-draft editor)]
     (do (reset! (:state-atom editor) (map->EditorState draft))
         (reset! (:paste-store editor) (:paste-store draft))
+        (reset! (:paste-counter editor) (:paste-counter draft))
         (reset! (:scroll-offset-atom editor) 0)
         (reset! (:preferred-col-atom editor) nil)
         (reset! (:last-action editor) nil)
@@ -1620,7 +1624,8 @@
 (defn editor-set-text!
   "Replace the editor text. A programmatic clear (submit, session switch,
    app.clear) also ends the current @-completion message: a blank editor has
-   no snapshot left to keep."
+   no snapshot left to keep. Like pi setText, discard old paste associations
+   after saving undo state; replacement text is literal."
   [editor text]
   (cancel-autocomplete editor)
   (when (str/blank? text)
@@ -1638,8 +1643,9 @@
     (reset! (:jump-mode editor) nil)
     (reset! (:history-idx editor) -1)
     (reset! (:history-draft editor) nil)
-    ;; Reconcile the paste store with the new text (e.g. cleared after submit)
-    (sync-paste-store! editor (:lines @(:state-atom editor)))))
+    ;; pi setText: replacement text is literal, not a reference to old pastes.
+    (reset! (:paste-store editor) {})
+    (reset! (:paste-counter editor) 0)))
 
 (defn editor-set-on-submit! [editor f]
   (reset! (:on-submit editor) f))

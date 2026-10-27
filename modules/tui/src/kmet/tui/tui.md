@@ -1473,11 +1473,19 @@ and queue restoration likewise read `editor-get-expanded-text` before replacing 
 clearing the editor; `editor-get-text` remains the raw display-text accessor.
 Paste expansion preserves stored content literally, matches each marker id
 exactly (`#1` never claims `#10`), and runs in one pass, so marker-like text
-inside pasted content is never expanded. Marker IDs must start immediately after
-`[paste #` and remain within the closing bracket; malformed markers without an
-ID stay literal rather than borrowing digits from later text. Scanning resumes
-inside rejected candidates so an unfinished literal prefix cannot hide a later
-valid paste marker.
+inside pasted content is never expanded. Marker IDs are canonical positive integers
+(no leading zeros). As in pi, a marker may have no count, ` +N lines`, or
+` N chars`; kmet additionally accepts its ` — ctrl+o to expand` hint.
+Malformed suffixes and out-of-range IDs stay literal. Scanning resumes inside
+rejected candidates so an unfinished literal prefix, including one with digits,
+cannot hide a later valid paste marker.
+
+Like pi's `setText`, `editor-set-text!` clears the paste store and counter after
+saving undo state, even when the replacement display text is unchanged. This
+keeps marker-like text literal when expanded content returns from an external
+editor or is restored programmatically. Undo/redo snapshots include the paste
+counter as well as the store so a subsequent paste cannot overwrite a restored
+entry. No separate expanded-text setter is needed.
 
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the

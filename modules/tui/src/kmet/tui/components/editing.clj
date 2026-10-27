@@ -344,17 +344,18 @@
   "[paste #")
 
 (defn find-paste-markers-in-line
-  "Find paste markers in a single line of text.
-   Returns a vector of {:id int :start int :end int} in order of appearance.
-   :end is the index just past the closing bracket."
+  "Find complete paste markers with canonical positive IDs in a single line.
+   Accept pi's optional line/character count and kmet's expansion hint.
+   Returns {:id int :start int :end int}, with :end past the closing bracket."
   [line]
   (loop [offset 0, found []]
     (if-let [idx (clojure.string/index-of line paste-marker-prefix offset)]
       (if-let [end-idx (clojure.string/index-of line "]" (+ idx 1))]
-        (let [id-str (re-find #"^\d+" (subs line (+ idx (count paste-marker-prefix)) end-idx))]
-          (if id-str
-            (recur (inc end-idx)
-                   (conj found {:id (parse-long id-str) :start idx :end (inc end-idx)}))
+        (let [match (re-matches #"([1-9]\d*)(?: (?:\+\d+ lines|\d+ chars))?(?: — ctrl\+o to expand)?"
+                                (subs line (+ idx (count paste-marker-prefix)) end-idx))
+              id (some-> match second parse-long)]
+          (if id
+            (recur (inc end-idx) (conj found {:id id :start idx :end (inc end-idx)}))
             (recur (+ idx (count paste-marker-prefix)) found)))
         found)
       found)))

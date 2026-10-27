@@ -1123,7 +1123,11 @@
 
 (t/deftest test-editor-get-expanded-text-preserves-markers-without-ids
   (doseq [literal ["[paste #]" "[paste #oops1]" "[paste #] 1"
-                   "[paste #" "[paste #oops1" "[paste # then [paste #"]]
+                   "[paste #" "[paste #oops1" "[paste # then [paste #"
+                   "[paste #1 then " "[paste #1oops]" "[paste #01]"
+                   "[paste #1 +3 frogs]" "[paste #1 3 lines]"
+                   "[paste #1 +3 lines — wrong hint]"
+                   "[paste #999999999999999999999999999999]"]]
     (let [e (editor/make-editor)
           pasted (clojure.string/join "\n" (repeat 15 "payload"))
           prefix (str "literal " literal " followed by ")
@@ -1192,6 +1196,17 @@
     (t/is (= "" (editor/editor-get-text e)))
     (core/handle-input e (ctrl 31))
     (t/is (= "msg" (editor/editor-get-text e)) "cleared text restored by undo")))
+
+(t/deftest test-editor-set-text-retires-paste-store
+  (doseq [same-text? [false true]]
+    (let [e (editor/make-editor)
+          pasted (clojure.string/join "\n" (cons "literal [paste #1 +15 lines]" (repeat 14 "payload")))]
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (let [replacement (if same-text? (core/editor-get-text e) (str "edited " pasted))]
+        (core/editor-set-text! e replacement)
+        (t/is (= replacement (core/editor-get-expanded-text e)))
+        (t/is (empty? @(:paste-store e)))
+        (t/is (zero? @(:paste-counter e)))))))
 
 ;; ─── IEditorComponent protocol ───────────────────────────────────────────────
 
