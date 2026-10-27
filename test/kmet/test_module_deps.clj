@@ -41,7 +41,7 @@
   []
   (->> (fs/list-dir "modules")
        (filter #(fs/exists? (fs/path % "deps.edn")))
-       (sort-by str)))
+       sort))
 
 (defn- module-dep-map
   "ROOT's deps.edn :deps map."
