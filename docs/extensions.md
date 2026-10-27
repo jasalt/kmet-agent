@@ -48,44 +48,64 @@ same var in `extension.edn` (see
 The full contract (ownership, name conflicts, lifecycle guarantees) is in the
 [contract reference](../modules/app/src/kmet/extension.md#the-contract).
 
-## Where extensions live
+## Where extensions live and what loads them
 
-Extensions load from the fixed auto roots — `~/.kmet/agent/extensions`
-plus `.kmet/extensions` project-local (pi: `join(agentDir, type)` +
-`join(cwd, CONFIG_DIR_NAME, type)`) — at startup and on `/reload`. The
-agent dir honors the `KMET_CODING_AGENT_DIR` env override (pi:
-`ENV_AGENT_DIR`). Extra paths load via top-level `:extensions` entries in
-`settings.edn`: plain entries are files or directories resolved against
-the settings scope root (the agent dir for global settings, `.kmet` for
-project settings); `!glob` excludes, `+path`/`-path` force include/exclude
-exact paths. Plain entries may also carry the same auto-root paths to
-select which discovered items stay enabled (e.g.
-`{:extensions ["extensions" "!extensions/noisy.clj"]}`). The
-`kmet config` screen lists and toggles every discovered resource
-(extensions, skills, prompts, themes) across both scopes.
+Extensions are plugins. A run loads exactly the ones its **composition**
+names as `:ext/<id>` rows; nothing else loads an extension. The installed set
+is discovery: the fixed auto roots — `~/.kmet/agent/extensions` plus
+`.kmet/extensions` project-local (pi: `join(agentDir, type)` +
+`join(cwd, CONFIG_DIR_NAME, type)`), top-level `:extensions` entries in
+`settings.edn`, packages, and the bundled artifacts. The agent dir honors the
+`KMET_CODING_AGENT_DIR` env override (pi: `ENV_AGENT_DIR`). Top-level
+`:extensions` entries are files or directories resolved against the settings
+scope root; `!glob` excludes, `+path`/`-path` force include/exclude exact
+paths. Discovery feeds `kmet config` and the `:ext/<id>` resolver; it does not
+load.
 
-A composition can also name an installed extension as a row (`:ext/<id>`):
-the row loads it with its own `:config` and owns its lifetime, and the world
-loader does not load it again. See
-[Profiles and composition](profiles.md#extensions-as-rows).
+Per-type package filters (`:extensions [...]`) and auto-dir `-path`
+overrides still shape the discovered list, but they no longer decide whether
+an extension loads: compose or remove its row. (Skills, prompts and themes
+keep their filter/array toggles.)
+
+An extension that was enabled only through settings after an upgrade is not
+migrated automatically: `kmet config` lists it unchecked, so compose it once.
+
+Compose an extension in the global or project layer, or through
+`kmet config` (space toggles the selected row; Tab switches scope; a
+disable is a remove patch, so the row's config survives):
+
+```edn
+;; ~/.kmet/agent/patch.edn — global composition
+{:rows [{:id :ext/clojure :plugin :ext/clojure}]}
+
+;; .kmet/patch.edn — project scope: disable the global row, or compose one
+{:patch [{:id :ext/clojure :remove true}
+         {:id :ext/grep-tool :plugin :ext/grep-tool}]}
+```
+
+The id is the manifest `:name`, or a single file's basename without `.clj`;
+the first copy in pi precedence wins. The row's `:config` reaches the
+extension as `(:config api)`, and disposing the row unloads it. `/reload`
+unloads and loads each mounted row's extension again with the same config; it
+does not re-read the composition, so changing which rows are mounted needs a
+restart. See [Profiles and composition](profiles.md#extensions-as-rows).
 
 ## Built-in extensions (`extensions/`)
 
 The repo ships a set of opt-in extensions in `extensions/` — nothing there is
 loaded by default. They are **bundled with the application**: every run mode
 (`bb start`, `jolt start`, and the built binaries) offers the whole set in
-`kmet config` under “Bundled with kmet”, and the same set is enableable from
-the settings files via the `:bundled-extensions` key (resource-array
-vocabulary: `+`/plain enables, `-`/`!` disables; a project entry is a delta
-over the global one; default disabled):
+`kmet config` under “Bundled with kmet”, and composing a row enables it in any
+scope:
 
 ```edn
-;; ~/.kmet/agent/settings.edn
-{:bundled-extensions ["clojure" "-mcp-adapter"]}
-
-;; .kmet/settings.edn (project delta)
-{:bundled-extensions ["+mcp-adapter"]}
+;; ~/.kmet/agent/patch.edn
+{:rows [{:id :ext/clojure :plugin :ext/clojure}]}
 ```
+
+The retired `:bundled-extensions` settings key is no longer read; a settings
+file that still has it needs the row composed instead (or re-toggle the row
+in `kmet config`).
 
 Bundled extensions are not packages: `kmet install`/`remove`/`list` cannot
 see or affect them, and they are never extracted to disk. The artifact root

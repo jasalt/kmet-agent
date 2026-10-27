@@ -6,20 +6,25 @@ is loaded by default.
 
 ## Enabling an extension
 
-The shipped set is **bundled with kmet**, so the normal path is no setup at
-all: `kmet config` lists every extension under “Bundled with kmet”
-(default off), and the same set can be enabled from the settings files with
-the `:bundled-extensions` key (`["clojure" "-mcp-adapter"]` globally,
-`["+mcp-adapter"]` as a project delta). Bundled extensions are not
-packages — `kmet install`/`remove`/`list` cannot touch them — and nothing is
-ever extracted to disk (see [`docs/extensions.md`](../docs/extensions.md)).
+The shipped set is **bundled with kmet**, so no download or install is
+needed: `kmet config` lists every extension under “Bundled with kmet” (all
+off by default), and space composes the selected one into
+`~/.kmet/agent/patch.edn` (global) or `.kmet/patch.edn` (project). Write the
+row directly if you prefer:
 
-Extensions also load from the global dir (`~/.kmet/agent/extensions/`) and
-the project-local dir (`.kmet/extensions/`) at startup and on `/reload`.
-Use this for local development against an edited copy: symlink or copy the
-extension into one of those — or install it as a **package** with
-`kmet install <path>` (a local directory/file, or a git repository such as
-`git:github.com/user/repo`; records the source in settings — see
+```edn
+;; ~/.kmet/agent/patch.edn
+{:rows [{:id :ext/clojure :plugin :ext/clojure}]}
+```
+
+Extensions are plugins: the composition is the only thing that loads them.
+The global dir (`~/.kmet/agent/extensions/`), the project-local dir
+(`.kmet/extensions/`), top-level `:extensions` entries and `kmet install`ed
+packages are discovery; compose an `:ext/<id>` row to load one. Use a
+symlink or copy into one of those dirs for local development, or install it
+as a **package** with `kmet install <path>` (a local directory/file, or a git
+repository such as `git:github.com/user/repo`; records the source in
+settings — see
 [`docs/usage.md`](../docs/usage.md#package-subcommands) and
 [`docs/extensions.md`](../docs/extensions.md)):
 
@@ -44,8 +49,10 @@ ln -s "$PWD/extensions/tools.clj" .kmet/extensions/tools.clj
 ```
 
 A symlink keeps the shipped copy updated with the repo; a copy is a
-snapshot you can edit locally. Either way, restart kmet or run `/reload`
-to pick it up.
+snapshot you can edit locally. Either way, compose the extension's row
+(`kmet config`, or the patch file above) and restart so the new composition
+mounts; `/reload` reloads an already composed extension's code with its
+config.
 
 ## Repo layout: `src/` is the artifact root
 

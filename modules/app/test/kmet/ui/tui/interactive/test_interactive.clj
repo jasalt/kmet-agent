@@ -18,6 +18,7 @@
             [kmet.ui.tui.interactive.turn :as turn]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.app.commands :as commands]
+            [kmet.app.extensions.rows :as extension-rows]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.loop.state :as loop-state]
             [kmet.app.loop :as agent]
@@ -921,7 +922,7 @@
                       ;; set-config! would NPE on the nil controller
                       theme-ctrl/set-config! (fn [_ _] nil)
                       app-kb/reload-agent-keybindings! (fn [] nil)
-                      packages/load-extensions! (fn [] [])
+                      extension-rows/reload-all! (fn [] [])
                       packages/resolve-theme-paths (fn [] nil)
                       models/load-models-config! (fn [] nil)
                       skills/clear-skills! (fn [] nil)
@@ -962,7 +963,7 @@
                                                          :tool-display-mode mode))
                                  theme-ctrl/set-config! (fn [_ _] nil)
                                  app-kb/reload-agent-keybindings! (fn [] nil)
-                                 packages/load-extensions! (fn [] [])
+                                 extension-rows/reload-all! (fn [] [])
                                  packages/resolve-theme-paths (fn [] nil)
                                  models/load-models-config! (fn [] nil)
                                  skills/clear-skills! (fn [] nil)
@@ -1004,7 +1005,7 @@
       (with-redefs [cfg/init! (fn [] cfg/default-config)
                     theme-ctrl/set-config! (fn [_ _] nil)
                     app-kb/reload-agent-keybindings! (fn [] nil)
-                    packages/load-extensions! (fn [] [])
+                    extension-rows/reload-all! (fn [] [])
                     packages/resolve-theme-paths (fn [] nil)
                     models/load-models-config! (fn [] nil)
                     skills/clear-skills! (fn [] nil)

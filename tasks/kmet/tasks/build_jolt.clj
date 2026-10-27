@@ -531,15 +531,16 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
     (fs/create-temp-dir {:dir dir :prefix "smoke-"})))
 
 (defn- prepare-smoke-agent-dir
-  "Create an isolated agent dir under the smoke run directory with a bundled
-   directory extension and a bundled single-file extension enabled. The app's
-   first smoke command runs with --debug, so their load lines prove both
-   embedded-root and exact-source native loader selection."
+  "Create an isolated agent dir under the smoke run directory whose global
+   composition mounts a bundled directory extension and a bundled single-file
+   extension. The app's first smoke command runs with --debug, so their load
+   lines prove both embedded-root and exact-source native loader selection."
   [dir]
   (let [agent-dir (str (fs/path dir "agent"))]
     (fs/create-dirs agent-dir)
-    (spit (str (fs/path agent-dir "settings.edn"))
-          (pr-str {:bundled-extensions ["clojure" "deepseek-peak"]}))
+    (spit (str (fs/path agent-dir "patch.edn"))
+          (pr-str {:rows [{:id :ext/clojure :plugin :ext/clojure}
+                          {:id :ext/deepseek-peak :plugin :ext/deepseek-peak}]}))
     agent-dir))
 
 (defn- windows-smoke-path

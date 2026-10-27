@@ -323,7 +323,7 @@
     (is (str/includes? out "--session-dir <dir>"))
     (is (str/includes? out "install <source>")
         "the package subcommands the entry dispatches are listed too")
-    (is (str/includes? out "config             Enable/disable resources"))))
+    (is (str/includes? out "config             Compose extensions / toggle resources"))))
 
 (deftest package-subcommands-run-the-shared-cli
   ;; `config` is a command, not a profile: the entry hands the args to the

@@ -8,6 +8,7 @@
             [babashka.fs :as fs]
             [kmet.app.extensions.bundled :as bundled]
             [kmet.app.packages :as pkgs]
+            [kmet.app.extensions.layers :as ext-layers]
             [kmet.app.tools.config :as tools-config]
             [kmet.ui.tui.resource-config :as rc]
             [kmet.app.config :as cfg]
@@ -31,6 +32,14 @@
         "---\nname: skill-a\ndescription: skill a\n---\nbody\n")
   root)
 
+(defn- make-skill-package
+  "A package with only a skill, for the settings-backed toggle tests."
+  [root]
+  (fs/create-dirs (str root "/skills/root"))
+  (spit (str root "/skills/root/SKILL.md")
+        "---\nname: skill-a\ndescription: skill a\n---\nbody\n")
+  root)
+
 (defn- with-settings
   "Run F with settings paths isolated and the given :user/:project settings
    maps written to the files. The read/save redefs are file-based, so
@@ -44,6 +53,8 @@
   (let [global-dir (tmp-dir)
         cwd (tmp-dir)
         project-dir (str (fs/path cwd ".kmet"))
+        global-patch (str (fs/path global-dir "patch.edn"))
+        project-patch (str (fs/path project-dir "patch.edn"))
         read-file (fn [path default]
                     (if (fs/exists? path)
                       (or (edn/read-string (slurp path)) default)
@@ -65,23 +76,43 @@
                                                          (fs/create-dirs project-dir)
                                                          (spit (str (fs/path project-dir "settings.edn"))
                                                                (pr-str (assoc-in (read-file (str (fs/path project-dir "settings.edn")) {}) path value))))
+                           #'cfg/global-patch-path (fn [] global-patch)
+                           #'cfg/project-patch-path (fn [] project-patch)
                            #'cfg/get-agent-dir (fn [] global-dir)
                            #'cfg/project-dir (fn [] project-dir)
                            #'fs/cwd (fn [] cwd)}
                     (not bundled?) (assoc #'bundled/artifacts (constantly []))
                     (not tools?) (assoc #'tools-config/builtin-tool-items (fn [_ _] [])))
                   (fn []
-                    (f {:global-dir global-dir :project-dir project-dir :cwd cwd}))))]
+                    (f {:global-dir global-dir :project-dir project-dir :cwd cwd
+                        :global-patch global-patch :project-patch project-patch}))))]
       (run))))
+
+(defn- layer-of
+  "The patch layer at PATH, normalized to {:rows [] :patch []}."
+  [path]
+  (if (fs/exists? path)
+    (let [data (edn/read-string (slurp path))]
+      {:rows (vec (or (:rows data) []))
+       :patch (vec (or (:patch data) []))})
+    {:rows [] :patch []}))
+
+(defn- extension-rows
+  "The :ext/… sources a layer names, in row then patch order (a remove patch
+   is not a row)."
+  [layer]
+  (->> (concat (:rows layer) (filter :plugin (:patch layer)))
+       (keep :plugin)
+       (filter #(and (keyword? %) (str/starts-with? (str %) ":ext/")))
+       vec))
+
+(defn- composed-sources
+  "The extension sources the global layer composes (rows minus removes)."
+  []
+  (ext-layers/sources-of (:global (ext-layers/composition (ext-layers/layers)))))
 
 (defn- render-lines [screen width]
   (protocols/render screen width))
-
-(defn- user-file-packages [ctx]
-  (let [f (str (fs/path (:global-dir ctx) "settings.edn"))]
-    (if (fs/exists? f)
-      (:packages (edn/read-string (slurp f)))
-      [])))
 
 (defn- project-file-packages [ctx]
   (let [f (str (fs/path (:project-dir ctx) "settings.edn"))]
@@ -118,42 +149,45 @@
           (t/is (some #(and (= :group (:kind %))
                             (str/includes? (:label (:group %)) (fs/file-name dir)))
                       rows))
-          (t/is (every? :enabled items))
+          (t/is (every? (comp false? :enabled)
+                        (filter #(= :extensions (:resource-type (:item %))) items))
+                "extensions start uncomposed")
+          (t/is (true? (:enabled (first (filter #(= :skills (:resource-type (:item %))) items))))
+                "non-extension resources keep the settings state")
           (t/testing "header renders"
             ;; the scope hint is frame-truncated, and a Termux TMPDIR path
             ;; is wider than 80 columns: render wide enough that the whole
-            ;; settings path is on screen
-            (let [path (cfg/global-settings-path)
+            ;; scope line is on screen
+            (let [path (str (cfg/global-settings-path) " · " (cfg/global-patch-path))
                   w (max 80 (inc (u/visible-width path)))
                   lines (render-lines screen w)]
               (t/is (some #(str/includes? % "Global Resources") lines))
               (t/is (some #(str/includes? % "settings.edn") lines))
+              (t/is (some #(str/includes? % "patch.edn") lines))
               (t/is (some #(str/includes? % "space toggle") lines))))
           (t/testing "item lines render the checkbox"
             (let [lines (render-lines screen 80)]
-              (t/is (= 3 (count (filter #(re-find #"\[x\]" %) lines))))))))
+              (t/is (= 1 (count (filter #(re-find #"\[x\]" %) lines)))
+                    "only the skill is enabled")))))
       {:user {:packages [dir]}})))
 
-(t/deftest test-screen-global-toggle-disables
+(t/deftest test-screen-global-toggle-composes-extensions
   (let [dir (make-package (tmp-dir))]
     (with-settings
       (fn [ctx]
         (let [screen (rc/make-resource-config-screen :rows 40)]
-         ;; selection starts on the first item; one down → second item
-          (protocols/handle-input screen K-DOWN)
+          ;; selection starts on the first item; space composes the extension
           (protocols/handle-input screen " ")
-          (let [entries (user-file-packages ctx)]
-            (t/is (= 1 (count entries)))
-            (t/is (map? (first entries)))
-            (t/is (= 1 (count (:extensions (first entries)))))
-            (t/is (str/starts-with? (first (:extensions (first entries))) "-")))
-          (t/testing "the screen re-reads the file — the item shows disabled"
-            (t/is (false? (:enabled (second (item-rows screen))))))
-         ;; toggle back on
-          (protocols/handle-input screen " ")
-          (let [entries (user-file-packages ctx)]
-            (t/is (str/starts-with? (first (:extensions (first entries))) "+")))
-          (t/is (every? :enabled (item-rows screen)))))
+          (t/is (= [:ext/one] (extension-rows (layer-of (:global-patch ctx))))
+                "the global scope writes the row")
+          (t/is (true? (:enabled (first-item-row screen))))
+          (t/is (= [dir] (:packages (edn/read-string
+                                     (slurp (str (fs/path (:global-dir ctx) "settings.edn"))))))
+                "settings are not the extension switch any more")
+          (t/testing "space again disables it with a remove patch"
+            (protocols/handle-input screen " ")
+            (t/is (empty? (composed-sources)))
+            (t/is (false? (:enabled (first-item-row screen)))))))
       {:user {:packages [dir]}})))
 
 (t/deftest test-screen-keys-resolve-through-the-manager
@@ -185,15 +219,15 @@
               ;; confirm (rebound) toggles the selected item; enter no longer
               ;; does (it falls through to the search input, pi)
               (protocols/handle-input screen "\r")
-              (t/is (true? (:enabled (first (item-rows screen))))
+              (t/is (false? (:enabled (first (item-rows screen))))
                     "enter was rebound away from confirm")
               (protocols/handle-input screen "\u0019")        ;; ctrl+y
-              (t/is (false? (:enabled (first (item-rows screen))))
+              (t/is (true? (:enabled (first (item-rows screen))))
                     "ctrl+y toggles the selected item")
               ;; space stays a raw toggle (pi), and ctrl+n rides
               ;; tui.select.down — rebound away with it
               (protocols/handle-input screen " ")
-              (t/is (true? (:enabled (first (item-rows screen))))
+              (t/is (false? (:enabled (first (item-rows screen))))
                     "space stays a raw toggle (pi)")
               (let [before (pkgs/item-key (selected-item screen))]
                 (protocols/handle-input screen "\u000e")      ;; ctrl+n
@@ -205,42 +239,54 @@
 
 ;; ─── Project scope ────────────────────────────────────────────────────────
 
-(t/deftest test-screen-project-inherited-tri-state
+(t/deftest test-screen-project-composition-toggle
   (let [dir (make-package (tmp-dir))]
     (with-settings
       (fn [ctx]
         (let [screen (rc/make-resource-config-screen :rows 40
                                                      :write-scope :project
                                                      :project-mode? true)]
-         ;; the user package shows as inherited global
-          (t/is (= 3 (count (item-rows screen))))
-          (t/is (every? :inherited? (item-rows screen)))
-          (t/is (every? #(= :inherit (:override-state %)) (item-rows screen)))
-          (t/testing "space cycles unload → writes a delta entry"
+          (t/is (= :inherit (:override-state (first-item-row screen))))
+          (t/is (true? (:inherited? (first-item-row screen))))
+          (t/is (false? (:enabled (first-item-row screen))))
+          (t/testing "inherit → load composes a project row"
             (protocols/handle-input screen " ")
-            (let [entries (project-file-packages ctx)]
-              (t/is (= 1 (count entries)))
-              (let [entry (first entries)]
-                (t/is (map? entry))
-                (t/is (false? (:autoload entry)))
-                (t/is (str/starts-with? (first (:extensions entry)) "-"))))
-            (t/is (= :unload (:override-state (first-item-row screen))))
-            (t/testing "rows show the project unload suffix"
-              (let [lines (render-lines screen 100)]
-                (t/is (some #(str/includes? % "project unload") lines))))
-           ;; cycle to load
-            (protocols/handle-input screen " ")
-            (let [entry (first (project-file-packages ctx))]
-              (t/is (str/starts-with? (first (:extensions entry)) "+")))
+            (t/is (= [:ext/one] (extension-rows (layer-of (:project-patch ctx)))))
             (t/is (= :load (:override-state (first-item-row screen))))
-           ;; cycle back to inherit — the delta entry disappears
+            (t/is (true? (:enabled (first-item-row screen)))))
+          (t/testing "load → inherit drops the project row"
             (protocols/handle-input screen " ")
-            (t/is (empty? (project-file-packages ctx)))
-            (t/is (= :inherit (:override-state (first-item-row screen)))))))
+            (t/is (empty? (extension-rows (layer-of (:project-patch ctx)))))
+            (t/is (= :inherit (:override-state (first-item-row screen))))
+            (t/is (false? (:enabled (first-item-row screen)))))))
+      {:user {:packages [dir]}})))
+
+(t/deftest test-screen-project-composition-unloads-a-composed-extension
+  (let [dir (make-package (tmp-dir))]
+    (with-settings
+      (fn [ctx]
+        (spit (:global-patch ctx)
+              (pr-str {:rows [{:id :ext/one :plugin :ext/one}] :patch []}))
+        (let [screen (rc/make-resource-config-screen :rows 40
+                                                     :write-scope :project
+                                                     :project-mode? true)]
+          (t/is (= :inherit (:override-state (first-item-row screen))))
+          (t/is (true? (:enabled (first-item-row screen))))
+          (t/testing "inherit → unload writes a remove patch for the global row"
+            (protocols/handle-input screen " ")
+            (t/is (= [{:id :ext/one :remove true}]
+                     (:patch (layer-of (:project-patch ctx)))))
+            (t/is (= :unload (:override-state (first-item-row screen))))
+            (t/is (false? (:enabled (first-item-row screen)))))
+          (t/testing "unload → inherit drops the remove patch"
+            (protocols/handle-input screen " ")
+            (t/is (empty? (:patch (layer-of (:project-patch ctx)))))
+            (t/is (= :inherit (:override-state (first-item-row screen))))
+            (t/is (true? (:enabled (first-item-row screen)))))))
       {:user {:packages [dir]}})))
 
 (t/deftest test-screen-project-scope-package-tri-state
-  (let [dir (make-package (tmp-dir))]
+  (let [dir (make-skill-package (tmp-dir))]
     (with-settings
       (fn [ctx]
         (let [screen (rc/make-resource-config-screen :rows 40
@@ -253,12 +299,12 @@
           (let [entries (project-file-packages ctx)]
             (t/is (= 1 (count entries)))
             (t/is (map? (first entries)))
-            (t/is (str/starts-with? (first (:extensions (first entries))) "-")))
+            (t/is (str/starts-with? (first (:skills (first entries))) "-")))
           (t/is (= :unload (:override-state (first-item-row screen))))
          ;; second space: unload → load
           (protocols/handle-input screen " ")
           (let [entries (project-file-packages ctx)]
-            (t/is (str/starts-with? (first (:extensions (first entries))) "+")))
+            (t/is (str/starts-with? (first (:skills (first entries))) "+")))
           (t/is (= :load (:override-state (first-item-row screen))))
          ;; third space: load → inherit; the entry returns to its plain
          ;; source string
@@ -269,21 +315,19 @@
             (t/is (not (map? (first entries)))))))
       {:project {:packages [dir]}})))
 
-(t/deftest test-screen-single-extension-not-toggleable
-  ;; a file source (single extension) ignores per-type filters: the row is
-  ;; marked always loaded and space writes nothing
+(t/deftest test-screen-single-extension-composes
+  ;; a single-file package is one extension like any other: space composes it
   (let [dir (tmp-dir)
         f (str dir "/ext.clj")]
-    (spit f "(ns ext)\n")
+    (spit f "(ns ext)\n(def plugin {:name :ext/single-row :apply (fn [_ _] nil)})\n")
     (with-settings
       (fn [ctx]
         (let [screen (rc/make-resource-config-screen :rows 40)
               item (:item (first-item-row screen))]
           (t/is (pkgs/single-extension-item? item))
-          (t/is (some #(str/includes? % "always loaded") (render-lines screen 100)))
           (protocols/handle-input screen " ")
-          (t/is (true? (:enabled (first-item-row screen))))
-          (t/is (= [f] (user-file-packages ctx)))))
+          (t/is (= [:ext/ext] (extension-rows (layer-of (:global-patch ctx)))))
+          (t/is (true? (:enabled (first-item-row screen))))))
       {:user {:packages [f]}})))
 
 ;; ─── Search and scope switching ───────────────────────────────────────────
@@ -352,10 +396,10 @@
 
 (t/deftest test-screen-top-level-groups-and-toggle
   ;; the auto roots resolve as top-level groups (pi buildGroups over the
-  ;; unified resolution); a global-scope toggle writes the scope's settings
-  ;; resource array (pi toggleTopLevelResource)
+  ;; unified resolution); an auto-discovered extension toggles into the
+  ;; composition, not the settings resource array
   (with-settings
-    (fn [{:keys [global-dir]}]
+    (fn [{:keys [global-dir global-patch]}]
       (fs/create-dirs (str global-dir "/extensions"))
       (spit (str global-dir "/extensions/e.clj") "(ns e)\n")
       (let [screen (rc/make-resource-config-screen :rows 40)
@@ -366,15 +410,15 @@
         (t/is (some #(and (= :group (:kind %))
                           (str/starts-with? (:label (:group %)) "User ("))
                     rows))
-        (t/testing "space writes a -pattern into the :extensions array"
+        (t/testing "space composes the extension in the global layer"
           (protocols/handle-input screen " ")
-          (let [settings (edn/read-string (slurp (str (fs/path global-dir "settings.edn"))))]
-            (t/is (= ["-extensions/e.clj"] (:extensions settings)))))
-        (t/is (false? (:enabled (first (item-rows screen)))))
-        (t/testing "space again flips to +pattern"
+          (t/is (= [:ext/e] (extension-rows (layer-of global-patch))))
+          (t/is (not (fs/exists? (str (fs/path global-dir "settings.edn"))))
+                "no settings entry is written"))
+        (t/is (true? (:enabled (first (item-rows screen)))))
+        (t/testing "space again disables it with a remove patch"
           (protocols/handle-input screen " ")
-          (let [settings (edn/read-string (slurp (str (fs/path global-dir "settings.edn"))))]
-            (t/is (= ["+extensions/e.clj"] (:extensions settings)))))))
+          (t/is (empty? (composed-sources))))))
     {}))
 
 (t/deftest test-screen-top-level-settings-group-labels
@@ -395,47 +439,44 @@
      :project {:extensions ["proj.clj"]}}))
 
 (t/deftest test-screen-project-top-level-tri-state
-  ;; inherited user top-level item: project scope cycles inherit/unload/load
+  ;; inherited user top-level skill: project scope cycles inherit/unload/load
   ;; and writes the absolute path + +/- pattern into the project settings
   ;; array (pi setProjectTopLevelOverride)
   (with-settings
     (fn [{:keys [global-dir project-dir]}]
-      (fs/create-dirs (str global-dir "/extensions"))
-      (spit (str global-dir "/extensions/e.clj") "(ns e)\n")
+      (spit (str global-dir "/solo.md")
+            "---\nname: solo\ndescription: solo\n---\nbody\n")
       (let [screen (rc/make-resource-config-screen :rows 40
                                                    :write-scope :project
                                                    :project-mode? true)
-            item-path (str global-dir "/extensions/e.clj")]
+            item-path (str global-dir "/solo.md")]
         (t/is (true? (:inherited? (first (item-rows screen)))))
         (t/is (= :inherit (:override-state (first (item-rows screen)))))
         (protocols/handle-input screen " ")
         (let [settings (edn/read-string (slurp (str (fs/path project-dir "settings.edn"))))]
-          (t/is (= [(slash item-path) (str "-" (slash item-path))] (slash (:extensions settings)))))
+          (t/is (= [(slash item-path) (str "-" (slash item-path))] (slash (:skills settings)))))
         (t/is (= :unload (:override-state (first (item-rows screen)))))
         (protocols/handle-input screen " ")
         (let [settings (edn/read-string (slurp (str (fs/path project-dir "settings.edn"))))]
-          (t/is (= [(slash item-path) (str "+" (slash item-path))] (slash (:extensions settings)))))
+          (t/is (= [(slash item-path) (str "+" (slash item-path))] (slash (:skills settings)))))
         (t/is (= :load (:override-state (first (item-rows screen)))))
         (protocols/handle-input screen " ")
         (let [settings (edn/read-string (slurp (str (fs/path project-dir "settings.edn"))))]
-          (t/is (= [] (:extensions settings))))
+          (t/is (= [] (:skills settings))))
         (t/is (= :inherit (:override-state (first (item-rows screen)))))))
-    {}))
+    {:user {:skills ["solo.md"]}}))
 
 ;; ─── Bundled extensions ─────────────────────────────
 
 (t/deftest test-screen-bundled-group-and-global-toggle
   ;; the app-provided set renders first as ONE fixed group (artifact base
-  ;; dirs do not split it), all off by default; space writes the global
-  ;; :bundled-extensions entry (plain name on, -name off)
+  ;; dirs do not split it), all off by default; space composes the bundled
+  ;; extension in the global layer (no settings entry)
   (with-settings
     (fn [ctx]
       (let [screen (rc/make-resource-config-screen :rows 40)
             items (item-rows screen)
-            first-row (first-item-row screen)
-            settings (fn [] (:bundled-extensions
-                             (edn/read-string (slurp (str (fs/path (:global-dir ctx)
-                                                                   "settings.edn"))))))]
+            first-row (first-item-row screen)]
         (t/is (= 11 (count items)))
         (t/is (every? #(= :bundled (get-in (:item %) [:metadata :origin])) items))
         (t/is (= "Bundled with kmet" (:label (:group first-row))))
@@ -445,58 +486,76 @@
               "manifest names are the row names")
         (t/is (every? #(false? (:enabled %)) items))
         (t/is (some #(str/includes? % "bundled") (render-lines screen 100)))
-        (t/testing "space enables the selected bundled extension"
+        (t/testing "space composes the selected bundled extension"
           (protocols/handle-input screen " ")
-          (t/is (= ["clojure"] (settings)))
-          (t/is (true? (:enabled (first-item-row screen)))))
-        (t/testing "space again writes the explicit disable entry"
+          (t/is (= [:ext/clojure] (extension-rows (layer-of (:global-patch ctx)))))
+          (t/is (true? (:enabled (first-item-row screen))))
+          (t/is (nil? (:bundled-extensions
+                       (when (fs/exists? (str (fs/path (:global-dir ctx) "settings.edn")))
+                         (edn/read-string (slurp (str (fs/path (:global-dir ctx) "settings.edn")))))))))
+        (t/testing "space again disables it with a remove patch"
           (protocols/handle-input screen " ")
-          (t/is (= ["-clojure"] (settings)))
+          (t/is (empty? (composed-sources)))
           (t/is (false? (:enabled (first-item-row screen)))))))
     {:bundled? true}))
 
 (t/deftest test-screen-bundled-project-override-cycle
-  ;; project scope: the bundled row is an inherited global setting; the
-  ;; tri-state cycle writes +/- deltas into the project
-  ;; :bundled-extensions vector and drops the entry back at :inherit
+  ;; project scope: the bundled row is inherited from the composition or
+  ;; from a global row; the toggle sets the opposite state in .kmet/patch.edn
   (with-settings
     (fn [ctx]
       (let [screen (rc/make-resource-config-screen :rows 40
                                                    :write-scope :project
-                                                   :project-mode? true)
-            settings (fn [] (let [f (str (fs/path (:project-dir ctx) "settings.edn"))]
-                              (when (fs/exists? f) (edn/read-string (slurp f)))))]
+                                                   :project-mode? true)]
         (t/is (= :inherit (:override-state (first-item-row screen))))
         (t/is (true? (:inherited? (first-item-row screen))))
         (t/is (some #(and (str/includes? % "clojure")
-                          (str/includes? % "bundled")
-                          (str/includes? % "global setting"))
+                          (str/includes? % "bundled"))
                     (render-lines screen 100)))
-        (t/testing "inherit → load writes +name"
+        (t/testing "inherit → load composes a project row"
           (protocols/handle-input screen " ")
-          (t/is (= ["+clojure"] (:bundled-extensions (settings))))
+          (t/is (= [:ext/clojure] (extension-rows (layer-of (:project-patch ctx)))))
           (t/is (= :load (:override-state (first-item-row screen)))))
-        (t/testing "load → unload writes -name"
+        (t/testing "load → inherit drops the row"
           (protocols/handle-input screen " ")
-          (t/is (= ["-clojure"] (:bundled-extensions (settings))))
-          (t/is (= :unload (:override-state (first-item-row screen)))))
-        (t/testing "unload → inherit drops the entry"
-          (protocols/handle-input screen " ")
-          (t/is (= [] (:bundled-extensions (settings))))
+          (t/is (empty? (extension-rows (layer-of (:project-patch ctx)))))
           (t/is (= :inherit (:override-state (first-item-row screen)))))))
     {:bundled? true}))
 
-(t/deftest test-screen-bundled-global-setting-drives-the-rows
-  ;; a global :bundled-extensions entry shows up as enabled in both scopes
+(t/deftest test-screen-bundled-project-unloads-a-composed-extension
   (with-settings
-    (fn [_]
+    (fn [ctx]
+      (spit (:global-patch ctx)
+            (pr-str {:rows [{:id :ext/clojure :plugin :ext/clojure}] :patch []}))
+      (let [screen (rc/make-resource-config-screen :rows 40
+                                                   :write-scope :project
+                                                   :project-mode? true)]
+        (t/is (= :inherit (:override-state (first-item-row screen))))
+        (t/is (true? (:enabled (first-item-row screen))))
+        (t/testing "inherit → unload composes a remove patch"
+          (protocols/handle-input screen " ")
+          (t/is (= [{:id :ext/clojure :remove true}]
+                   (:patch (layer-of (:project-patch ctx)))))
+          (t/is (= :unload (:override-state (first-item-row screen))))
+          (t/is (false? (:enabled (first-item-row screen)))))
+        (t/testing "unload → inherit drops the remove patch"
+          (protocols/handle-input screen " ")
+          (t/is (empty? (:patch (layer-of (:project-patch ctx)))))
+          (t/is (= :inherit (:override-state (first-item-row screen)))))))
+    {:bundled? true}))
+
+(t/deftest test-screen-global-composition-drives-the-rows
+  ;; a global composition row shows up as enabled in both scopes
+  (with-settings
+    (fn [ctx]
+      (spit (:global-patch ctx)
+            (pr-str {:rows [{:id :ext/clojure :plugin :ext/clojure}] :patch []}))
       (let [screen (rc/make-resource-config-screen :rows 40)
             row (first (filter #(= "clojure" (get-in (:item %) [:metadata :display-name]))
                                (item-rows screen)))]
         (t/is (true? (:enabled row)))
         (t/is (some #(str/includes? % "clojure") (render-lines screen 100)))))
-    {:user {:bundled-extensions ["clojure"]}
-     :bundled? true}))
+    {:bundled? true}))
 
 ;; ─── Built-in tools (under the bundled group, before extensions) ──
 

@@ -23,6 +23,7 @@
             [kmet.app.commands :as commands]
             [kmet.app.commands.builtins :as runtime-commands]
             [kmet.app.extensions.core :as extensions]
+            [kmet.app.extensions.rows :as extension-rows]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.packages :as packages]
@@ -661,11 +662,9 @@
               _ (event-bus/emit-event! {:type :session-shutdown :reason :reload}
                                        (runtime/agent-ctx (:engine cs)))
               _ (extensions/ui-reset!)
-              _ (extensions/clear-extensions!)
-              ;; per-extension load results — the loaders only warn on
-              ;; stderr, so failures must be collected for the transcript
-              ;; (one unified load: top-level entries, auto dirs, packages)
-              ext-results (packages/load-extensions!)
+              ;; extensions are plugin rows: reload the ones the composition
+              ;; mounted in place (the world no longer loads any from settings)
+              ext-results (extension-rows/reload-all!)
               _ (th/load-theme-paths! (packages/resolve-theme-paths))
               ;; pi: model-runtime.refresh — recompose providers from models.edn
               _ (models/load-models-config!)

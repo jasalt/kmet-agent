@@ -137,15 +137,21 @@ and Jolt has no copies at all. Use `kmet.libs.json`, `kmet.libs.yaml`,
 
 ## Runtime lifecycle
 
-Extensions load at startup and via `/reload`. They can also be managed at
-runtime (e.g. from another extension or a REPL):
+Extensions load when a composition row names them (`:ext/<id>`,
+[kmet.app.extensions.rows](kmet/app/extensions/rows.clj)) and `/reload`
+reloads the mounted rows with their configs. The core loader can also be
+driven directly (from another extension or a REPL):
 
 | Operation | Function | Effect |
 |---|---|---|
 | Load | `kmet.app.extensions.core/load-extension!` (path) | load one file or manifest dir; returns `{:extension name :error nil :loader-kind :sci\|:jolt :pending bool}`, `{:extension nil :error msg}` on failure, or `{:extension name :skipped true :reason :unsupported-loader …}` when the host offers none of the declared backends |
 | Unload | `kmet.app.extensions.core/unload-extension!` (record) | run `shutdown`, dispose the extension's registrations, remove namespaces |
-| Reload | `kmet.app.extensions.core/reload-extensions!` (dirs) | unload all, reload from the given container dirs |
+| Reload | `kmet.app.extensions.rows/reload-all!` (mounted rows); `kmet.app.extensions.core/reload-extensions!` (dirs) | unload and load again every row-owned extension with its config; the core dirs variant unloads all and reloads from the given container dirs |
 | List | `kmet.app.extensions.core/get-loaded-extensions` | `[{:name .. :path .. :loader-kind .. :fiber-state ..}]` |
+
+A composition row is the only thing that loads an extension in a run: the
+settings files (`:extensions`, `:bundled-extensions`, packages) are
+discovery, not a loader.
 
 A failing plugin body is rolled back: the loader unloads whatever was
 registered before the error and reports `{:extension nil :error msg}` — no

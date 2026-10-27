@@ -128,8 +128,10 @@ sys.exit(status)
             agent-dir (str (fs/path out-dir "overlay-smoke-agent"))
             _ (fs/create-dirs agent-dir)
             _ (spit (str (fs/path agent-dir "settings.edn"))
-                    (pr-str {:bundled-extensions ["lsp-adapter"]
-                             :session-dir "sessions"}))
+                    (pr-str {:session-dir "sessions"}))
+            _ (spit (str (fs/path agent-dir "patch.edn"))
+                    (pr-str {:rows [{:id :ext/lsp-adapter
+                                     :plugin :ext/lsp-adapter}]}))
             logo (str "kmet (" (host/runtime-name) ")")
             ;; Payloads travel as HEX so no encoding layer can mangle ESC/CR.
             exit (run-stages! out-file agent-dir

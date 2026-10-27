@@ -1,8 +1,8 @@
 {:schema 1
  ;; The bundled extension artifacts, shipped with the application (both the
  ;; babashka uberjar and the jolt embed) and offered through the config
- ;; screen's "Bundled with kmet" group. Disabled by default; enable per
- ;; scope via the :bundled-extensions settings key.
+ ;; screen's "Bundled with kmet" group. Available to every composition but
+ ;; loaded only when a row names it (:ext/<name>), never by default.
  ;;
  ;; :root is relative to the repo's extensions/ directory and is the
  ;; artifact root exactly as pack-extension / src/kmet/extension.md define it

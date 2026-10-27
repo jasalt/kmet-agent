@@ -354,10 +354,9 @@
 ;; ── package subcommands ──────────────────────────────────────────────────
 
 (defn run-config
-  "The `config` subcommand's terminal UI: kmet1's resource-config screen,
-   resolved when the command runs. The screen is a front end, not a row, so a
-   process that never runs `config` loads no TUI. Returns the screen's exit
-   code."
+  "The `config` subcommand's terminal UI: the resource-config screen, resolved
+   when the command runs. The screen is a front end, not a row, so a process
+   that never runs `config` loads no TUI. Returns the screen's exit code."
   [opts]
   ((requiring-resolve 'kmet.ui.tui.config-command/run-config!) opts))
 
@@ -413,7 +412,7 @@
   (println "  remove <source>    Remove a package (alias: uninstall)")
   (println "  update [source]    Update installed git packages (all, or one source)")
   (println "  list               List installed packages")
-  (println "  config             Enable/disable resources (TUI)")
+  (println "  config             Compose extensions / toggle resources (TUI)")
   (println)
   (println "  kmet --profile print \"list the files\"   run one prompt and exit"))
 

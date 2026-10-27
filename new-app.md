@@ -108,9 +108,17 @@ extension. It now does, end to end:
   `runtime/row-source` returns the row's adapter plugin.
 - The row's config arrives as `(:config api)` in the extension's api map, and
   the row unloads the extension when it disposes.
-- The world loader already skips a path in the extension registry, so a named
-  extension never loads twice; `:extensions` and `:bundled-extensions` still
-  cover everything a composition does not name.
+- Extensions are **composition-only** now: `kmet.app.world` no longer loads
+  any from settings. The installed set (top-level `:extensions` paths, auto
+  dirs, packages, bundled artifacts) is discovery; the retired
+  `:bundled-extensions` key decides nothing. A run loads exactly the rows its
+  composition names.
+- `kmet.app.extensions.layers` reads the two ambient layers for the config
+  screen and writes its toggles: global scope edits
+  `~/.kmet/agent/patch.edn`, project scope writes a row or a `:remove` patch
+  in `.kmet/patch.edn`. `/reload` unloads and reloads each mounted row's
+  extension with the same config (`kmet.app.extensions.rows/reload-all!`); it
+  does not re-read the composition.
 
 The remaining limit: the extension's own plugin still mounts under the host
 ctx (app-wide), so an `:ext/…` row belongs to a root profile, not an agent

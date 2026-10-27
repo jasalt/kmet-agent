@@ -5,12 +5,16 @@
    see src/kmet/pi-alignment.md.
 
    A fifth, app-provided layer sits after packages: the bundled extensions
-   (kmet.app.extensions.bundled) — the shipped
-   `extensions/` set, present in every run mode and disabled unless the
-   `:bundled-extensions` settings entries enable it. Bundled items rank
-   last (5), are not `:packages` entries (kmet install/remove cannot touch
-   them), and load through their descriptor (a checkout path in dev, a
-   resource prefix in a built artifact) instead of a plain path.
+   (kmet.app.extensions.bundled) — the shipped `extensions/` set, present in
+   every run mode and available to the composition. Bundled items rank last
+   (5), are not `:packages` entries (kmet install/remove cannot touch them),
+   and load through their descriptor (a checkout path in dev, a resource
+   prefix in a built artifact) instead of a plain path.
+
+   Extensions are plugins: this namespace discovers the installed set, and
+   only a composition's `:ext/<id>` rows load an extension
+   (kmet.app.extensions.rows). Skills, prompts and themes keep the
+   enabled-path loaders below.
 
    `resolve-package-items` is pi's full resolve pipeline: top-level settings
    resource entries (`:extensions`/`:skills`/`:prompts`/`:themes` — plain
@@ -19,8 +23,8 @@
    insertion order and finalized with pi's precedence sort (project-local 0,
    project-auto 1, user-local 2, user-auto 3, package 4, bundled 5) +
    canonical-path
-   dedupe. `load-extensions!`/`load-skills!`/`load-prompts!`/`load-themes!`
-   load the enabled items of a type.
+   dedupe. `load-skills!`/`load-prompts!`/`load-themes!` load the enabled
+   items of a type; extensions load through composition rows.
 
    A package is a `:packages` entry in the global settings.edn
    (~/.kmet/agent/settings.edn, scope :user) or the project settings.edn
@@ -777,7 +781,7 @@
 (defn- resolve-bundled-layer
   "pi addAutoDiscoveredResources' trailing analogue — the bundled
    extensions appended after every other layer. ITEMS are already
-   PackageItem-shaped and enabled-stamped (bundled-items); rank 5 (see
+   PackageItem-shaped (bundled-items); rank 5 (see
    resource-rank) keeps them last in the finalized order, so a user's own
    copy of the same extension loads first."
   [acc items]
@@ -973,21 +977,23 @@
   "Resolve the configured packages read from both settings files (the
    merged user + project view, pi: the project-trusted resolve). Now the
    unified resolution — top-level entries, auto-dir scans and the bundled
-   layer included — so the loaders below see every layer; AGENT-DIR pins
-   the user scope root (KMET_CODING_AGENT_DIR sandboxing)."
+   layer included — so the extension-row resolver and the resource loaders
+   below see every layer; AGENT-DIR pins the user scope root
+   (KMET_CODING_AGENT_DIR sandboxing)."
   ([] (resolve-configured-packages nil))
   ([agent-dir]
    (let [user (user-settings-map)
          project (project-settings-map)]
      (resolve-package-items user project agent-dir true
-                            (bundled-items user project)))))
+                            (bundled-items)))))
 
 ;; ─── Loading (pi: resource-loader — the unified resolution) ───────────────
 ;; Every layer (top-level entries, auto dirs, packages, bundled) resolves
 ;; into one ordered view, so loading is a single enabled-path pass per type
 ;; — no separate auto/package phases and no cross-phase dedupe. Registries
-;; still dedupe by identity (extension path, skill name, ...) so a second
-;; load call (print mode, /reload) only adds what is new.
+;; still dedupe by identity (skill name, prompt name, ...) so a second load
+;; call (print mode, /reload) only adds what is new. Extensions are not here:
+;; a composition row loads them (kmet.app.extensions.rows).
 
 (defn- enabled-item-paths
   "Enabled item paths of TYPE from a resolved view."
@@ -995,29 +1001,6 @@
   (->> (get resolved type)
        (filter :enabled)
        (mapv :path)))
-
-(defn load-extensions!
-  "Load every enabled extension in the unified resolution (top-level
-   entries, auto dirs, packages, bundled — pi precedence, first-wins per
-   canonical path). Bundled items load through their descriptor (a checkout
-   path or a resource prefix), everything else through its path. Returns
-   the per-extension results of the new loads ({:extension name :error}
-   maps, failures also warn — same shape as load-extensions-from-dir).
-   AGENT-DIR pins the user scope root."
-  ([] (load-extensions! nil))
-  ([agent-dir]
-   (let [loaded (set (map (comp canonicalize :path) (extensions/registered-extensions)))
-         fresh (remove #(contains? loaded (canonicalize (:path %)))
-                       (filter :enabled
-                               (get (resolve-configured-packages agent-dir) :extensions)))
-         ;; bundled items carry their descriptor in metadata and load
-         ;; through it (checkout paths / resource prefixes); everything
-         ;; else keeps the plain path load
-         descriptors (filterv #(get-in % [:metadata :artifact]) fresh)
-         paths (mapv :path (remove #(get-in % [:metadata :artifact]) fresh))]
-     (into (extensions/load-extension-paths! paths)
-           (extensions/load-extension-descriptors!
-            (mapv #(get-in % [:metadata :artifact]) descriptors))))))
 
 (defn load-skills!
   "Load every enabled skill in the unified resolution into the app's registry
@@ -1099,11 +1082,9 @@
 
 ;; ─── Bundled extensions ──────────────────────────
 ;; The app-provided fifth layer: descriptors from
-;; kmet.app.extensions.bundled, PackageItem-shaped here, enabled through
-;; the :bundled-extensions settings key. The key shares the resource-array
-;; vocabulary (plain/+name enables, -name/!name disables); a project entry
-;; is a delta over the global one, so the same tri-state cycle as the
-;; other resources applies.
+;; kmet.app.extensions.bundled, PackageItem-shaped here. Bundled artifacts are
+;; always available to the composition; whether a run loads one is decided by
+;; its `:ext/…` rows (kmet.app.extensions.rows), not by settings.
 
 (defn bundled-item?
   "True when ITEM is an app-provided bundled extension (origin :bundled)."
@@ -1111,99 +1092,28 @@
   (= :bundled (get-in item [:metadata :origin])))
 
 (defn bundled-item-name
-  "The manifest name of bundled ITEM — the identity the settings entries
-   target."
+  "The manifest name of bundled ITEM."
   [item]
   (or (get-in item [:metadata :display-name])
       (get-in item [:metadata :artifact :name])))
 
-(defn bundled-entry-state
-  "The state ENTRIES (a :bundled-extensions settings vector) assigns to
-   NAME: :load for a plain/+ entry, :unload for -/!; :inherit when no entry
-   targets it. Later entries win."
-  [entries name]
-  (reduce (fn [state entry]
-            (if (= (pattern-target entry) name)
-              (if (or (str/starts-with? (str entry) "-")
-                      (str/starts-with? (str entry) "!"))
-                :unload
-                :load)
-              state))
-          :inherit
-          (or entries [])))
-
-(defn bundled-enabled?
-  "Is bundled extension NAME enabled? The global setting's state is the
-   base (missing = disabled — the default), a project entry overrides it
-   (:load/:unload), and :inherit falls back to the global base. An absent
-   project entry is :inherit."
-  [name user-settings project-settings]
-  (let [base (case (bundled-entry-state (:bundled-extensions user-settings) name)
-               :load true
-               (:unload :inherit) false)
-        proj (bundled-entry-state (:bundled-extensions project-settings) name)]
-    (case proj
-      :load true
-      :unload false
-      :inherit base)))
-
 (defn bundled-items
   "PackageItem-shaped items for the bundled extension layer, one per
    descriptor of the current run mode (kmet.app.extensions.bundled/artifacts
-   — checkout paths in dev, resource prefixes in a built artifact). Enabled
-   per the :bundled-extensions entries of both settings scopes; default
-   disabled. AGENT-DIR is accepted for symmetry with the other resolvers
-   and is unused (bundled artifacts are app-provided, not scope-rooted)."
-  ([user-settings project-settings] (bundled-items user-settings project-settings nil))
-  ([user-settings project-settings _agent-dir]
-   (mapv (fn [d]
-           (->PackageItem (:path d)
-                          (bundled-enabled? (:name d)
-                                            (or user-settings {})
-                                            (or project-settings {}))
-                          :extensions
-                          {:origin :bundled
-                           :scope :user
-                           :source "bundled"
-                           :base-dir (or (:root d) (:prefix d) (:path d))
-                           :display-name (:name d)
-                           :artifact d}))
-         (bundled-extensions/artifacts))))
-
-(defn apply-bundled-toggle!
-  "Global-scope toggle of bundled ITEM: rewrite the global
-   :bundled-extensions vector in place — ENABLED writes the plain name,
-   disabled writes -name, replacing any entry targeting the name."
-  [item enabled]
-  (let [name (bundled-item-name item)
-        current (vec (or (:bundled-extensions (user-settings-map)) []))
-        filtered (filterv #(not= (pattern-target %) name) current)
-        updated (conj filtered (str (if enabled "" "-") name))]
-    (cfg/save-setting! [:bundled-extensions] updated)
-    true))
-
-(defn bundled-override-state-of
-  "The project override state of bundled ITEM from the live project
-   settings (:inherit when no entry targets its name)."
-  [item]
-  (bundled-entry-state (:bundled-extensions (project-settings-map))
-                       (bundled-item-name item)))
-
-(defn apply-bundled-project-override!
-  "Project-scope override of bundled ITEM: set STATE (:load → +name,
-   :unload → -name, :inherit → remove) in the project :bundled-extensions
-   vector, replacing any entry targeting the name. An empty vector is
-   written rather than deleting the key — read-equivalent to absent
-   (:inherit)."
-  [item state]
-  (let [name (bundled-item-name item)
-        current (vec (or (:bundled-extensions (project-settings-map)) []))
-        filtered (filterv #(not= (pattern-target %) name) current)
-        updated (if (= state :inherit)
-                  filtered
-                  (conj filtered (str (if (= state :load) "+" "-") name)))]
-    (cfg/save-project-setting! [:bundled-extensions] updated)
-    true))
+   — checkout paths in dev, resource prefixes in a built artifact). Every
+   item is available: the composition decides what loads."
+  []
+  (mapv (fn [d]
+          (->PackageItem (:path d)
+                         true
+                         :extensions
+                         {:origin :bundled
+                          :scope :user
+                          :source "bundled"
+                          :base-dir (or (:root d) (:prefix d) (:path d))
+                          :display-name (:name d)
+                          :artifact d}))
+        (bundled-extensions/artifacts)))
 
 (defn item-pattern
   "pi getPackageResourcePattern — the item's path relative to its package
@@ -1217,8 +1127,8 @@
 (defn single-extension-item?
   "True when ITEM is the single-extension unit of its package source — a
    file or an extension.edn directory. Such packages ignore per-type
-   filters (pi: file sources bypass package filters), so they cannot be
-   toggled off: the config screen marks them “always loaded”."
+   filters (pi: file sources bypass package filters); the composition
+   decides whether the extension loads."
   [item]
   (boolean (get-in item [:metadata :single-extension])))
 
@@ -1419,30 +1329,26 @@
   "pi toggleResource (global branch) — flip ITEM's enabled state. Package
    items write +/−PATTERN into the matching package entry (string entries
    become object entries; entries with no remaining filters return to
-   strings); top-level items write into the scope's settings resource
-   array; bundled items are not :packages entries and write nothing here
-   (the config screen's bundled branch owns their settings key). No-op when
-   the package is not found, and false for single-extension sources —
-   their filters are ignored at resolve time, so a pattern write would
-   silently do nothing."
+   strings); top-level items write into the scope's settings resource array.
+   Extension items are composition rows, so this settings path returns
+   false for them (`kmet config` writes their layer). No-op when the package
+   is not found."
   [item enabled]
-  (if (bundled-item? item)
+  (if (= :extensions (:resource-type item))
     false
     (if (top-level-item? item)
       (apply-top-level-toggle! item enabled)
-      (if (single-extension-item? item)
-        false
-        (let [current (user-packages)
-              source (get-in item [:metadata :source])
-              idx (first (keep-indexed (fn [i e]
-                                         (when (= (source-of e) source) i))
-                                       current))]
-          (when idx
-            (cfg/save-setting!
-             [:packages]
-             (set-type-array! current idx (:resource-type item) (item-pattern item)
-                              (if enabled :load :unload)))
-            true))))))
+      (let [current (user-packages)
+            source (get-in item [:metadata :source])
+            idx (first (keep-indexed (fn [i e]
+                                       (when (= (source-of e) source) i))
+                                     current))]
+        (when idx
+          (cfg/save-setting!
+           [:packages]
+           (set-type-array! current idx (:resource-type item) (item-pattern item)
+                            (if enabled :load :unload)))
+          true)))))
 
 (defn- override-source-entry
   "pi createPackageOverrideSource — a project-scope delta entry over the
@@ -1461,35 +1367,32 @@
    write into the project settings resource array; package items write
    +/−patterns into the project :packages entry (inherited user packages
    without a project entry get a fresh :autoload false delta entry;
-   cycling back to :inherit removes the override again); bundled items are
-   not :packages entries and write nothing here (the config screen's
-   bundled branch owns their settings key). False for single-extension
-   sources (their filters are ignored at resolve time)."
+   cycling back to :inherit removes the override again). Extension items
+   are composition rows, so this settings path returns false for them
+   (`kmet config` writes their layer)."
   [item state]
-  (if (bundled-item? item)
+  (if (= :extensions (:resource-type item))
     false
     (if (top-level-item? item)
       (apply-project-top-level-override! item state)
-      (if (single-extension-item? item)
-        false
-        (when (not= state (override-state-of item (project-packages)))
-          (let [current (project-packages)
-                item-scope (get-in item [:metadata :scope] :user)
-                idx (first (keep-indexed (fn [i e]
-                                           (when (source-matches-scope (source-of e) :project
-                                                                       (get-in item [:metadata :source])
-                                                                       item-scope)
-                                             i))
-                                         current))]
-            (if (and (nil? idx) (= state :inherit))
-              false
-              (let [packages (if idx
-                               current
-                               (conj current (override-source-entry item)))
-                    idx (or idx (dec (count packages)))]
-                (cfg/save-project-setting! [:packages]
-                                           (set-type-array! packages idx
-                                                            (:resource-type item)
-                                                            (item-pattern item)
-                                                            state))
-                true))))))))
+      (when (not= state (override-state-of item (project-packages)))
+        (let [current (project-packages)
+              item-scope (get-in item [:metadata :scope] :user)
+              idx (first (keep-indexed (fn [i e]
+                                         (when (source-matches-scope (source-of e) :project
+                                                                     (get-in item [:metadata :source])
+                                                                     item-scope)
+                                           i))
+                                       current))]
+          (if (and (nil? idx) (= state :inherit))
+            false
+            (let [packages (if idx
+                             current
+                             (conj current (override-source-entry item)))
+                  idx (or idx (dec (count packages)))]
+              (cfg/save-project-setting! [:packages]
+                                         (set-type-array! packages idx
+                                                          (:resource-type item)
+                                                          (item-pattern item)
+                                                          state))
+              true)))))))

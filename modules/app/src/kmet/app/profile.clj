@@ -176,33 +176,54 @@
              (count rows))]
     (vec (concat (subvec rows 0 at) [new-row] (subvec rows at)))))
 
-(defn- apply-patch [rows patch]
-  (let [patch (check-patch! patch)
+(defn- apply-patch
+  "Apply PATCH to STATE (`{:rows [...] :removed #{ids}}`) and return the new
+   state. Removing an id that an earlier patch removed is a no-op, so a
+   project layer's disable of a row a global layer already disabled does not
+   dangle; removing an id that was never there is still an error."
+  [state patch]
+  (let [rows (:rows state)
+        removed (:removed state)
+        patch (check-patch! patch)
         id (:id patch)
         idx (row-index rows id)]
     (cond
-      (:remove patch) (if idx
-                        (vec (concat (subvec rows 0 idx) (subvec rows (inc idx))))
-                        (unknown-row id patch))
+      (:remove patch)
+      (cond
+        idx {:rows (vec (concat (subvec rows 0 idx) (subvec rows (inc idx))))
+             :removed (conj removed id)}
+        (contains? removed id) state
+        :else (unknown-row id patch))
+
       idx (do (when (or (:after patch) (:before patch))
                 (bad-patch patch "a patch on an existing row takes no :after/:before"))
-              (assoc rows idx (patched-row (nth rows idx) patch)))
-      (contains? patch :plugin) (insert-row rows patch)
+              {:rows (assoc rows idx (patched-row (nth rows idx) patch))
+               :removed (disj removed id)})
+
+      (contains? patch :plugin) {:rows (insert-row rows patch)
+                                 :removed (disj removed id)}
+      ;; a config overlay on a row an earlier patch removed has nothing to
+      ;; apply; a never-present id is still a typo
+      (contains? removed id) state
       :else (unknown-row id patch))))
 
 (defn compose
   "Apply LAYERS in order to an empty composition → `{:rows [row …] :patches
    n}`. Every row must carry an `:id` (a card's, resolved by the catalog);
-   duplicate ids across stacked bundles are an error."
+   duplicate ids across stacked bundles are an error. A patch targeting an
+   id an earlier patch removed is a no-op (remove or config), so a project
+   layer's disable of a globally disabled row does not dangle; an id that was
+   never there is still an error."
   [layers]
-  (let [{:keys [rows patches]}
-        (reduce (fn [state layer]
-                  {:rows (reduce apply-patch
-                                 (into (:rows state) (:rows layer))
-                                 (:patch layer))
-                   :patches (+ (:patches state) (count (:patch layer)))})
-                {:rows [] :patches 0}
-                layers)
+  (let [composed (reduce (fn [state layer]
+                           (reduce apply-patch
+                                   {:rows (into (:rows state) (:rows layer))
+                                    :removed (:removed state)}
+                                   (:patch layer)))
+                         {:rows [] :removed #{}}
+                         layers)
+        rows (:rows composed)
+        patches (transduce (map #(count (:patch %))) + layers)
         missing (seq (remove :id rows))
         dupes (->> rows (map :id) frequencies (filter (fn [[_ n]] (> n 1))) (map key) sort)]
     (when missing

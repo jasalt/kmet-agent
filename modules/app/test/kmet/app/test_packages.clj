@@ -7,8 +7,6 @@
             [clojure.string :as str]
             [clojure.edn :as edn]
             [babashka.fs :as fs]
-            [kmet.app.extensions.bundled :as be]
-            [kmet.app.extensions.core :as ext]
             [kmet.app.packages :as pkgs]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
@@ -562,16 +560,16 @@
     (t/is (= (slash #{(str dir "/skills/root/SKILL.md") (str dir "/skills/flat.md")})
              (slash (set (skills/discover-skill-files (str dir "/skills"))))))))
 
-(t/deftest test-single-extension-items-are-not-toggleable
+(t/deftest test-extension-items-are-composition-only
   (with-isolated-settings
     (fn [{:keys [global-dir]}]
       (let [file (str (fs/path global-dir "ext.clj"))]
         (spit file "(ns x)\n")
-        (t/testing "a file source resolves to a single always-enabled extension"
+        (t/testing "a file source resolves to one available extension"
           (let [item (first (:extensions (with-stubbed-cwd #(pkgs/resolve-package-items {:packages [file]} nil))))]
             (t/is (pkgs/single-extension-item? item))
             (t/is (true? (:enabled item)))
-            (t/testing "toggling it writes nothing"
+            (t/testing "the settings toggles refuse an extension item"
               (t/is (false? (pkgs/apply-global-toggle! item false)))
               (t/is (false? (pkgs/apply-project-override! item :unload)))
               (t/is (empty? (:packages (pkgs/user-settings-map)))))))
@@ -720,24 +718,24 @@
 (t/deftest test-top-level-toggle-writes-array
   (with-isolated-settings
     (fn [{:keys [global-dir]}]
-      (let [ext (str global-dir "/extensions")]
-        (fs/create-dirs ext)
-        (spit-plugin (str ext "/a.clj") "(ns a)\n")
-        (let [item (first (:extensions (pkgs/resolve-package-items nil nil)))]
+      (let [dir (str global-dir "/prompts")]
+        (fs/create-dirs dir)
+        (spit (str dir "/a.md") "# a\n")
+        (let [item (first (:prompts (pkgs/resolve-package-items nil nil)))]
           (t/is (pkgs/top-level-item? item))
-          (t/is (= "extensions/a.clj" (pkgs/top-level-pattern item)))
+          (t/is (= "prompts/a.md" (pkgs/top-level-pattern item)))
           (t/is (true? (pkgs/apply-global-toggle! item false)))
-          (t/is (= ["-extensions/a.clj"] (:extensions (edn/read-string (slurp (str global-dir "/settings.edn"))))))
+          (t/is (= ["-prompts/a.md"] (:prompts (edn/read-string (slurp (str global-dir "/settings.edn"))))))
           (t/is (true? (pkgs/apply-global-toggle! item true)))
-          (t/is (= ["+extensions/a.clj"] (:extensions (edn/read-string (slurp (str global-dir "/settings.edn")))))))))))
+          (t/is (= ["+prompts/a.md"] (:prompts (edn/read-string (slurp (str global-dir "/settings.edn")))))))))))
 
 (t/deftest test-project-top-level-override-cycle
   (with-isolated-settings
     (fn [{:keys [global-dir]}]
-      (let [ext (str global-dir "/extensions")]
-        (fs/create-dirs ext)
-        (spit-plugin (str ext "/a.clj") "(ns a)\n")
-        (let [item (first (:extensions (pkgs/resolve-package-items nil nil)))]
+      (let [dir (str global-dir "/prompts")]
+        (fs/create-dirs dir)
+        (spit (str dir "/a.md") "# a\n")
+        (let [item (first (:prompts (pkgs/resolve-package-items nil nil)))]
           (t/is (= :inherit (pkgs/top-level-override-state-of item)))
           (t/is (true? (pkgs/apply-project-override! item :unload)))
           (t/is (= :unload (pkgs/top-level-override-state-of item)))
@@ -745,8 +743,6 @@
           (t/is (= :load (pkgs/top-level-override-state-of item)))
           (t/is (true? (pkgs/apply-project-override! item :inherit)))
           (t/is (= :inherit (pkgs/top-level-override-state-of item))))))))
-
-;; ─── Project-scope views and override patterns (regressions) ──────────────
 
 (t/deftest test-top-level-override-patterns-project-item-dedupes
   ;; a project item's own base dir IS the project scope root, so the
@@ -812,31 +808,13 @@
 
 ;; ─── Bundled extensions ─────────────────────────────
 
-(t/deftest test-bundled-entry-state-and-enabled
-  (t/is (= :inherit (pkgs/bundled-entry-state nil "clojure")))
-  (t/is (= :load (pkgs/bundled-entry-state ["clojure"] "clojure")))
-  (t/is (= :load (pkgs/bundled-entry-state ["+clojure"] "clojure")))
-  (t/is (= :unload (pkgs/bundled-entry-state ["-clojure"] "clojure")))
-  (t/is (= :unload (pkgs/bundled-entry-state ["!clojure"] "clojure")))
-  (t/is (= :load (pkgs/bundled-entry-state ["-clojure" "+clojure"] "clojure"))
-        "later entries win")
-  (t/is (= :unload (pkgs/bundled-entry-state ["+clojure" "-clojure"] "clojure")))
-  (t/is (false? (pkgs/bundled-enabled? "clojure" {} {})) "default disabled")
-  (t/is (true? (pkgs/bundled-enabled? "clojure" {:bundled-extensions ["clojure"]} nil)))
-  (t/is (false? (pkgs/bundled-enabled? "clojure" {:bundled-extensions ["clojure"]}
-                                       {:bundled-extensions ["-clojure"]}))
-        "project disable overrides the global enable")
-  (t/is (true? (pkgs/bundled-enabled? "clojure" {}
-                                      {:bundled-extensions ["+clojure"]}))
-        "project enable over the disabled default"))
-
 (t/deftest test-bundled-layer-ranks-after-packages
   (with-isolated-settings
     (fn [{:keys [global-dir]}]
       (let [pkg (str (fs/path global-dir "pkg"))]
         (fs/create-dirs (str pkg "/extensions"))
         (spit-plugin (str pkg "/extensions/p.clj") "(ns p)\n")
-        (let [bundled (pkgs/bundled-items {:bundled-extensions ["clojure"]} {})
+        (let [bundled (pkgs/bundled-items)
               resolved (pkgs/resolve-package-items {:packages [pkg]} nil nil true bundled)
               names (mapv #(or (get-in % [:metadata :display-name])
                                (fs/file-name (:path %)))
@@ -844,66 +822,9 @@
               idx-of (fn [n] (first (keep-indexed #(when (= n %2) %1) names)))]
           (t/is (< (idx-of "p.clj") (idx-of "clojure"))
                 "package resources rank before bundled")
-          (t/is (= ["clojure"]
-                   (->> (:extensions resolved)
-                        (filter :enabled)
-                        (filter pkgs/bundled-item?)
-                        (mapv #(get-in % [:metadata :display-name]))))))))))
-
-(t/deftest test-bundled-toggle-writes
-  (with-isolated-settings
-    (fn [{:keys [global-dir project-dir]}]
-      (let [item (first (pkgs/bundled-items {} {}))
-            global-settings (fn [] (edn/read-string (slurp (str (fs/path global-dir "settings.edn")))))
-            project-settings (fn [] (edn/read-string (slurp (str (fs/path project-dir "settings.edn")))))]
-        (t/is (= "clojure" (pkgs/bundled-item-name item)))
-        (t/is (pkgs/bundled-item? item))
-        (t/testing "global toggle rewrites the :bundled-extensions vector"
-          (t/is (true? (pkgs/apply-bundled-toggle! item true)))
-          (t/is (= ["clojure"] (:bundled-extensions (global-settings))))
-          (t/is (true? (pkgs/apply-bundled-toggle! item false)))
-          (t/is (= ["-clojure"] (:bundled-extensions (global-settings)))))
-        (t/testing "project cycle writes +/-, then drops the entry at :inherit"
-          (t/is (= :inherit (pkgs/bundled-override-state-of item)))
-          (t/is (true? (pkgs/apply-bundled-project-override! item :load)))
-          (t/is (= ["+clojure"] (:bundled-extensions (project-settings))))
-          (t/is (= :load (pkgs/bundled-override-state-of item)))
-          (t/is (true? (pkgs/apply-bundled-project-override! item :unload)))
-          (t/is (= ["-clojure"] (:bundled-extensions (project-settings))))
-          (t/is (true? (pkgs/apply-bundled-project-override! item :inherit)))
-          (t/is (= [] (:bundled-extensions (project-settings))))
-          (t/is (= :inherit (pkgs/bundled-override-state-of item))))
-        (t/testing "the :packages toggles never touch a bundled item"
-          (t/is (false? (pkgs/apply-global-toggle! item true)))
-          (t/is (false? (pkgs/apply-project-override! item :load)))
-          (t/is (nil? (:packages (global-settings))))
-          (t/is (nil? (:packages (project-settings)))))))))
-
-(t/deftest test-load-extensions-loads-bundled-descriptor
-  ;; a loaded extension mounts as a plugin under the host's ctx, so the test
-  ;; binds one (the composition's `:extensions` row does this in a run)
-  (tu/with-extension-host
-    (fn []
-      (with-isolated-settings
-        (fn [{:keys [global-dir]}]
-          (let [root (str (fs/path global-dir "bundled-test"))]
-            (fs/create-dirs (str root "/bundled"))
-            (spit (str root "/extension.edn")
-                  "{:name \"bundled-test\" :plugin bundled.ext/plugin :loader [:sci]}\n")
-            (spit-plugin (str root "/bundled/ext.clj")
-                         "(ns bundled.ext)\n(defn init [api] nil)\n(def mark (atom :unset))\n")
-            (spit (str global-dir "/settings.edn") (pr-str {:bundled-extensions ["bundled-test"]}))
-            (with-redefs [be/artifacts (fn [] [{:name "bundled-test" :kind :dir :root root
-                                                :path root :bundled? true}])]
-              (ext/clear-extensions!)
-              (try
-                (let [results (pkgs/load-extensions!)]
-                  (t/is (= [{:extension "bundled-test" :error nil
-                             :loader-kind :sci :bundled true :pending false}]
-                           results)))
-                (let [loaded (ext/get-loaded-extensions)]
-                  (t/is (= 1 (count loaded)))
-                  (t/is (= "bundled-test" (:name (first loaded))))
-                  (t/is (true? (:bundled (first loaded)))))
-                (finally (ext/clear-extensions!))))))))))
+          (t/is (= 1 (count (filter #(= "clojure" (get-in % [:metadata :display-name]))
+                                    (:extensions resolved))))
+                "the bundled item is available to the composition")
+          (t/is (every? :enabled (filter pkgs/bundled-item? (:extensions resolved)))
+                "bundled items are always available"))))))
 

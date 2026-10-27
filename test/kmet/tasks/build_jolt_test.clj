@@ -295,14 +295,12 @@
     (fs/delete-tree dir)
     (try
       (let [agent-dir (@#'jbuild/prepare-smoke-agent-dir dir)
-            settings (slurp (str (fs/path agent-dir "settings.edn")))]
+            patch (slurp (str (fs/path agent-dir "patch.edn")))]
         (is (= (str/replace dir "\\" "/")
                (str/replace (str (fs/parent agent-dir)) "\\" "/")))
-        (is (str/includes? settings ":bundled-extensions")
-            "the app smoke runs with an extension enabled")
-        (is (str/includes? settings "\"clojure\"")
-            "a bundled directory extension exercises the native embedded root")
-        (is (str/includes? settings "\"deepseek-peak\"")
-            "a bundled single file exercises the exact native source mapping"))
+        (is (str/includes? patch ":ext/clojure")
+            "the app smoke composes a bundled directory extension")
+        (is (str/includes? patch ":ext/deepseek-peak")
+            "the app smoke composes a bundled single-file extension"))
       (finally
         (fs/delete-tree dir)))))

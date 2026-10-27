@@ -2,7 +2,7 @@
   "Bundled extension discovery and its package layer:
    the committed manifest and the gate over the repo's extensions/ tree,
    descriptor resolution in checkout vs artifact (resource) mode, and the
-   enabled-state semantics of the :bundled-extensions settings key."
+   availability of the bundled package layer."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -149,30 +149,18 @@
 
 ;; ─── The package-item layer (kmet.app.packages) ───────────────────────────
 
-(t/deftest test-items-enabled-state
+(t/deftest test-items-are-always-available
   (let [root (tmp-dir)
         _ (spit (str root "/extension.edn") "{:name \"demo\" :plugin demo.core/plugin :loader [:sci]}\n")
         descriptor {:name "demo" :kind :dir :root root :path root :bundled? true}]
     (with-redefs [bundled/artifacts (fn [] [descriptor])]
-      (let [items (pkgs/bundled-items {} {})]
+      (let [items (pkgs/bundled-items)]
         (t/is (= 1 (count items)))
-        (t/is (false? (:enabled (first items))) "default disabled")
+        (t/is (true? (:enabled (first items)))
+              "bundled artifacts are available; the composition decides what loads")
         (t/is (= :bundled (get-in (first items) [:metadata :origin])))
         (t/is (= "demo" (get-in (first items) [:metadata :display-name])))
-        (t/is (= descriptor (get-in (first items) [:metadata :artifact]))))
-      (t/is (true? (:enabled (first (pkgs/bundled-items {:bundled-extensions ["demo"]} {})))))
-      (t/is (true? (:enabled (first (pkgs/bundled-items {:bundled-extensions ["+demo"]} {})))))
-      (t/is (false? (:enabled (first (pkgs/bundled-items {:bundled-extensions ["demo"]}
-                                                         {:bundled-extensions ["-demo"]}))))
-            "project disable wins")
-      (t/is (true? (:enabled (first (pkgs/bundled-items {}
-                                                        {:bundled-extensions ["+demo"]}))))
-            "project enable over the disabled default")
-      (t/is (true? (:enabled (first (pkgs/bundled-items {:bundled-extensions ["demo"]}
-                                                        {:bundled-extensions ["+demo"]}))))
-            "a project + re-affirms the global enable")
-      (t/is (false? (:enabled (first (pkgs/bundled-items {:bundled-extensions ["demo" "-demo"]}
-                                                         {}))))))))
+        (t/is (= descriptor (get-in (first items) [:metadata :artifact])))))))
 
 (t/deftest test-1-4-arities-exclude-the-bundled-layer
   (let [descriptor {:name "demo" :kind :file :root "/x/demo.clj"
@@ -180,7 +168,7 @@
     (with-redefs [bundled/artifacts (fn [] [descriptor])]
       (with-empty-scopes
         (fn []
-          (let [items (pkgs/bundled-items {:bundled-extensions ["demo"]} {})]
+          (let [items (pkgs/bundled-items)]
             (t/is (= 1 (count items)))
             (doseq [res [(pkgs/resolve-package-items {} {})
                          (pkgs/resolve-package-items {} {} nil)

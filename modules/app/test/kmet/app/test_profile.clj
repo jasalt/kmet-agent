@@ -78,6 +78,24 @@
     (is (= 'kmet.app.test/read2 (:plugin row)))
     (is (= :tool/read2 (:name row)))))
 
+(deftest removing-an-already-removed-row-is-a-no-op
+  (let [row {:id :tool/read :plugin 'kmet.app.test/read}
+        composed (profile/compose
+                  [{:rows [row] :patch [{:id :tool/read :remove true}]}
+                   {:patch [{:id :tool/read :remove true}]}])]
+    (is (empty? (:rows composed)))
+    (is (= 2 (:patches composed))))
+  (testing "a config overlay on a removed row is a no-op"
+    (let [composed (profile/compose
+                    [{:rows [{:id :tool/read :plugin 'kmet.app.test/read}]
+                      :patch [{:id :tool/read :remove true}]}
+                     {:patch [{:id :tool/read :config {:x 1}}]}])]
+      (is (empty? (:rows composed)))))
+  (testing "an id that was never there is still an error"
+    (is (= :kmet.app/unknown-row
+           (error-type #(profile/compose
+                         [{:patch [{:id :tool/nope :remove true}]}]))))))
+
 (deftest bad-patches-throw
   (testing "an unknown row targeted by a config-only patch"
     (is (= :kmet.app/unknown-row

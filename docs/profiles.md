@@ -94,29 +94,37 @@ configuration before running in that directory.
 
 ### Extensions as rows
 
-A layer can name an installed extension by id instead of a built-in plugin
-var:
+Extensions are plugins: a run loads exactly the ones its composition names,
+and nothing else loads an extension. A layer names one by id:
 
 ```clojure
-{:rows [{:plugin :ext/grep-tool        ; the installed extension's id
-         :config {:roots ["src"]}}]} ; reaches the extension as (:config api)
+{:rows [{:id :ext/grep-tool           ; the row identity a patch targets
+         :plugin :ext/grep-tool        ; the installed extension's id
+         :config {:roots ["src"]}}]}   ; reaches the extension as (:config api)
 ```
 
 The id is the manifest `:name`, or a single file's basename without `.clj`
-(`grep-tool.clj` is `:ext/grep-tool`). Resolution reads the installed set the
-world loader reads — top-level settings paths, `~/.kmet/agent/extensions` and
+(`grep-tool.clj` is `:ext/grep-tool`); `:id` defaults to the source, so it can
+be omitted until another layer needs to patch the row. Resolution reads the
+installed set — top-level settings paths, `~/.kmet/agent/extensions` and
 `.kmet/extensions`, packages, and the bundled artifacts — without loading
 anything, so `--dump-config` names the row and an unknown id is a composition
 error before boot. The first copy in pi precedence wins, so a user's copy
 shadows a bundled one.
 
-Naming an extension is the intent: the row loads it even when
-`:extensions`/`:bundled-extensions` do not enable it, as long as the artifact
-is installed. The row must mount after the `:extensions` host row (the first
-row of `:bundle/minimal`, which an appended layer already follows); disposing
-the row unloads the extension. An extension the composition names does not
-load twice — the world loader skips a path already in the registry — so
-settings remain the path for everything a profile does not name.
+Settings no longer enable an extension: `:extensions` paths and package
+sources are discovery, and the retired `:bundled-extensions` key does not
+decide what loads. The row must mount after the `:extensions` host row (the
+first row of `:bundle/minimal`, which an appended layer already follows);
+disposing the row unloads the extension, and `/reload` reloads each mounted
+row's extension with the same config (a changed composition needs a restart).
+
+`kmet config` is the editor for these rows: space composes the selected
+extension in `~/.kmet/agent/patch.edn` or disables it with a remove patch
+(the row and its `:config` stay, so re-enabling is lossless); the project
+scope writes a project row or a remove patch in `.kmet/patch.edn`. The config
+screen also lists skills, prompts, themes and built-in tools, but those keep
+their settings-backed toggles.
 
 The extension's own plugin still mounts under the host ctx, so an `:ext/…` row
 belongs to a root profile, not an agent preset. Tool selection is not a row yet:
@@ -125,7 +133,11 @@ belongs to a root profile, not an agent preset. Tool selection is not a row yet:
 A row-mounted extension initializes during boot, before the process world loads
 its provider catalogs and `models.edn`; the world then recomposes provider
 registrations, so registering one is safe, but reading the catalog at init is
-not (a settings-loaded extension runs after it).
+not.
+
+A patch that targets an id an earlier layer *removed* is a no-op (a project
+layer disabling a row the global layer already disabled does not fail); an id
+that was never present is still an error.
 
 Every mistake is refused by name before anything boots: an unknown row id, a
 duplicate id, a patch that changes nothing, a `:remove` that also sets config,

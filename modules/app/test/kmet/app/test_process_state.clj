@@ -57,6 +57,10 @@
     'hook-seq
     "The hook id sequence: a hook is not addressed by name and one owner may hold several, so ids must not repeat within a process."}
 
+   "modules/app/src/kmet/app/extensions/rows.clj"
+   {'mounted
+    "The extensions mounted composition rows own: a row records its entry and config here so `/reload` can reload it with the same config and disposal can unload whichever record is current. The composition is the process's; a row's lifetime is the row's."}
+
    "modules/app/src/kmet/app/extensions/context.cljc"
    {'jars-cache
     "The extension loader's jar-set cache, keyed by a `deps.edn` map. Its values are derived from the classpath, which does not change in a running process."
@@ -125,7 +129,7 @@
 (deftest the-guard-sees-the-trees-it-guards
   (is (every? fs/directory? source-root)
       "every scanned tree exists — the guard cannot silently narrow")
-  (is (= 21 (count (mapcat (fn [[file cells]] (map (fn [n] [file n]) (keys cells)))
+  (is (= 22 (count (mapcat (fn [[file cells]] (map (fn [n] [file n]) (keys cells)))
                            process-cells)))
       "the ledger's own size; a cell added or removed updates the map")
   (testing "the scan finds the cells the ledger lists"

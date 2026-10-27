@@ -159,8 +159,10 @@ insertion order (project-local → user-local → project-auto → user-auto →
 packages) with pi's `toResolvedPaths` finalization — a stable sort by
 `resourcePrecedenceRank` (project-local 0, project-auto 1, user-local 2,
 user-auto 3, package 4) then dedupe by canonical path, first wins. Loading
-is one unified enabled-path pass per type (`load-extensions!` /
-`load-skills!` / `load-prompts!` / `load-themes!`).
+is one unified enabled-path pass per type (`load-skills!` /
+`load-prompts!` / `load-themes!`). Extensions diverge: they are composition
+rows, so only an `:ext/<id>` row loads one (`kmet.app.extensions.rows`); the
+resolution above is discovery.
 Sources are local **files** (load as one extension) or **directories**
 (one `extension.edn` extension, or conventional `extensions/` `skills/`
 `prompts/` `themes/` subdirectories, or a bare dir as an extension container).
@@ -183,8 +185,10 @@ and expanded — a file loads itself, a directory its discovered items) and
 pattern entries (filter the collected files; auto-dir items are adjusted by
 `!`/`+`/`-` overrides only, pi `isEnabledByOverrides`). Filtered-out items
 stay in the resolution with `:enabled false` so the config list can
-re-enable them. Everything loads at startup, in print mode, and on
-`/reload`.
+re-enable them. Skills, prompts and themes load at startup, in print mode and
+on `/reload`; extensions load when a composition row mounts (print and the
+other profiles compose the same ambient layers), and `/reload` reloads the
+mounted rows.
 
 Kmet adaptations (deliberate deviations):
 
@@ -195,17 +199,17 @@ Kmet adaptations (deliberate deviations):
   extension, and its items are individually filterable.
 - No pi `package.json` manifest — packages use the convention subdirs only,
   and `extension.edn` dirs ignore per-type filters (the extension owns its
-  bundle, pi file-source behavior); the config screen therefore marks those
-  rows “always loaded” and rejects toggles.
+  bundle, pi file-source behavior); the composition decides whether the
+  extension loads, so the config screen toggles it into the patch layer.
 - Pattern matching implements minimatch's common subset (`*`, `?`, `**`,
   `[...]`; no extglobs/braces) against the same match forms as pi (relative
   path, file name, absolute path; skills also match their parent folder).
 - `config` lists all layers (pi buildGroups: packages first, then
-  top-level groups, user before project). Package items toggle via the
-  package's settings entry; top-level/auto items toggle via the scope's
-  settings resource array (pi toggleTopLevelResource /
-  setProjectTopLevelOverride, including the inherited-global absolute-path
-  entry). Project mode is available whenever `.kmet/` exists or `-l` was
+  top-level groups, user before project). Extension items toggle the
+  composition layer (`~/.kmet/agent/patch.edn` / `.kmet/patch.edn`), not
+  settings; skills/prompts/themes keep the settings toggles (package entry
+  and top-level resource array, pi toggleTopLevelResource /
+  setProjectTopLevelOverride). Project mode is available whenever `.kmet/` exists or `-l` was
   passed (no trust gate), and the screen starts in project-local scope when
   `.kmet/` exists — project settings and auto dirs load unconditionally, so
   project-defined resources show enabled by default (pi starts global

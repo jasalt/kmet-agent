@@ -9,11 +9,12 @@
    :default-tools settings key of the write scope (global: -name modifier
    or plain selection rewrite; project: +/- delta over the global list).
 
-   The bundled group lists the app-provided bundled extensions
-   (kmet.app.extensions.bundled): always present,
-   disabled by default, toggled through the :bundled-extensions settings
-   key of the write scope (global: plain/-name; project: +/- delta over
-   the global setting).
+   Extensions are plugins: every extension row (bundled, package, top-level
+   or auto-discovered) is toggled into the composition layer of the write
+   scope, never into settings. The global scope adds or drops a row in
+   ~/.kmet/agent/patch.edn; the project scope writes a project row or a
+   remove patch in .kmet/patch.edn (kmet.app.extensions.layers). The
+   settings keys the loaders used to read no longer decide what loads.
 
    Layout (pi parity): top spacer, top border, spacer, two header lines
    (title · action hints, scope hint), spacer, the search input line, a
@@ -30,12 +31,10 @@
    path.
 
    Package and top-level groups are both listed (pi parity). The screen
-   re-reads the settings files after every toggle, so what it shows always
-   matches what the loaders will do on the next start/reload.
-   Single-extension packages (a file source or an extension.edn directory)
-   ignore per-type filters, so those rows are marked “always loaded” and
-   cannot be toggled; top-level settings entries and auto-dir items toggle
-   via the scope's settings resource array instead of a package entry.
+   re-reads the settings and composition files after every toggle, so what it
+   shows always matches what the loaders will do on the next start/reload.
+   Extension rows take their checkbox from the composition; the remaining
+   resources keep the settings-backed behaviour.
 
    The frame is a mounted hiccup root (tui.md §14.1): the two borders are
    [:dynamic-border] elements, the header/hint/row lines are [:truncated-text]
@@ -46,6 +45,8 @@
             [babashka.fs :as fs]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.packages :as pkgs]
+            [kmet.app.extensions.layers :as ext-layers]
+            [kmet.app.extensions.rows :as ext-rows]
             [kmet.app.tools.config :as tools-config]
             [kmet.ui.tui.subs :as s]
             [kmet.app.config :as cfg]
@@ -262,70 +263,93 @@
       (let [item (:item row)
             ov (:override-state row)
             inherited? (:inherited? row)
-            ;; a single-extension package always loads — no filter can
-            ;; disable it (see packages/single-extension-item?)
-            single? (pkgs/single-extension-item? item)
             dimmed? (and (= write-scope :project) inherited? (= ov :inherit))
             cursor (if selected? (th/fg t :accent "> ") "  ")
             name (display-name item)
             name (if (and selected? (not dimmed?)) (th/bold name) name)
             name (if dimmed? (th/fg t :dim name) name)
-            suffix (cond
-                     ;; bundled rows carry the app-provided marker; in
-                     ;; project scope an inherited (not overridden) row
-                     ;; says so, an overridden one keeps the usual suffix
-                     (pkgs/bundled-item? item)
-                     (str (th/fg t :dim "  bundled")
-                          (when (= write-scope :project)
-                            (if (= ov :inherit)
-                              (th/fg t :dim " · global setting")
-                              (override-suffix t :project ov inherited?))))
-
-                     single?
-                     (th/fg t :muted "  always loaded")
-
-                     :else
-                     (override-suffix t write-scope ov inherited?))]
+            suffix (str (when (pkgs/bundled-item? item)
+                          (th/fg t :dim "  bundled"))
+                        (override-suffix t write-scope ov inherited?))]
         (u/truncate-to-width
          (str cursor "    "
-              (render-checkbox t write-scope (if single? :inherit ov) (:enabled row))
+              (render-checkbox t write-scope ov (:enabled row))
               " " name suffix)
          width "...")))))
 
 ;; ─── Screen state ─────────────────────────────────────────────────────────
 
+(defn- mark-extension-items
+  "Replace the settings-derived enabled state of every extension item with
+   the composition's. EXT-SOURCES is the set the view composes; GLOBAL and
+   PROJECT are both layers' sets, so the project view can name the tri-state.
+   An item whose manifest cannot be read is shown off: it cannot be
+   composed."
+  [items ext-sources global project]
+  (update items :extensions
+          (fn [xs]
+            (mapv (fn [item]
+                    (if-let [source (ext-rows/item-source item)]
+                      (let [global? (contains? global source)
+                            project? (contains? project source)]
+                        (assoc item
+                               :source source
+                               :enabled (contains? ext-sources source)
+                               :override-state (cond
+                                                 (and project? (not global?)) :load
+                                                 (and global? (not project?)) :unload
+                                                 :else :inherit)))
+                      ;; an unreadable manifest cannot be composed; show it
+                      ;; off rather than keep a settings-derived checkbox
+                      (assoc item :enabled false :override-state :inherit)))
+                  xs))))
+
 (defn- read-views
-  "Resolve both unified views from the settings files on disk:
-   {:user user-only-resolution :project merged-resolution}. The user view
-   is pi's global config view (untrusted settings manager): the project
-   scope — settings and auto dirs — is absent, not just the project
-   entries. Both carry the bundled layer, with the enabled state each view
-   sees (user-only settings for :user, the merged settings for :project)."
+  "Resolve both unified views from the files on disk:
+   {:user user-only-resolution :project merged-resolution}. The user view is
+   pi's global config view (untrusted settings manager): the project scope —
+   settings and auto dirs — is absent, not just the project entries. Both
+   carry the bundled layer. Extension items take their enabled state from
+   the composition layers (extensions are plugins); every other type keeps
+   the settings-derived state."
   []
   (let [user-settings (cfg/read-global-settings-map)
         project-settings (cfg/read-project-settings-map)
+        layers (ext-layers/layers)
+        composed (ext-layers/composition layers)
+        global-sources (ext-layers/sources-of (:global composed))
+        project-sources (ext-layers/sources-of (:project composed))
+        _ (doseq [layer (vals layers)
+                  :when (:error layer)]
+            (binding [*out* *err*]
+              (println "Warning: cannot read" (:path layer) "-"
+                       (get-in layer [:error :message]))))
         ;; the built-in tools group joins each view: user-only settings for
         ;; the global view, the scope-merged :default-tools entries for the
         ;; project view (kmet.app.tools.config)
         tools (fn [project?]
                 (tools-config/builtin-tool-items user-settings
                                                  (when project? project-settings)))]
-    {:user (assoc (pkgs/resolve-package-items user-settings nil nil false
-                                              (pkgs/bundled-items user-settings nil))
+    {:user (assoc (mark-extension-items
+                   (pkgs/resolve-package-items user-settings nil nil false
+                                               (pkgs/bundled-items))
+                   global-sources global-sources project-sources)
                   :tools (tools false))
-     :project (assoc (pkgs/resolve-package-items user-settings project-settings nil true
-                                                 (pkgs/bundled-items user-settings project-settings))
+     :project (assoc (mark-extension-items
+                      (pkgs/resolve-package-items user-settings project-settings nil true
+                                                  (pkgs/bundled-items))
+                      project-sources global-sources project-sources)
                      :tools (tools true))}))
 
 (defn- override-state-of
-  "pi getProjectOverrideState — ITEM's project override state from the live
-   project settings: the bundled :bundled-extensions branch, the
-   resource-array branch for top-level items, the package-entry branch
-   otherwise."
+  "pi getProjectOverrideState — ITEM's project override state: extension
+   items carry the composition's tri-state (computed in `read-views`), the
+   resource-array branch covers top-level items and the package-entry branch
+   everything else."
   [item]
   (cond
     (tools-config/builtin-tool-item? item) (tools-config/builtin-tool-override-state-of item)
-    (pkgs/bundled-item? item) (pkgs/bundled-override-state-of item)
+    (= :extensions (:resource-type item)) (or (:override-state item) :inherit)
     (pkgs/top-level-item? item) (pkgs/top-level-override-state-of item)
     :else (pkgs/override-state-of item (pkgs/project-packages))))
 
@@ -455,39 +479,93 @@
 
 (defn- global-toggle-row!
   "Flip ITEM's enabled state in global scope: call TOGGLE-FN and update
-   the row in place (pi updateItem)."
+   the row in place (pi updateItem). A writer that reports failure leaves the
+   row as it was."
   [this row item toggle-fn]
-  (let [enabled (not (:enabled row))]
-    (toggle-fn item enabled)
-    (update-row-state! this {:enabled enabled
-                             :override-state :inherit})))
+  (let [enabled (not (:enabled row))
+        ok? (try (toggle-fn item enabled)
+                 (catch Exception e
+                   (binding [*out* *err*]
+                     (println "Warning: cannot write the global configuration:"
+                              (or (ex-message e) (str e))))
+                   false))]
+    (when ok?
+      (update-row-state! this {:enabled enabled
+                               :override-state :inherit}))))
 
 (defn- project-cycle-row!
   "Cycle ITEM through inherit/load/unload in project scope: compute the
-   next state; on change call OVERRIDE-FN and update the row in place."
+   next state; on change call OVERRIDE-FN and update the row in place. A
+   writer that reports failure leaves the row as it was."
   [this row item override-fn inherited-enabled]
   (let [next-state (pkgs/next-override-state (:override-state row)
                                              inherited-enabled)]
     (when (not= next-state (:override-state row))
-      (override-fn item next-state)
-      (update-row-state!
-       this
-       {:override-state next-state
-        :enabled (if (= :inherit next-state)
-                   inherited-enabled
-                   (= :load next-state))}))))
+      (let [ok? (try (override-fn item next-state)
+                     (catch Exception e
+                       (binding [*out* *err*]
+                         (println "Warning: cannot write the project configuration:"
+                                  (or (ex-message e) (str e))))
+                       false))]
+        (when ok?
+          (update-row-state!
+           this
+           {:override-state next-state
+            :enabled (if (= :inherit next-state)
+                       inherited-enabled
+                       (= :load next-state))}))))))
+
+(defn- project-toggle-row!
+  "Toggle an extension in project scope: inherit composes the opposite of
+   the global state (:load when global is off, :unload when it is on), and an
+   explicit state returns to inherit. Unlike a settings resource, a project
+   override only has two meaningful states — the third is always the global
+   composition."
+  [this row item override-fn inherited-enabled]
+  (let [next-state (if (= :inherit (:override-state row))
+                     (if inherited-enabled :unload :load)
+                     :inherit)
+        ok? (try (override-fn item next-state)
+                 (catch Exception e
+                   (binding [*out* *err*]
+                     (println "Warning: cannot write the project configuration:"
+                              (or (ex-message e) (str e))))
+                   false))]
+    (when ok?
+      (update-row-state! this
+                         {:override-state next-state
+                          :enabled (case next-state
+                                     :load true
+                                     :unload false
+                                     inherited-enabled)}))))
+
+(defn- extension-toggle!
+  "Toggle an extension item in WRITE-SCOPE: the global scope composes or
+   drops its row in ~/.kmet/agent/patch.edn; the project scope sets or
+   clears the project entry in .kmet/patch.edn. Extensions are plugins, so
+   no settings key changes."
+  [this row item write-scope]
+  (let [source (or (:source item) (ext-rows/item-source item))]
+    (when source
+      (if (= :global write-scope)
+        (global-toggle-row! this row item
+                            (fn [_ enabled]
+                              (if enabled
+                                (ext-layers/enable-global! source)
+                                (ext-layers/disable-global! source))))
+        (project-toggle-row! this row item
+                             (fn [_ state]
+                               (ext-layers/apply-project-state! source state))
+                             (:inherited-enabled row))))))
 
 (defn- toggle-selected!
   "Space/enter on an item row (pi toggleResource): global scope flips the
-   enabled state (package items write the package entry, top-level items
-   the scope's settings resource array, bundled items the
-   :bundled-extensions entry, built-in tools the :default-tools entry);
-   project scope cycles inherit/load/unload
-   (pi getNextOverrideState + setProjectResourceOverride — the package,
-   top-level or bundled branch per origin). The row's state updates in
-   place (pi updateItem) — the layout is not re-resolved. Single-extension
-   package rows cannot be toggled (their filters are ignored at resolve
-   time)."
+   enabled state (extensions compose a row in the global patch layer,
+   built-in tools write :default-tools, package/top-level resources the
+   scope's settings entry); project scope cycles inherit/load/unload (the
+   project patch layer for extensions, the settings override for the rest).
+   The row's state updates in place (pi updateItem) — the layout is not
+   re-resolved."
   [this]
   (let [st @(:state-atom this)
         rows (:rows st)
@@ -495,8 +573,8 @@
     (when (and row (= :item (:kind row)))
       (let [item (:item row)]
         (cond
-          ;; built-in tools are not :packages entries either: the global
-          ;; branch writes the :default-tools list, the project branch its
+          ;; built-in tools are not :packages entries: the global branch
+          ;; writes the :default-tools list, the project branch its
           ;; +name/-name delta (kmet.app.tools.config/apply-builtin-tool-*)
           (tools-config/builtin-tool-item? item)
           (if (= :global (:write-scope st))
@@ -504,16 +582,10 @@
             (project-cycle-row! this row item tools-config/apply-builtin-tool-project-override!
                                 (:inherited-enabled row)))
 
-          ;; bundled items are not :packages entries: the global branch
-          ;; writes the :bundled-extensions key, the project branch its
-          ;; +/- delta (kmet.app.packages/apply-bundled-*)
-          (pkgs/bundled-item? item)
-          (if (= :global (:write-scope st))
-            (global-toggle-row! this row item pkgs/apply-bundled-toggle!)
-            (project-cycle-row! this row item pkgs/apply-bundled-project-override!
-                                (:inherited-enabled row)))
-
-          (pkgs/single-extension-item? item) nil
+          ;; every extension is a plugin row in the composition; its origin
+          ;; (bundled, package, top-level, auto) does not change the toggle
+          (= :extensions (:resource-type item))
+          (extension-toggle! this row item (:write-scope st))
 
           (= :global (:write-scope st))
           ;; pi: global scope toggles user-scope items only (project rows
@@ -603,13 +675,15 @@
                     w "")
         scope-hint (u/truncate-to-width
                     (th/fg t :muted
-                           (if (= write-scope :global)
-                             ;; pi: ~/.pi/agent/settings.json — the actual
-                             ;; agent-dir path (KMET_CODING_AGENT_DIR-aware)
-                             (cfg/global-settings-path)
-                             (str ".kmet/settings.edn"
-                                  (when (:project-mode? screen)
-                                    " · inherited global resources are dimmed"))))
+                           (str (if (= write-scope :global)
+                                  ;; pi: ~/.pi/agent/settings.json — the actual
+                                  ;; agent-dir path (KMET_CODING_AGENT_DIR-aware)
+                                  (str (cfg/global-settings-path) " · "
+                                       (cfg/global-patch-path))
+                                  ".kmet/settings.edn · .kmet/patch.edn")
+                                (when (and (= write-scope :project)
+                                           (:project-mode? screen))
+                                  " · inherited global resources are dimmed")))
                     w "")
         row-lines (map-indexed (fn [rel row]
                                  (row-line t st w row

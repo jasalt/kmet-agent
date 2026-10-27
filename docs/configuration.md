@@ -50,11 +50,19 @@ A copyable starting point with the current keys is available in
 ## Composition vs settings
 
 `settings.edn` holds **values** — provider, model, theme, tool selection and
-the other per-run knobs. What a run **mounts** (services, modes, and the
-plugin rows a profile stacks) is composition data: the built-in table plus a
-global `~/.kmet/agent/patch.edn` and a project `.kmet/patch.edn`. See
+the other per-run knobs. What a run **mounts** (services, modes, extensions,
+and the plugin rows a profile stacks) is composition data: the built-in table
+plus a global `~/.kmet/agent/patch.edn` and a project `.kmet/patch.edn`. See
 [Profiles and composition](profiles.md) for the layer order and the patch
 shape.
+
+Extensions are plugins: an extension loads only when a composition row names
+it (`:ext/<id>`). Settings still install and discover extensions (top-level
+`:extensions` paths, `:packages`, auto dirs) and the retired
+`:bundled-extensions` key no longer decides what loads; compose the extension
+in a layer or toggle it in `kmet config`. Skills, prompts and themes remain
+settings-backed resources. `:default-tools` still selects built-in tools in
+settings (see [Tools](#tools)).
 
 ## Provider catalogs
 

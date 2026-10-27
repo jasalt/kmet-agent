@@ -76,6 +76,20 @@
   (when (source? source)
     (resolve-id (id-of source))))
 
+(defn item-source
+  "The `:ext/<id>` source ITEM (a resolved package item) answers to, or nil
+   when its manifest cannot be read. The id rules are the resolver's: the
+   bundled display name, the manifest `:name`, or a single file's basename
+   without `.clj`."
+  [item]
+  (try
+    (when-let [id (entry-id item (resolve-item item))]
+      (keyword "ext" id))
+    (catch Exception e
+      (debug/log "extension item: cannot resolve " (:path item) ": "
+                 (ex-message e))
+      nil)))
+
 (defn- unknown!
   [source]
   (throw (ex-info (str "unknown extension " (pr-str source)
@@ -95,6 +109,11 @@
   (let [source (:plugin row)]
     (entry! source)
     (merge {:name source} row {:id (or (:id row) source)})))
+
+;; Extensions owned by mounted composition rows: `{id {:entry :config :record}}`.
+;; A row's disposal unloads whatever record is current, so a `/reload` that
+;; replaced the record is still owned by the row.
+(defonce ^:private mounted (atom {}))
 
 (defn- load-entry!
   "Load ENTRY's artifact with CONFIG on the extension api; throw
@@ -119,6 +138,39 @@
                          :extension id
                          :result result})))))
 
+(defn- mount!
+  "Load ENTRY with CONFIG and record it as the row's current extension."
+  [id entry config]
+  (let [record (load-entry! entry config)]
+    (swap! mounted assoc id {:entry entry :config config :record record})
+    record))
+
+(defn- unmount!
+  "Forget ID's row extension and unload its current record."
+  [id]
+  (let [old (get @mounted id)]
+    (swap! mounted dissoc id)
+    (when-let [record (:record old)]
+      (extensions/unload-extension! record))))
+
+(defn reload-all!
+  "Unload and load again every extension a mounted composition row owns,
+   keeping the row's config. Returns the per-extension result maps `/reload`
+   reports (`{:extension id :error nil}` or `:error MSG`); the rows themselves
+   stay mounted and dispose the reloaded record."
+  []
+  (vec (for [[id {:keys [entry config]}] @mounted]
+         (do
+           (unmount! id)
+           (try
+             (let [record (mount! id entry config)]
+               {:extension (:name record) :error nil})
+             (catch Exception e
+               (let [message (or (ex-message e) (str e))]
+                 (binding [*out* *err*]
+                   (println "Warning: Failed to reload extension" id ":" message))
+                 {:extension id :error message})))))))
+
 (defn plugin
   "The composition plugin for an `:ext/<id>` row: load the extension when the
    row mounts, and unload it when the row disposes. The row's `:config` reaches
@@ -128,8 +180,8 @@
   (let [{:keys [id] :as entry} (entry! source)]
     {:name (keyword "ext-row" id) ; distinct from the extension's own plugin
      :apply (fn [ctx config]
-              (let [ext (load-entry! entry config)]
-                (srce/effect ctx
-                             (fn [] (fn [] (extensions/unload-extension! ext)))
-                             (str "unload extension " id))
-                nil))}))
+              (mount! id entry config)
+              (srce/effect ctx
+                           (fn [] (fn [] (unmount! id)))
+                           (str "unload extension " id))
+              nil)}))

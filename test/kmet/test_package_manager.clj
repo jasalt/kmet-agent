@@ -67,7 +67,8 @@
   (t/is (str/includes? (:out (run "remove" "-h")) "kmet uninstall"))
   (t/is (str/includes? (:out (run "update" "--help")) "kmet update [source]"))
   (t/is (str/includes? (:out (run "update" "--help")) "kmet cannot self-update"))
-  (t/is (str/includes? (:out (run "config" "-h")) "~/.kmet/agent/settings.edn")))
+  (t/is (str/includes? (:out (run "config" "-h")) "~/.kmet/agent/patch.edn"))
+  (t/is (str/includes? (:out (run "config" "-h")) "scope's settings.edn")))
 
 ;; ─── Parse errors (pi exit-code-1 conventions) ────────────────────────────
 

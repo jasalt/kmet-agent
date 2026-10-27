@@ -139,26 +139,30 @@ extension (contains `extension.edn`) or scans its conventional `extensions/`,
   all-packages form).
 - Sources are recorded in `:packages` in `~/.kmet/agent/settings.edn` (global)
 or `.kmet/settings.edn` with `-l` (project); local paths are stored relative
-to the settings file, git sources verbatim. Configured packages load at
-startup and on `/reload`, after the auto resource dirs.
+to the settings file, git sources verbatim. Configured packages are
+**discovery**: they make extensions available to the composition, and the
+resources they contain (skills, prompts, themes) load as resources. Installing
+an extension does not load it; compose its row (`kmet config` or the patch
+file) and it applies on the next start.
 - `kmet config` opens a TUI listing every discovered resource — packages,
   top-level settings entries and the auto dirs — with a checkbox; space
-  toggles, Tab switches global/project scope (project scope cycles
-  inherit/load/unload), typing filters, escape closes. A project with a
-  `.kmet/` dir starts in project-local scope, so its project-defined
-  resources show enabled by default; `-l` forces project-local. Package
-  writes are per-type `+path`/`-path` filter entries on the package (pi's
-  object entries); top-level/auto resources toggle via the scope's settings
-  resource arrays (`:extensions`/`:skills`/`:prompts`/`:themes`).
-  Single-extension packages (a file source or an `extension.edn` directory)
-  ignore those filters, so their rows are marked *always loaded* and cannot
-  be toggled.
+  toggles, Tab switches global/project scope, typing filters, escape closes.
+  A project with a `.kmet/` dir starts in project-local scope; `-l` forces
+  project-local. **Extensions toggle the composition**, not settings: the
+  global scope composes a row or disables it with a remove patch in
+  `~/.kmet/agent/patch.edn` (the row and its config stay, so re-enabling is
+  lossless), and the project scope writes a project row or a remove patch in
+  `.kmet/patch.edn`. The files apply on the next start; `/reload` re-applies
+  the rows already mounted. Skills, prompts and themes keep the
+  settings-backed package filter/array behaviour (`:packages` filters,
+  `:skills`/`:prompts`/`:themes` entries).
 - The **Bundled with kmet** group lists the app-provided bundled extensions
   and, in a `Tools` subgroup before `Extensions`, the built-in tools
-  (`read`, `write`, `edit`, `bash`, `run_code`); tool toggles write the
+  (`read`, `write`, `edit`, `bash`, `run_code`); tool toggles still write the
   `:default-tools` setting
   ([configuration](configuration.md#tools)) — the project scope cycles the
-  same inherit/load/unload delta (`+name`/`-name`) as the other rows.
+  same inherit/load/unload delta (`+name`/`-name`) as the settings-backed
+  rows.
 
 ### In-TUI commands
 

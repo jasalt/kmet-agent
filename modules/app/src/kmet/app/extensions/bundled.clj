@@ -23,10 +23,10 @@
    prefix, so the descriptors carry that prefix instead.
 
    This namespace is pure discovery: the manifest, the descriptors and the
-   pure conversion helpers. Enablement (`:bundled-extensions` settings) and
-   the PackageItem construction live in kmet.app.packages with the other
-   toggle code, and the loading of resource descriptors in
-   kmet.extensions. Nothing here throws: a missing or malformed
+   pure conversion helpers. The PackageItem construction lives in
+   kmet.app.packages with the other resource resolution, and a composition's
+   `:ext/<id>` row loads a bundled artifact through
+   kmet.app.extensions.rows. Nothing here throws: a missing or malformed
    manifest resolves to no artifacts plus a debug-log note (a hand-made
    build without the staging embed must still start)."
   (:require [babashka.fs :as fs]

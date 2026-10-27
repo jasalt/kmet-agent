@@ -86,14 +86,42 @@
             (is (= ["probe_ext.clj"] (mapv :name (extensions/registered-extensions))))
             (is (= {:mode :test} (:config (extensions/extension-api "probe_ext.clj")))
                 "the row's :config arrives as (:config api)")
-            (testing "the world loader does not load it a second time"
-              (is (empty? (packages/load-extensions! nil))
-                  "the registry's path dedupe skips a loaded extension")
+            (testing "the extension is loaded exactly once"
               (is (= 1 (count (extensions/registered-extensions)))))
             (finally
               (runtime/shutdown! booted)
               (is (empty? (extensions/registered-extensions))
                   "disposing the row unloads the extension it loaded"))))))))
+
+(deftest an-installed-extension-loads-only-when-a-row-names-it
+  (extensions/clear-extensions!)
+  (let [path (probe!)]
+    (with-installed [path]
+      (fn []
+        (let [booted (runtime/boot (core/compose-config {:profile :tui}) {})]
+          (try
+            (is (empty? (extensions/registered-extensions))
+                "installed but uncomposed: the settings layer is not a loader")
+            (finally (runtime/shutdown! booted))))))))
+
+(deftest reload-all-reloads-the-mounted-rows
+  (extensions/clear-extensions!)
+  (let [path (probe!)]
+    (with-installed [path]
+      (fn []
+        (let [booted (runtime/boot (composed {:plugin :ext/probe_ext
+                                              :config {:mode :test}}) {})]
+          (try
+            (is (= 1 (count (extensions/registered-extensions))))
+            (is (= [{:extension "probe_ext.clj" :error nil}]
+                   (rows/reload-all!)))
+            (is (= 1 (count (extensions/registered-extensions)))
+                "the row owns the reloaded record")
+            (is (= {:mode :test} (:config (extensions/extension-api "probe_ext.clj")))
+                "the row's config survives the reload")
+            (finally
+              (runtime/shutdown! booted)
+              (is (empty? (extensions/registered-extensions))))))))))
 
 (deftest a-load-failure-fails-the-row
   (extensions/clear-extensions!)
