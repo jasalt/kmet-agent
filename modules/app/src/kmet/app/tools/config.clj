@@ -3,11 +3,19 @@
    sibling of the bundled/resources layers (pi has no built-in-tools group;
    pi's defaultTools setting is edited by hand).
 
+   A built-in tool is a composition row (`:tool/read`, `:tool/bash`, …) now, so
+   the group has two inputs: the `:default-tools` setting (the runtime
+   selection, which is what a toggle writes) and the ambient composition layers
+   (`mounted-tool-names` — a layer can remove a tool row, and a screen that
+   offered a removed tool would be describing a run nobody gets).
+
    Each row is PackageItem-shaped for the screen's view model:
    :resource-type :tools, metadata origin :builtin-tools, display-name the
-   tool name. The enabled state resolves the :default-tools entry list the
-   same way startup does (kmet.app.config/merge-default-tools +
-   kmet.app.tools.registry/resolve-default-tools).
+   tool name and row-id the row it is. The enabled state resolves the
+   :default-tools entry list the same way startup does
+   (kmet.app.config/merge-default-tools +
+   kmet.app.tools.registry/resolve-default-tools), and is false for a tool the
+   layers do not mount.
 
    Toggles write the :default-tools setting. The global scope keeps a
    modifier-only list's shape — disabling writes -name so future built-ins
@@ -34,6 +42,34 @@
   [entry]
   (if (registry/tool-selection-modifier? entry) (subs (str entry) 1) (str entry)))
 
+(defn mounted-tool-names
+  "The tool names LAYERS leave mounted, over the built-in NAMES.
+
+   A built-in tool is a row now (`:tool/read`, see
+   `kmet.app.tools.registry/mount-tool!`), so a composition layer can take one
+   out (`{:id :tool/bash :remove true}`) — and a screen that listed every
+   built-in would offer a tool the run does not mount. LAYERS are the ambient
+   composition layers in application order (`{:data {:rows … :patch …}}`), and
+   the fold is compose's for the tool rows only: a `:remove` patch drops a name,
+   a row or patch with `:plugin` puts it back. Nothing here loads a plugin — a
+   row's name comes from its `:id`, which is why a tool row's id is the model's
+   own spelling of the tool.
+
+   A layer that inserts a `:tool/…` row with no explicit `:id` is not read: the
+   name would come from the plugin var, and the screen does not load sources to
+   list them (that is `--dump-config`'s job, and it resolves the composition)."
+  ([layers] (mounted-tool-names registry/builtin-tool-names layers))
+  ([names layers]
+   (reduce (fn [mounted entry]
+             (let [tool (registry/tool-row-name (:id entry))]
+               (cond
+                 (nil? tool) mounted
+                 (:remove entry) (filterv #(not= tool %) mounted)
+                 (:plugin entry) (cond-> mounted (not (some #{tool} mounted)) (conj tool))
+                 :else mounted)))
+           (vec names)
+           (mapcat (fn [{:keys [data]}] (concat (:rows data) (:patch data))) layers))))
+
 (defn builtin-tool-items
   "PackageItem-shaped rows for the built-in tools, one per registry
    built-in, in registry order. USER-SETTINGS and PROJECT-SETTINGS are the
@@ -41,21 +77,32 @@
    entries (an unset setting enables every built-in). Pass nil
    PROJECT-SETTINGS for the global config view. Origin and source match
    the bundled layer so tools render in the same \"Bundled with kmet\"
-   group, before the Extensions subgroup."
-  [user-settings project-settings]
-  (let [entries (cfg/merge-default-tools (:default-tools user-settings)
-                                         (:default-tools project-settings))
-        selection (when entries
-                    (set (registry/resolve-default-tools entries)))]
-    (mapv (fn [name]
-            {:path (str "tools/" name)
-             :resource-type :tools
-             :enabled (if selection (contains? selection name) true)
-             :metadata {:origin :bundled
-                        :scope :user
-                        :source "bundled"
-                        :display-name name}})
-          registry/builtin-tool-names)))
+   group, before the Extensions subgroup.
+
+   MOUNTED is the tool names the composition layers leave mounted
+   (`mounted-tool-names`), nil for every built-in: a tool whose row the layers
+   removed is listed but not enabled — the run does not offer it, whatever the
+   setting says."
+  ([user-settings project-settings]
+   (builtin-tool-items user-settings project-settings nil))
+  ([user-settings project-settings mounted]
+   (let [entries (cfg/merge-default-tools (:default-tools user-settings)
+                                          (:default-tools project-settings))
+         selection (when entries
+                     (set (registry/resolve-default-tools entries)))
+         mounted (when mounted (set mounted))]
+     (mapv (fn [name]
+             {:path (str "tools/" name)
+              :resource-type :tools
+              :enabled (and (if selection (contains? selection name) true)
+                            (if mounted (contains? mounted name) true))
+              :metadata {:origin :bundled
+                         :scope :user
+                         :source "bundled"
+                         ;; the composition row this item is
+                         :row-id (registry/port-name name)
+                         :display-name name}})
+           registry/builtin-tool-names))))
 
 (defn builtin-tool-override-state-of
   "The project override state of builtin ITEM from the live project

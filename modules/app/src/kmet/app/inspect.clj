@@ -83,6 +83,14 @@
   [inject]
   (map (fn [[k v]] (str (bare k) (when (= :optional v) "?"))) inject))
 
+(defn- label-text
+  "An effect label as the listing prints it: a keyword loses its colon so it
+   reads like a path (`:tool/read` → `tool/read`, the label a tool row's mount
+   carries), anything else `str` — a label is already its own printed form."
+  [label]
+  (let [s (str label)]
+    (if (keyword? label) (subs s 1) s)))
+
 (defn- fiber-details
   "A fiber line's facts in render order: what it injects, what it provides, its
    effect labels, then the two states that have one — what a pending fiber
@@ -99,7 +107,7 @@
       (conj (str "provides=" (bracket (map bare provides))))
 
       (seq labels)
-      (conj (str "effects=[" (str/join ", " (map str labels)) "]"))
+      (conj (str "effects=[" (str/join ", " (map label-text labels)) "]"))
 
       (seq waiting-for)
       (conj (str "waiting-for=" (bracket (map bare waiting-for))))

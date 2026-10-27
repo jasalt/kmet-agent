@@ -10,10 +10,10 @@
             [kmet.app.session.core :as session]
             [kmet.app.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
-            [kmet.app.registry :as registry]
             [kmet.app.test-support :as app-support]
             [kmet.app.config :as cfg]
-            [kmet.srce.core :as srce]))
+            [kmet.srce.core :as srce]
+            [kmet.test-utils :as tu]))
 
 (declare make-test-provider test-ctx)
 
@@ -284,25 +284,21 @@
 
 (defn test-ctx
   "A bare ctx for a loop test's agent: STAGES merged over the builtin defaults
-   (`kmet.app.loop.stages/defaults`) and a tool service of its own. Returns {:ctx ctx :tools handle} — the handle is fresh and empty but
-   for the built-ins, so a test can register stand-ins into it.
+   (`kmet.app.loop.stages/defaults`) and a tool service of its own. Returns {:ctx ctx :tools handle} — the handle is fresh, with the
+   composition's built-in tool rows mounted into it, so a test can register
+   stand-ins beside the tools a run would offer.
 
    Bare means no parent: the loop reads the stage map from the ctx (the
    defaults when STAGES is nil) and the tool table from its `:tools` service,
    so a loop test never boots kmet2's composition to get either."
   ([] (test-ctx nil))
   ([stages]
-   (let [handle (registry/atom-registry)
-         ;; the stage map rides the ctx meta as an atom, the way a run's own
+   (let [;; the stage map rides the ctx meta as an atom, the way a run's own
          ;; ctx carries one, so a refresh can swap it
          ctx (srce/root {:name :test-loop
-                         :loop-stages (atom (loop-stages/with-defaults stages))})]
-     (srce/plugin! ctx {:name :tools
-                        :provide #{:tools}
-                        :apply (fn [c _]
-                                 (srce/provide! c :tools handle
-                                                {:in (:parent c)}))})
-     (srce/settle! ctx)
+                         :loop-stages (atom (loop-stages/with-defaults stages))})
+         handle (tu/tools-service! ctx)]
+     (tu/mount-builtin-tools! ctx)
      {:ctx ctx :tools handle})))
 
 (defn with-no-credentials

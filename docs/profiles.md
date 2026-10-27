@@ -129,8 +129,11 @@ prompts, themes and built-in tools, but those keep their settings-backed
 toggles.
 
 The extension's own plugin still mounts under the host ctx, so an `:ext/…` row
-belongs to a root profile, not an agent preset. Tool selection is not a row yet:
-`:default-tools` still lives in `settings.edn`.
+belongs to a root profile, not an agent preset. Built-in tools are rows too
+(`:tool/read`, `:tool/bash`, … in the built-in bundle), so a layer can remove
+one from the composition; their runtime selection is still `:default-tools` in
+`settings.edn`, which `kmet config` toggles and which only filters the tools the
+composition mounted.
 
 A row-mounted extension initializes during boot, before the process world loads
 its provider catalogs and `models.edn`; the world then recomposes provider

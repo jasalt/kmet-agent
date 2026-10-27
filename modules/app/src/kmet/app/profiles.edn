@@ -20,6 +20,17 @@
           {:id :extensions :plugin kmet.app.extensions/plugin}
           {:id :events :plugin kmet.app.events/plugin}
           {:id :tools :plugin kmet.app.tools/plugin}
+          ;; The tool rows: one per model-facing tool, named `:tool/<name>` — the
+          ;; model's own spelling of the tool, so `--dump-config` prints a row
+          ;; whose id is the name the model calls, and a patch targets it
+          ;; (`{:id :tool/bash :remove true}`). Each row injects :tools and
+          ;; registers its record as its fiber's effect, so what is mounted is
+          ;; what the model sees (kmet.app.tools.registry/mount-tool!).
+          {:id :tool/read :plugin kmet.app.tools.read/plugin}
+          {:id :tool/write :plugin kmet.app.tools.write/plugin}
+          {:id :tool/edit :plugin kmet.app.tools.edit/plugin}
+          {:id :tool/bash :plugin kmet.app.tools.bash/plugin}
+          {:id :tool/run_code :plugin kmet.app.tools.run-code/plugin}
           {:id :commands :plugin kmet.app.registries/commands}
           {:id :prompts :plugin kmet.app.registries/prompts}
           {:id :skills :plugin kmet.app.registries/skills}

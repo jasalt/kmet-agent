@@ -1,15 +1,18 @@
 (ns kmet.app.tools.bash
   "Bash tool implementation — delegates to kmet.app.tools.bash-executor for execution.
    Pi: bash tool wraps createLocalBashOperations, same engine as ! commands.
-   create-tool is pi's createBashTool/createShellToolDefinition — the built-in
-   registry entry and extension-built bash tools are the same record.
+   create-tool is pi's createBashTool/createShellToolDefinition — the
+   `:tool/bash` row mounts (create-tool) itself, and extension-built bash tools
+   are the same record.
    Streams live output via an optional on-update callback (pi: onUpdate)."
   (:require [clojure.string :as str]
             [kmet.app.tools.bash-executor :as bash-exec]
             [kmet.app.tools.bash-output :as bash-out]
+            [kmet.app.tools.registry :as registry]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
-            [kmet.libs.concurrent :as concurrent]))
+            [kmet.libs.concurrent :as concurrent]
+            [kmet.srce.core :as srce]))
 
 (defn title
   "Quiet one-liner body for the bash tool: the shell prompt `$ <cmd>`
@@ -186,7 +189,8 @@
 
 (defn create-tool
   "Build a bash Tool record (pi: createBashTool/createShellToolDefinition —
-   the built-in registry entry is (create-tool)). OPTS mirrors pi's
+   the `:tool/bash` row mounts (create-tool), the same record an extension
+   builds). OPTS mirrors pi's
    BashToolOptions plus the tool-facing fields:
      :name                — tool name (default \"bash\"; registering that name
                             replaces the built-in tool)
@@ -240,3 +244,14 @@
       ;; (tool-execution :status) for its whole life
       :status true
       :title title))))
+
+;; ─── The tool and its row ────────────────────
+
+(def definition
+  "The `bash` tool's record — what the `:tool/bash` row mounts."
+  (create-tool))
+
+(srce/defplugin plugin
+  {:name :tool/bash
+   :inject [:tools]
+   :apply (fn [ctx _config] (registry/mount-tool! ctx definition))})

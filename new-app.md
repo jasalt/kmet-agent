@@ -197,11 +197,11 @@ order).
 
 ```
 [:app]                             ctx      children=3
-[:app :commands]                   fiber#4  :active   effects=[command units, listener :turn-end]
+[:app :commands]                   fiber#4  :active   effects=[command/units, listener :turn-end]
 [:app :sessions]                   fiber#2  :active   provides=[sessions]
 [:agent/7f3a]                      ctx      children=2
-[:agent/7f3a :tools]               fiber#7  :active   provides=[tools]   effects=[tool read]
-[:agent/7f3a :tool/web-search]     fiber#12 :active   inject=[tools]    effects=[tool web-search]
+[:agent/7f3a :tool/read]           fiber#7  :active   inject=[tools]    effects=[tool/read]
+[:agent/7f3a :tool/web-search]     fiber#12 :active   inject=[tools]    effects=[tool/web-search]
 [:agent/7f3a :ui/terminal]         fiber#9  :pending  inject=[ui]       waiting-for=[ui]
 [:agent/7f3a :ui/tk]               fiber#14 :failed   inject=[ui]       error="tcl not found"
 ```
@@ -717,6 +717,10 @@ inherit uses an `isolate` realm. Root plugins are mounted once and inherited by
 the child ctx; a `:per-agent true` plugin is mounted again on each agent ctx —
 a second fiber of the same source — which is the multi-mount case. Isolation is
 by context, not by process, so two agents hold different tool tables for free.
+A preset that shadows `:tools` starts from an **empty** table — the tool rows
+mount on the root, and `:bundle/minimal`'s are what fills it — so a preset that
+wants a different set mounts the tool rows it wants on the child (or leaves the
+service inherited and selects with `:default-tools`).
 
 `:sessions` is a facade now and a seam by declaration: its value is
 `{:append! :read :list :delete :header}` over the existing EDNL files, so a
@@ -934,6 +938,17 @@ where Node uses package names:
   a built-in, or `:ext/grep-tool` for an installed extension by id
   (`kmet.app.extensions.rows`). `:id` is the row identity `--dump-config`
   prints and a patch targets; it defaults to the plugin's `:name`.
+- **A built-in tool is a row.** `:bundle/minimal` mounts `:tool/read`,
+  `:tool/write`, `:tool/edit`, `:tool/bash` and `:tool/run_code`, each injecting
+  `:tools` and registering its record as its own fiber's effect
+  (`kmet.app.tools.registry/mount-tool!`), so the model's table is what the
+  composition mounted and `{:id :tool/bash :remove true}` is how a profile (or a
+  preset) runs without bash. The id is the model's own spelling of the tool
+  (`(port-name "run_code")` → `:tool/run_code`), so a row in `--dump-config`, a
+  label in `--dump-state` and the name the model calls are one word — and
+  `builtin-tool-names`, the static list the settings layer edits, is that same
+  list (held to it by `kmet.app.tools.test-tool-tables`). `:default-tools` stays
+  the *runtime* selection over the mounted tools.
 - A **bundle** is a reusable row list + patches — the analog of dsh's
   `dsh.bundle`; a profile stacks bundles in order, then its own rows and
   patches. Presets (Standard / Minimal / PTC) are bundles.

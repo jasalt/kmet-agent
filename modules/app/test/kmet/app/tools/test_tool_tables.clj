@@ -1,23 +1,33 @@
 (ns kmet.app.tools.test-tool-tables
   "A tool table belongs to a registry, not to the process.
 
-   The registry takes its handle as the first argument and builds the built-in
-   table per handle, so the same name can be a different tool in two tables and
-   dispatch follows the handle it was given — one seam down too, where the
-   run_code record's sandbox surface is built from its own handle. That is the
-   property landing 4c-iii-c's gate needs (two agents, two tool tables); it is
-   cheap to pin now because the alternative — a process default — is exactly
-   what review removed from this layer."
+   The registry takes its handle as the first argument, and every tool — the
+   built-ins included — reaches the table as a registration: a tool row
+   (`:tool/read`, …) injects `:tools` and mounts its record as its own effect
+   (`kmet.app.tools.registry/mount-tool!`). Two agents therefore hold two tables
+   with nothing shared, and a row's disposal takes its tool with it. That is the
+   property landing 4c-iii-c's gate needs; it is cheap to pin now because the
+   alternative — a static table under the registrations — is exactly what a
+   process default would be."
   (:require [clojure.string :as str]
             [clojure.test :as t]
+            [kmet.app.profile :as profile]
             [kmet.app.registry :as registry]
-            [kmet.app.tools.registry :as tools]))
+            [kmet.app.tools.registry :as tools]
+            [kmet.srce.core :as srce]
+            [kmet.test-utils :as tu]))
 
 (defn- probe
   "A minimal tool named PROBE whose result says where it came from."
   [from]
   {:name "probe" :label "Probe" :description "d"
    :execute (fn [_] {:content from})})
+
+(defn- tool-rows
+  "The composition's tool rows, as `:bundle/minimal` declares them."
+  []
+  (->> (:rows (profile/bundle (profile/builtin) :bundle/minimal))
+       (filter #(str/starts-with? (str (:id %)) ":tool/"))))
 
 (t/deftest a-registration-belongs-to-its-own-table
   (let [a (registry/atom-registry)
@@ -37,25 +47,43 @@
     (t/is (= "from-b" (:content (tools/execute-tool b "probe" {})))
           "the same name resolves to each handle's own tool")))
 
-(t/deftest the-built-in-table-is-per-handle
-  (let [a (registry/atom-registry)
-        b (registry/atom-registry)]
-    (t/is (= (set (keys (tools/built-in-tools a)))
-             (set (keys (tools/built-in-tools b))))
-          "both handles offer the same built-ins")
+(t/deftest the-rows-are-the-name-list
+  (t/is (= (mapv tools/port-name tools/builtin-tool-names)
+           (mapv :id (tool-rows)))
+        "each row is named :tool/<model name>, and the settings layer's static
+         name list is that same list in that same order")
+  (t/is (= (count tools/builtin-tool-names) (count (distinct tools/builtin-tool-names)))
+        "no tool is named twice"))
+
+(t/deftest a-row-registers-the-tool-the-model-sees
+  (let [{:keys [tools]} (tu/tool-ctx)]
     (t/is (= (set tools/builtin-tool-names)
-             (set (keys (tools/built-in-tools a))))
-          "the static name list matches the table it describes")))
+             (set (keys (tools/get-all-tools tools))))
+          "mounting the rows is what puts the built-ins in the table")
+    (t/is (= "read" (:name (tools/get-tool tools "read")))
+          "and the record the model calls is the row's own")))
+
+(t/deftest a-tool-leaves-with-its-row
+  (let [{:keys [ctx tools]} (tu/tool-ctx)
+        row (fn [name]
+              (srce/mount-fiber
+               (first (filter #(= name (srce/attr % :name)) (srce/children ctx)))))]
+    (t/is (contains? (tools/get-all-tools tools) "bash"))
+    (srce/dispose! (row :tool/bash))
+    (t/is (not (contains? (tools/get-all-tools tools) "bash"))
+          "the registration was the row's effect, so disposing the row removed it")
+    (t/is (contains? (tools/get-all-tools tools) "read")
+          "and only its own tool went")))
 
 (t/deftest the-run-code-record-dispatches-through-its-own-handle
-  ;; `built-in-tools` builds the run_code record per handle, so the record's
-  ;; sandbox surface (`select-tools` over its own registry) is that handle's:
-  ;; a tool registered in A is callable from A's record and unknown to B's,
-  ;; and that surface is what the bridge gates on. This is the per-agent tool
-  ;; table 4c-iii-c names, one seam down — and what the shape assertions above
-  ;; cannot see.
-  (let [a (registry/atom-registry)
-        b (registry/atom-registry)
+  ;; The `:tool/run_code` row builds its record for the handle it was mounted
+  ;; over, so the record's sandbox surface (`select-tools` over its own
+  ;; registry) is that handle's: a tool registered in A is callable from A's
+  ;; record and unknown to B's, and that surface is what the bridge gates on.
+  ;; This is the per-agent tool table 4c-iii-c names, one seam down — and what
+  ;; the shape assertions above cannot see.
+  (let [a (:tools (tu/tool-ctx))
+        b (:tools (tu/tool-ctx))
         run (fn [h] (:execute (get (tools/get-all-tools h) "run_code")))
         code "(emit (:content @(tools/call \"probe\" {})))"]
     (tools/register-tool! a (probe "from-a"))

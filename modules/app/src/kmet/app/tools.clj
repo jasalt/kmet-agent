@@ -10,12 +10,19 @@
    plugin adding a tool never re-provides, and its registration is undone when
    the registering fiber is disposed (the disposer is the tool's removal).
 
-   The tool *semantics* — the built-in map, schema normalization, selection for
-   a caller's surface — live beside it in `kmet.app.tools.registry`, which
-   takes every reader a handle as its first argument (landing 4f): the built-in
-   table is built per handle, so two agents' tool tables share no state. There
-   is no process default behind it: a caller that needs a table holds the handle,
-   which is what makes the two agents' tables independent."
+   A built-in tool joins the table as a **row** — `:tool/read`, `:tool/bash`, …,
+   mounted by `:bundle/minimal` — and a row's `apply` is
+   `kmet.app.tools.registry/mount-tool!`: the same handle method an extension
+   uses, with the registration owned and labelled by the row. So this service
+   holds no table of its own; what the composition mounted is what the model
+   sees, and patching a tool row out is how a profile (or one agent's preset)
+   runs without that tool.
+
+   The tool *semantics* — registration, schema normalization, selection for a
+   caller's surface — live beside it in `kmet.app.tools.registry`, which takes
+   every reader a handle as its first argument (landing 4f). There is no
+   process default behind it: a caller that needs a table holds the handle,
+   which is what makes two agents' tables independent."
   (:require [kmet.app.registries :as registries]))
 
 (def service

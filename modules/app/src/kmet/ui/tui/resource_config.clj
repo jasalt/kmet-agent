@@ -327,10 +327,15 @@
         _ (warn-layer-errors! layers)
         ;; the built-in tools group joins each view: user-only settings for
         ;; the global view, the scope-merged :default-tools entries for the
-        ;; project view (kmet.app.tools.config)
+        ;; project view (kmet.app.tools.config), over the tool rows the ambient
+        ;; layers leave mounted — a tool is a row now, so a layer's
+        ;; `{:id :tool/bash :remove true}` is a tool the screen must not offer
         tools (fn [project?]
-                (tools-config/builtin-tool-items user-settings
-                                                 (when project? project-settings)))]
+                (tools-config/builtin-tool-items
+                 user-settings
+                 (when project? project-settings)
+                 (tools-config/mounted-tool-names
+                  [(:global layers) (:project layers)])))]
     {:user (assoc (mark-extension-items
                    (pkgs/resolve-package-items user-settings nil nil false
                                                (pkgs/bundled-items))

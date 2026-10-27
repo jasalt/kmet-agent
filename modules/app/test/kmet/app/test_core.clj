@@ -351,11 +351,11 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (support/run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=14 patches=1")
+    (is (str/starts-with? out "profile :tui rows=19 patches=1")
         (str "the bundle: the extension host, the bus, the four registries, the"
              " prompt builder, the session log and its storage, the projections,"
-             " the agent registry, the loop driver, and the terminal provider"
-             " that replaces the approval seam"))
+             " the agent registry, the loop driver, the five tool rows, and the"
+             " terminal provider that replaces the approval seam"))
     (is (str/includes? out ":events"))
     (is (str/includes? out ":sessions"))
     (is (str/includes? out "inject={:sessionPersistence nil}")
@@ -373,7 +373,7 @@
     (try
       (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=15 patches=2"))
+        (is (str/starts-with? out "profile :tui rows=20 patches=2"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -405,7 +405,7 @@
       (with-redefs [cfg/patch-paths (fn [] [global local])]
         (let [{:keys [code out]} (support/run-main ["--dump-config"])]
           (is (zero? code))
-          (is (str/starts-with? out "profile :tui rows=15 patches=2")
+          (is (str/starts-with? out "profile :tui rows=20 patches=2")
               "the global layer inserts the row; the project layer patches it")
           (is (str/includes? out "config={:a 2}")
               "the project layer applies over the global one"))
@@ -432,7 +432,7 @@
         (let [{:keys [code out]} (support/run-main ["--dump-default-config"
                                                     "--patch" path])]
           (is (zero? code) "neither the ambient layer nor --patch is read")
-          (is (str/starts-with? out "profile :tui rows=14 patches=1"))))
+          (is (str/starts-with? out "profile :tui rows=19 patches=1"))))
       (finally (io/delete-file path true)))))
 
 (deftest dump-state-prints-the-booted-tree
@@ -440,8 +440,8 @@
     (is (zero? code))
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
-    (is (str/includes? out "children=14")
-        "the thirteen bundle rows, then the TUI's mode row — mounted, not run")
+    (is (str/includes? out "children=19")
+        "the eighteen bundle rows, then the TUI's mode row — mounted, not run")
     (is (str/includes? out ":active"))
     (is (str/includes? out "provides=[commands]"))
     (is (str/ends-with? out "\n"))
@@ -500,7 +500,7 @@
       (let [{:keys [code err]} (support/run-main ["--patch" path "hello"])]
         (is (= 1 code))
         (is (str/includes? err
-                           (str "booted 13 plugin rows (13 fibers, services: agents"
+                           (str "booted 18 plugin rows (18 fibers, services: agents"
                                 " approvals commands events projections"
                                 " prompts sessionPersistence sessions skills"
                                 " system-prompt tools ui)"))

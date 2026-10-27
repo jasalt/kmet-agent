@@ -5,8 +5,10 @@
             [kmet.app.commands :as commands]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.prompts :as prompts]
+            [kmet.app.profile :as profile]
             [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
+            [kmet.app.runtime :as runtime]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.runtime :as rt]
@@ -117,18 +119,55 @@
   (when (extensions/host-binding)
     (extensions/unregister-contributed-themes!)))
 
-(defn tool-registry
-  "A tool registry handle for tests: the app's tag registry over an atom, with
-   the builtin table layered under it. The tool layer takes its registry as the
-   first argument (two agents, two tables), so a test that reads the table says
-   which one — never a process global."
+(defn tools-service!
+  "Mount a `:tools` row under CTX over a fresh handle and answer the handle —
+   the shape the app's own row provides, without booting the composition. A test
+   ctx that needs its own tool table starts here."
+  [ctx]
+  (let [handle (registry/atom-registry)]
+    (srce/plugin! ctx {:name :tools
+                       :provide #{:tools}
+                       :apply (fn [c _] (srce/provide! c :tools handle
+                                                       {:in (:parent c)}))})
+    (srce/settle! ctx)
+    handle))
+
+(defn mount-builtin-tools!
+  "Mount the composition's built-in tool rows under CTX, which must provide
+   `:tools`: the rows `:bundle/minimal` declares, read from the table rather
+   than restated here. A test that reads a tool table without booting the app (a
+   chat display's `:tool-fn`, a loop's table) gets the built-ins the way a run
+   does — a row each, registered into the handle — instead of a second, static
+   table beside them."
+  [ctx]
+  (let [rows (->> (:rows (profile/bundle (profile/builtin) :bundle/minimal))
+                  (filter #(tools/tool-row-name (:id %))))]
+    (runtime/mount-rows! ctx rows)
+    (srce/settle! ctx)
+    ctx))
+
+(defn tool-ctx
+  "A bare ctx with a fresh tool table and the built-in tool rows mounted into
+   it: `{:ctx ctx :tools handle}`. The ctx is the caller's to dispose; a test
+   that only reads the table can keep the handle and forget the ctx."
   []
-  (registry/atom-registry))
+  (let [ctx (srce/root {:name :test-tools})
+        handle (tools-service! ctx)]
+    (mount-builtin-tools! ctx)
+    {:ctx ctx :tools handle}))
+
+(defn tool-registry
+  "A tool registry handle for tests: a fresh handle with the built-in tool rows
+   mounted into it (`tool-ctx`), so `get-tool` answers for `read` the way a
+   booted run does. The tool layer takes its registry as the first argument (two
+   agents, two tables), so a test that reads the table says which one — never a
+   process global."
+  []
+  (:tools (tool-ctx)))
 
 (defn tool-fn
   "The chat history's `:tool-fn` — a 1-arg name → tool definition lookup — over
-   a fresh `tool-registry`. A display reads builtins, which are the registry's
-   static table, so the handle needs no owner."
+   a fresh `tool-registry`, so a display renders the built-ins a run would offer."
   []
   (let [reg (tool-registry)]
     (fn [name] (tools/get-tool reg name))))

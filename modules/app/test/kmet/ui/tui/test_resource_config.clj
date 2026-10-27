@@ -10,6 +10,7 @@
             [kmet.app.packages :as pkgs]
             [kmet.app.extensions.layers :as ext-layers]
             [kmet.app.tools.config :as tools-config]
+            [kmet.app.tools.registry :as tools-registry]
             [kmet.ui.tui.resource-config :as rc]
             [kmet.app.config :as cfg]
             [kmet.hikap.core :as engine]
@@ -82,7 +83,7 @@
                            #'cfg/project-dir (fn [] project-dir)
                            #'fs/cwd (fn [] cwd)}
                     (not bundled?) (assoc #'bundled/artifacts (constantly []))
-                    (not tools?) (assoc #'tools-config/builtin-tool-items (fn [_ _] [])))
+                    (not tools?) (assoc #'tools-config/builtin-tool-items (fn [_ _ & _] [])))
                   (fn []
                     (f {:global-dir global-dir :project-dir project-dir :cwd cwd
                         :global-patch global-patch :project-patch project-patch}))))]
@@ -724,6 +725,45 @@
           (t/is (nil? (settings)))
           (t/is (= :inherit (:override-state (first-item-row screen)))))))
     {:tools? true}))
+
+(t/deftest test-screen-builtin-tools-follow-the-composition-rows
+  ;; a built-in tool is a composition row (`:tool/bash`), so a layer that
+  ;; removes the row is a tool the screen must not offer — the run would not
+  ;; mount it, whatever the :default-tools setting says
+  (with-settings
+    (fn [{:keys [project-patch]}]
+      (fs/create-dirs (fs/parent project-patch))
+      (spit project-patch "{:rows [] :patch [{:id :tool/bash :remove true}]}\n")
+      (let [screen (rc/make-resource-config-screen :rows 40)
+            row-of (fn [name]
+                     (first (filter #(= name (get-in (:item %) [:metadata :display-name]))
+                                    (item-rows screen))))]
+        (t/is (= 5 (count (item-rows screen)))
+              "the row is still listed, so the screen says why the tool is off")
+        (t/is (false? (:enabled (row-of "bash")))
+              "the layer removed the row, so the tool is not mounted")
+        (t/is (true? (:enabled (row-of "read"))))
+        (t/is (= :tool/bash (get-in (:item (row-of "bash")) [:metadata :row-id]))
+              "and the item names the row it is")))
+    {:tools? true}))
+
+(t/deftest test-mounted-tool-names-folds-layers-in-order
+  ;; the fold is compose's for the tool rows: a remove then a re-add leaves the
+  ;; tool mounted
+  (t/is (= ["read" "bash"]
+           (tools-config/mounted-tool-names
+            ["bash" "read"]
+            [{:data {:patch [{:id :tool/bash :remove true}]}}
+             {:data {:patch [{:id :tool/bash :plugin 'kmet.app.tools.bash/plugin}]}}]))
+        "a later layer's row puts it back, at the end — as compose's insert does")
+  (t/is (= ["read"]
+           (tools-config/mounted-tool-names
+            ["bash" "read"]
+            [{:data {:patch [{:id :tool/bash :remove true}]}}]))
+        "and a removal with nothing after it takes it out")
+  (t/is (= (vec tools-registry/builtin-tool-names)
+           (tools-config/mounted-tool-names [{:data {}}]))
+        "the one-arity answers the built-in list when no layer touches a tool row"))
 
 (t/deftest test-screen-builtin-tools-group-order
   ;; built-in tools sit in the single "Bundled with kmet" group,

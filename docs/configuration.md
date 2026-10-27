@@ -107,8 +107,12 @@ content. CLI flags `--system-prompt <txt>` and `--append-system-prompt <txt>`
 ## Tools
 
 The built-in tools (`read`, `write`, `edit`, `bash`, `run_code`) start enabled.
-`:default-tools` changes that selection. It selects among built-in tools;
-extension tools stay enabled either way.
+Each is a composition row — `:tool/read`, `:tool/bash`, … in the built-in
+bundle — so a profile or a patch layer can take one out of the run entirely
+(`{:id :tool/bash :remove true}`: the tool is not in the model's schema and not
+in the `run_code` surface). `:default-tools` is the runtime selection on top of
+that: it selects among the mounted built-in tools; extension tools stay enabled
+either way.
 
 ```clojure
 :default-tools ["read" "bash"]   ; plain names: only these built-ins
@@ -132,7 +136,10 @@ a plain name replaces it.
 and toggles this setting: the global scope keeps a modifier-only list's shape
 (disabling writes `-name`) and rewrites a plain list as the effective
 selection, while the project scope writes the usual inherit/load/unload
-`+name`/`-name` delta over the user list.
+`+name`/`-name` delta over the user list. Each item names its row
+(`:tool/bash`), and a tool whose row the ambient patch layers removed shows as
+off — the run does not mount it, so the setting cannot bring it back; leave the
+row in and turn it off here, or restore the row and re-enable it.
 
 The selection applies at startup, on a session switch (`/resume`, `/import` —
 pi recreates the runtime from settings there, so the outgoing session's

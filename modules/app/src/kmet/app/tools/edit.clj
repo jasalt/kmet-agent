@@ -10,8 +10,11 @@
             [babashka.fs :as fs]
             [kmet.libs.json :as json]
             [kmet.libs.edit-diff :as edit-diff]
+            [kmet.app.tools.registry :as registry]
+            [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
-            [kmet.libs.path :as path]))
+            [kmet.libs.path :as path]
+            [kmet.srce.core :as srce]))
 
 (defn title
   "Quiet one-liner body for the edit tool: verb + `~`-shortened path — pure data, or nil when the path is missing/empty (the quiet branch falls back to the tool name). Nil-safe over partial streaming args."
@@ -92,3 +95,38 @@
             ;; Pi: edit matching errors surface with their own message
             {:content (ex-message e) :is-error true}
             {:content (str "Error editing " path ": " (ex-message e)) :is-error true}))))))
+
+;; ─── The tool and its row ──────────────────────────────────────────────────
+
+(def definition
+  "The `edit` tool's record — what the `:tool/edit` row mounts."
+  (tool/make-tool
+   :name "edit"
+   :label "Edit file"
+   :description "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes."
+   :prompt-snippet "Make precise file edits with exact text replacement, including multiple disjoint edits in one call"
+   :prompt-guidelines ["Use edit for precise changes (edits[].oldText must match exactly)"
+                       "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls"
+                       "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit."
+                       "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions."]
+   :render-shell :self
+   ;; Pi: editSchema — edits is an array of {oldText, newText}
+   :parameters {:type "object"
+                :properties {"path" {:type "string"
+                                     :description "Path to the file to edit (relative or absolute)"}
+                             "edits" {:type "array"
+                                      :items {:type "object"
+                                              :properties {"oldText" {:type "string"
+                                                                      :description "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."}
+                                                           "newText" {:type "string"
+                                                                      :description "Replacement text for this targeted edit."}}
+                                              :required ["oldText" "newText"]}
+                                      :description "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."}}
+                :required ["path" "edits"]}
+   :execute execute
+   :title title))
+
+(srce/defplugin plugin
+  {:name :tool/edit
+   :inject [:tools]
+   :apply (fn [ctx _config] (registry/mount-tool! ctx definition))})

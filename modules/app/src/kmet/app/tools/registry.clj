@@ -1,12 +1,21 @@
 (ns kmet.app.tools.registry
-  "Tool registry — built-in tool map, custom tool registration, schema
-   conversion, execution. Custom tools and contributed tool sources live in a
-   `kmet.app.registry/Registry` handle under TAG `:kmet/tool` (and
-   `:kmet/tool-source` for sandbox-only sources), owned by an owner path:
-   visible to every engine, outliving one, and disposed with their owner
-   rather than copied into an engine and reset by hand. The extension ABI
-   registers under its own owner path, so unload disposes what an extension
-   added.
+  "Tool registry — the table the model's tools resolve through, registration,
+   schema conversion, execution.
+
+   **A tool is a registration, and a built-in tool is a row.** `:bundle/minimal`
+   mounts five tool rows (`:tool/read`, `:tool/write`, `:tool/edit`,
+   `:tool/bash`, `:tool/run_code`), each injecting `:tools` and calling
+   `mount-tool!`, so the table is exactly what the composition mounted: the rows
+   a profile kept, minus the ones a patch removed, plus whatever an extension
+   registered. There is no static table under it, and nothing sees a tool it did
+   not compose.
+
+   Registrations live in a `kmet.app.registry/Registry` handle under TAG
+   `:kmet/tool` (and `:kmet/tool-source` for sandbox-only sources), owned by an
+   owner path: visible to every engine, outliving one, and disposed with their
+   owner rather than copied into an engine and reset by hand. A tool row's
+   registration is its fiber's effect (`mount-tool!`); the extension ABI
+   registers under its own owner path, so unload disposes what either added.
 
    **The handle is a parameter.** Every reader and writer takes the registry it
    works on, first, so two agents can hold different tool tables with nothing
@@ -26,84 +35,66 @@
             [kmet.app.registry :as registry]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
-            [kmet.app.tools.read :as read]
-            [kmet.app.tools.write :as write]
-            [kmet.app.tools.edit :as edit]
-            [kmet.app.tools.bash :as bash]
-            [kmet.app.tools.run-code :as run-code]))
+            [kmet.srce.core :as srce]))
 
-(declare built-in-tools)
-
-;; ─── Built-in tools ─────────────────────────────────────────────────────────
-
-(def ^:private base-tools
-  "Built-in tools without registry seams; the run_code tool joins at the bottom
-   (it dispatches through this namespace, so its record needs the fns)."
-  {"read"  (tool/make-tool
-            :name "read"
-            :label "Read file"
-            :description "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete."
-            :prompt-snippet "Read file contents"
-            :prompt-guidelines ["Use read to examine files instead of cat or sed."]
-            :params {:path   {:type :string :description "Path to the file to read (relative or absolute)"}
-                     :offset {:type :number :description "Line number to start reading from (1-indexed)" :optional? true}
-                     :limit  {:type :number :description "Maximum number of lines to read" :optional? true}}
-            :execute read/execute
-            :title read/title)
-   "write" (tool/make-tool
-            :name "write"
-            :label "Write file"
-            :description "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories."
-            :prompt-snippet "Create or overwrite files"
-            :prompt-guidelines ["Use write only for new files or complete rewrites."]
-            :params {:path    {:type :string :description "File path to write to (relative or absolute)"}
-                     :content {:type :string :description "Content to write to the file"}}
-            :execute write/execute
-            :title write/title)
-   "edit"  (tool/make-tool
-            :name "edit"
-            :label "Edit file"
-            :description "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes."
-            :prompt-snippet "Make precise file edits with exact text replacement, including multiple disjoint edits in one call"
-            :prompt-guidelines ["Use edit for precise changes (edits[].oldText must match exactly)"
-                                "When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls"
-                                "Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit."
-                                "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions."]
-            :render-shell :self
-             ;; Pi: editSchema — edits is an array of {oldText, newText}
-            :parameters {:type "object"
-                         :properties {"path" {:type "string"
-                                              :description "Path to the file to edit (relative or absolute)"}
-                                      "edits" {:type "array"
-                                               :items {:type "object"
-                                                       :properties {"oldText" {:type "string"
-                                                                               :description "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."}
-                                                                    "newText" {:type "string"
-                                                                               :description "Replacement text for this targeted edit."}}
-                                                       :required ["oldText" "newText"]}
-                                               :description "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."}}
-                         :required ["path" "edits"]}
-            :execute edit/execute
-            :title edit/title)
-   ;; Pi: createBashTool(cwd) with default options
-   "bash"  (bash/create-tool)}
-   ;; grep/find/ls are not builtins — they ship as opt-in extensions
-   ;; (extensions/grep-tool.clj, find-tool.clj, ls-tool.clj); powershell
-   ;; ships the same way (extensions/powershell.clj, Windows-only)
-  )
-
-;; ─── Extended tool registry ────────────────────────────────────────────────
+;; ─── The table ─────────────────────────────────────────────────────────────
 
 (def tools-owner
-  "The app's tool registry owner — the registry's address; unloading it takes
-   every custom tool and contributed source it added."
+  "The owner `register-tool!` registers under when a caller names none — the
+   app's address for the tools it adds by code. A tool **row** owns its own
+   registration instead (`mount-tool!`: the row's `:tool/<name>`), so this is
+   not \"the owner of the built-in tools\"."
   [:app :tools])
 
+(defn port-name
+  "The plugin and row name for the model-facing tool NAME — `:tool/read`. One
+   derivation, so the row `--dump-config` prints, the label `--dump-state`
+   shows and the model's own spelling of the tool are the same word."
+  [name]
+  (keyword "tool" name))
+
+(defn tool-row-name
+  "The model-facing tool name a row or patch id names — `:tool/read` →
+   `\"read\"` — or nil for an id that is not a tool row. The inverse of
+   `port-name`, so a row id is read back rather than re-parsed at each
+   call site."
+  [id]
+  (when (and (keyword? id) (= "tool" (namespace id)))
+    (name id)))
+
 (defn- registered-tools
-  "REGISTRY's custom tools as {name tool}; one value per (owner, name), so a
-   re-registration of a name replaces the earlier one."
+  "REGISTRY's tools as {name tool}, in registration order: a tool row's
+   registration first, a later owner's same-name registration after it, so the
+   later one wins (see `get-all-tools`)."
   [reg]
   (into {} (registry/entries reg :kmet/tool)))
+
+(defn mount-tool!
+  "Mount TOOL into CTX's `:tools` handle as this row's effect — what a tool
+   plugin's `:apply` calls. The registration is owned by and labelled
+   `(port-name (:name tool))`, so disposing the fiber takes the tool with it and
+   the mount's effect line names the tool the model sees.
+
+   Returns nil on purpose: a row whose `:apply` returns a value registers a
+   second, empty effect (the kernel labels it `apply <row>`), so the caller ends
+   with this call and nothing else."
+  [ctx tool]
+  (let [handle (srce/get ctx :tools)
+        name (:name tool)
+        id (port-name name)]
+    (when-not handle
+      (throw (ex-info (str "a tool row needs the :tools service: " id
+                           " mounted on a ctx that provides none")
+                      {:type :kmet/no-tool-service :tool name})))
+    (srce/effect ctx
+                 (fn []
+                   (registry/register! handle :kmet/tool name
+                                       (tool/normalize-tool-definition tool)
+                                       id))
+                 id)
+    nil))
+
+;; ─── Registration ──────────────────────────────────────────────────────────
 
 (defn register-tool!
   "Register a custom tool in REGISTRY after normalizing its provider-facing
@@ -125,17 +116,17 @@
    nil))
 
 (defn get-all-tools
-  "Get all available tools (built-in + custom) from REGISTRY — the `:tools`
-   service handle. A custom tool that reuses a built-in's name shadows it
-   (pi: the extension registry is layered over the base definitions, custom
-   wins)."
+  "Every tool REGISTRY's — the `:tools` service handle's — table holds, name →
+   tool: the composition's tool rows first, then whatever a later owner
+   registered. A registration that reuses a name already in the table replaces
+   it (pi: the extension registry is layered over the base definitions, custom
+   wins), so unloading the shadow leaves the tool it shadowed."
   [reg]
-  (merge (built-in-tools reg) (registered-tools reg)))
+  (registered-tools reg))
 
 (defn get-tool
   "Get a tool by NAME from REGISTRY's view — resolved through get-all-tools, so
-   the map a caller executes is exactly the map the registry lists (custom
-   shadows built-in)."
+   the map a caller executes is exactly the map the registry lists."
   [reg name]
   (get (get-all-tools reg) name))
 
@@ -261,33 +252,20 @@
            :is-error true}))
       {:content (str "Unknown tool: " tool-name) :is-error true})))
 
-;; ─── The full built-in map ─────────────────────────────────────────────────
-
-(defn built-in-tools
-  "Map of tool name → Tool record for all built-in tools, built for REGISTRY.
-
-   A function, not a constant, because the run_code tool closes over the
-   registry: it lists through get-all-tools (plus extension-contributed
-   sources) and dispatches inner calls through execute-tool, so run_code
-   resolution is the same as the model's — and two agents' tables resolve to
-   their own handle, not the one that happened to load first."
-  [reg]
-  (assoc base-tools
-         "run_code"
-         (run-code/create-tool {:get-all-tools #(get-all-tools reg)
-                                :get-contributed-tools #(get-contributed-tools reg)
-                                :select-tools select-tools
-                                :execute-tool #(execute-tool reg %1 %2 %3)})))
-
 ;; ─── Default tool selection (pi: defaultTools) ─────────────────────────────
 
 (def builtin-tool-names
-  "Names of the built-in tools in registry order — the base a modifier-only
-   :default-tools list modifies, and the set the setting can exclude.
+  "Names of the built-in tools, in composition order — the base a modifier-only
+   `:default-tools` list modifies, and the set the setting can exclude.
    Pi: DEFAULT_TOOL_NAMES; kmet ships every built-in active by default, so the
-   base is the full built-in set (docs/configuration.md). Derived from the
-   static half: `built-in-tools` needs a registry, a name list does not."
-  (conj (vec (keys base-tools)) "run_code"))
+   base is the full built-in set (docs/configuration.md).
+
+   A list here rather than a reading of the table: the settings layer asks which
+   names exist before any composition mounts, and the tool rows are the same
+   list — `:bundle/minimal` names each one `(port-name <name>)`, and
+   `kmet.app.tools.test-tool-tables/the-rows-are-the-name-list` holds the two
+   equal."
+  ["read" "write" "edit" "bash" "run_code"])
 
 (defn tool-selection-modifier?
   "True when a :default-tools entry is a +name/-name modifier (pi:

@@ -18,6 +18,7 @@
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.invoke :as invoke]
             [kmet.app.tools.read :as read-tool]
+            [kmet.app.tools.registry :as registry]
             [kmet.app.tools.util :as tool-util]
             [kmet.app.sandbox :as sandbox]
             [kmet.app.debug :as debug]
@@ -1098,8 +1099,9 @@
       (str "run $ " line))))
 
 (defn create-tool
-  "Build the script Tool record. OPTS wires the registry seams (registry.clj
-   builds the built-in entry; tests may build their own):
+  "Build the script Tool record. OPTS wires the registry seams (the
+   `:tool/run_code` row builds the composition's record via `definition`;
+   tests may build their own):
      :get-all-tools — 0-arg registry tool map (the model's tools)
      :get-contributed-tools — 0-arg extension-contributed sandbox tool map
                               (run_code.md T2; optional, defaults to none)
@@ -1146,3 +1148,19 @@
    :status true
    :title title))
 
+;; ─── The tool and its row ──────────────────────────────────────────────────
+
+(defn definition
+  "The `run_code` tool's record for HANDLE — the table it lists and dispatches
+   through, so a script's callable surface is the table its own agent sees."
+  [handle]
+  (create-tool {:get-all-tools #(registry/get-all-tools handle)
+                :get-contributed-tools #(registry/get-contributed-tools handle)
+                :select-tools registry/select-tools
+                :execute-tool #(registry/execute-tool handle %1 %2 %3)}))
+
+(srce/defplugin plugin
+  {:name :tool/run_code
+   :inject [:tools]
+   :apply (fn [ctx _config]
+            (registry/mount-tool! ctx (definition (srce/get ctx :tools))))})
