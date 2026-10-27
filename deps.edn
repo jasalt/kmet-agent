@@ -1,4 +1,4 @@
-{:jolt/min-version "0.8.22"
+{:jolt/min-version "0.8.23"
  ;; Jolt's floor is the LATEST tagged release — the host is young and moves
  ;; fast, so kmet targets the newest release rather than the oldest one a
  ;; feature needs (jolt/README.md § Bundled-extension loader floor).
