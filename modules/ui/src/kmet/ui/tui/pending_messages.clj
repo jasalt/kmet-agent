@@ -9,7 +9,7 @@
    in the same container."
   (:require [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent PendingMessages nil [steering-atom follow-up-atom hint-atom cache-atom]

@@ -1547,7 +1547,7 @@ pass.
 
 ## 14. reakt layer (2026-10-10, phone, `jolt v0.8.20-13-gb0b3355b`, bb 1.13.225)
 
-The reactive engine under the TUI (`kmet.libs.reakt.core` + `kmet.libs.reakt.weak`) had
+The reactive engine under the TUI (`kmet.reakt.core` + `kmet.reakt.weak`) had
 no profile yet. Reproduce with:
 
 ```sh

@@ -8,9 +8,9 @@
             [kmet.app.keybindings :as kb]
             [kmet.ui.tui.thinking-selector :as ts]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]))
 

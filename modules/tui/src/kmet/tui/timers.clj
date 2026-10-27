@@ -8,13 +8,13 @@
    thunk runs on the LOOP THREAD — the same thread that renders — and may
    touch widgets and component state directly. A thunk
    that wants a repaint either mutates tracked state (the reactive chain
-   schedules the frame) or calls `kmet.libs.hikap.component/schedule-frame!`.
+   schedules the frame) or calls `kmet.hikap.component/schedule-frame!`.
 
    Repeating timers reschedule from *now*, not from the missed due time:
    a UI spinner that fell behind must not fire a burst to catch up. A
    throwing thunk is logged and swallowed (the loop must survive it), and
    a repeating timer keeps its next tick — the same policy as
-   `kmet.libs.hikap.component/schedule-frame!`.
+   `kmet.hikap.component/schedule-frame!`.
 
    The registry is process-global (like the frame hook) because components
    reach it without a reference to the TUI instance; `tui.core` pumps it

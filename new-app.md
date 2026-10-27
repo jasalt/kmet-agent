@@ -583,7 +583,7 @@ dialogs answer by kind, and print/rpc/server stack it — the provider a promoti
 starts from, not a stub, because its answers are the ABI's own defaults. The
 providers that draw are:
 
-1. `:ui/terminal` — components over `kmet.libs.hikap.core`, which already
+1. `:ui/terminal` — components over `kmet.hikap.core`, which already
    takes its backend map as an argument.
 2. `:ui/tk` — deferred to its own development: the same contract, second
    toolkit (Tk through `babashka.ffi`/`jolt.ffi`: bb and Jolt, not JVM),
@@ -812,8 +812,8 @@ Move the file; keep the namespace.
 | module / classpath root | ranks, embed, packaging | at lift time |
 | namespace name | call sites, `with-redefs` interception, the extension ABI | once, at retirement |
 
-The repo already separates them: `reakt` holds `kmet.libs.reakt.*` and `hikap`
-holds `kmet.libs.hikap.*`. A module is a classpath root; the namespace is a
+The repo already separates them: `reakt` holds `kmet.reakt.*` and `hikap`
+holds `kmet.hikap.*`. A module is a classpath root; the namespace is a
 name. The one rule is that the path below the root matches the namespace, so
 `modules/app/src/kmet/agent/registry.clj` is a `kmet.app.registry` that
 simply lives in the `app` module. Tests move the same way and keep their
@@ -3195,7 +3195,7 @@ app sources required it. It holds `src`'s requires ⊆ declared ⊆ `src`'s
 requires — a module's `:deps` is its src edge list, not its classpath wish
 list — reading both hosts' reader branches. That reported three real defects
 it fixed: `tui` and `agent` were missing `kmet/reakt` (their sources require
-`kmet.libs.reakt.core`, which the reakt module owns), and `tk` declared
+`kmet.reakt.core`, which the reakt module owns), and `tk` declared
 `kmet/libs` without a single use.
 
 The four leaf lifts are the ones with no upward edge at all — `debug` (required

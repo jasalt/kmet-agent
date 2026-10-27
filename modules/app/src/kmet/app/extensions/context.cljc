@@ -19,9 +19,10 @@
 ;; closure, resolved in-process via clojure.tools.deps), and (3) anything else on
 ;; the classpath. Global namespaces the extension may touch — kmet.extension
 ;; (the contract), clojure.*, babashka.*, and the shared library layers
-;; kmet.tui.* (pi: @earendil-works/pi-tui) and kmet.libs.* (generic
-;; self-contained utilities) — are injected as shared references, never
-;; re-evaluated, so kmet's registries and protocols are not duplicated.
+;; kmet.tui.* (pi: @earendil-works/pi-tui), kmet.libs.* (generic
+;; self-contained utilities) and the kmet.reakt.*/kmet.hikap.* framework
+;; modules — are injected as shared references, never re-evaluated, so
+;; kmet's registries and protocols are not duplicated.
 ;; kmet.* namespaces outside that set (app internals) are not served at
 ;; all: re-evaluating them in a context would create context-local
 ;; copies of their registries, and sharing them would break the layer
@@ -227,14 +228,17 @@
     kmet.app.keybindings])
 
 (def ^:private libs-library-namespaces
-  "The generic kmet.libs.* layer shared with extension contexts. Every lib
-   is self-contained (enforced by kmet.libs.test-self-contained), so the
-   whole prefix is whitelisted. Required once here so they exist when a
-   per-extension context is built — injection is by reference, never
-   re-evaluated, so any protocols they define keep their identity. Host
-   backends stay out (kmet.libs.clipboard-win loads user32.dll at namespace
-   load; kmet.libs.host-native is a Jolt .jolt source) — the drift guard in
-   kmet.agent.test-extensions keeps this list and the source trees in sync."
+  "The shared library layer whitelisted into extension contexts: the
+   generic kmet.libs.* helpers plus the kmet.reakt.*/kmet.hikap.* framework
+   modules they compose. Every lib is self-contained (enforced by
+   kmet.libs.test-self-contained; the frameworks likewise require only
+   lower-ranked code), so the whole layer is whitelisted. Required once here
+   so they exist when a per-extension context is built — injection is by
+   reference, never re-evaluated, so any protocols they define keep their
+   identity. Host backends stay out (kmet.libs.clipboard-win loads user32.dll
+   at namespace load; kmet.libs.host-native is a Jolt .jolt source) — the
+   drift guard in kmet.agent.test-extensions keeps this list and the source
+   trees in sync."
   '[kmet.libs.archive
     kmet.libs.aws-sigv4
     kmet.libs.catalog-cache
@@ -246,9 +250,6 @@
     kmet.libs.edn-store
     kmet.libs.fs
     kmet.libs.highlight
-    kmet.libs.hikap.core
-    kmet.libs.hikap.alias
-    kmet.libs.hikap.component
     kmet.libs.host
     kmet.libs.http
     kmet.libs.json
@@ -264,13 +265,17 @@
     kmet.libs.oauth
     kmet.libs.path
     kmet.libs.process
-    kmet.libs.reakt.core
-    kmet.libs.reakt.weak
     kmet.libs.sse
     kmet.libs.terminal
     kmet.libs.terminal-image
     kmet.libs.text
-    kmet.libs.yaml])
+    kmet.libs.yaml
+    ;; the framework modules the libs compose
+    kmet.reakt.core
+    kmet.reakt.weak
+    kmet.hikap.alias
+    kmet.hikap.component
+    kmet.hikap.core])
 
 (defn- ns-path
   "The classpath path for NS-SYM: namespace-munged (dashes → underscores),
@@ -499,10 +504,17 @@
       (= n "kmet.agent.ui.tui.tool-renderers")
       (= n "kmet.app.keybindings")))
 
-(defn- libs-layer?
-  "Is namespace name N a shared kmet.libs.* layer? (see tui-layer?)"
+(def ^:private library-layer-roots
+  "The namespace roots of the shared library layers: the generic
+   kmet.libs.* helpers plus the framework modules they compose — kmet.reakt.*
+   (the reactive engine) and kmet.hikap.* (the hiccup engine). Each is a
+   self-contained whole, so the root prefix is the rule."
+  ["kmet.libs." "kmet.reakt." "kmet.hikap."])
+
+(defn- library-layer?
+  "Is namespace name N in one of the shared library layers? (see tui-layer?)"
   [n]
-  (str/starts-with? n "kmet.libs."))
+  (boolean (some #(str/starts-with? n %) library-layer-roots)))
 
 (defn- srce-layer?
   "Is namespace name N the shared srce kernel surface? Only the public
@@ -553,7 +565,7 @@
              (contains? bb-shared-namespaces (ns-name ns-obj))
              (@bundled-extension-lib-predicate n)
              (tui-layer? n)
-             (libs-layer? n)
+             (library-layer? n)
              (srce-layer? n)))))
 
 (defn- shared-namespace-names
@@ -572,7 +584,8 @@
   "The shared namespace map for the base extension context (see
    shared-context): kmet.extension (the contract), the clojure.*/babashka.*
    builtins (incl. slurp/spit, which SCI's builtin clojure.core lacks but
-   bb's env has), and the shared library layers kmet.tui.* and kmet.libs.*.
+   bb's env has), and the shared library layers kmet.tui.* and the
+   kmet.libs.* / kmet.reakt.* / kmet.hikap.* stack.
    The loader (kmet.loader.*) lives outside this tree — host machinery,
    deliberately not extension-visible. clojure.java.io/resource is the host
    lookup here; an extension's artifact-scoped resource fn is merged onto
@@ -842,7 +855,8 @@
   "Fail fast with an actionable error when NS-FORM (the entry ns form, or
    any internal extension ns form validated by the load-fn) requires a
    kmet.* namespace outside the shared set (kmet.extension + kmet.tui.* +
-   kmet.libs.* + kmet.srce.core) or the extension's own internal namespaces
+   the shared library layers + kmet.srce.core) or the extension's own
+   internal namespaces
    (OWNS-NS?, a
    path-derived predicate — those resolve regardless of their prefix),
    or requires babashka.http-client directly (outbound HTTP must
@@ -899,12 +913,13 @@
                        " — not part of the shared renderer library surface")
                   {:extension ext-name :ns lib})))
 
-        (str/starts-with? s "kmet.libs.")
+        (library-layer? s)
         (when-not (or (contains? libs-namespaces lib)
                       (contains? (set libs-library-namespaces) lib))
           (throw (ex-info
                   (str "Extension " ext-name " requires " lib
-                       " — not part of the kmet.libs.* library shared with extensions")
+                       " — not part of the shared library layers"
+                       " (kmet.libs.*, kmet.reakt.*, kmet.hikap.*)")
                   {:extension ext-name :ns lib})))
 
         ;; the srce kernel is shared by reference (its public entry point
@@ -926,7 +941,8 @@
              (not= lib 'kmet.extension))
         (throw (ex-info
                 (str "Extension " ext-name " requires " lib
-                     " — extensions may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core")
+                     " — extensions may depend only on kmet.extension, kmet.tui.*,"
+                     " kmet.libs.*, kmet.reakt.*, kmet.hikap.* and kmet.srce.core")
                 {:extension ext-name :ns lib}))))))
 
 (defn- shared-tui-namespaces
@@ -939,11 +955,12 @@
              (all-ns))))
 
 (defn- shared-libs-namespaces
-  "The set of kmet.libs.* namespace symbols currently loaded (what the
-   context injection shares with extensions)."
+  "The set of loaded namespace symbols in the shared library layers
+   (kmet.libs.*, kmet.reakt.*, kmet.hikap.* — what the context injection
+   shares with extensions)."
   []
   (set (keep (fn [ns-obj]
-               (when (libs-layer? (str (ns-name ns-obj)))
+               (when (library-layer? (str (ns-name ns-obj)))
                  (ns-name ns-obj)))
              (all-ns))))
 
@@ -1160,14 +1177,16 @@
                        " — the shared TUI/renderer library is shared by reference and was"
                        " not loaded when this context was built")
 
-                  (str/starts-with? (str ns-sym) "kmet.libs.")
+                  (library-layer? (str ns-sym))
                   (str "Extension " ext-name " requires " ns-sym
-                       " — the kmet.libs.* library is shared by reference and was"
-                       " not loaded when this context was built")
+                       " — the shared library layers (kmet.libs.*, kmet.reakt.*,"
+                       " kmet.hikap.*) are shared by reference and were not"
+                       " loaded when this context was built")
 
                   (str/starts-with? (str ns-sym) "kmet.")
                   (str "Extension " ext-name " requires " ns-sym
-                       " — extensions may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core")
+                       " — extensions may depend only on kmet.extension, kmet.tui.*,"
+                       " kmet.libs.*, kmet.reakt.*, kmet.hikap.* and kmet.srce.core")
 
                   :else
                   (str "Extension " ext-name " requires " ns-sym
@@ -1572,8 +1591,9 @@
 (defn create-loader
   "Build the isolated loader for one extension on the selected backend
    (LOADER-KIND :sci/:jolt — see select-loader-kind). Both backends get the
-   same contract (the contract namespace + builtins + kmet.tui.*/kmet.libs.*;
-   the loader itself deliberately excluded) and the same extension sources
+   same contract (the contract namespace + builtins + kmet.tui.* and the
+   kmet.libs.*/kmet.reakt.*/kmet.hikap.* layers; the loader itself
+   deliberately excluded) and the same extension sources
    and dep closure — they differ in what that means: injected namespace maps
    and a source provider under SCI, the filtered host root and real source
    roots under the native Jolt loader."

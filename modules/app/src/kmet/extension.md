@@ -72,7 +72,8 @@ What an extension may require is a fixed, enforced list:
   extension can define plugins, provide services and use the ctx tree directly.
   Only this one namespace is shared; the `kmet.srce.*` sub-namespaces stay
   host machinery.
-- The shared layers `kmet.tui.*` and `kmet.libs.*`, shared by reference with
+- The shared layers `kmet.tui.*`, `kmet.libs.*` and the `kmet.reakt.*` /
+  `kmet.hikap.*` framework modules, shared by reference with
   the host (there is nothing to reimplement; the authoring guide's
   § Building UI covers the component library).
 - The shared renderer namespaces `kmet.agent.ui.tui.tool-renderers` and
@@ -114,8 +115,8 @@ The set is enumerated in `kmet.app.extensions.libs`:
 
 Plus the libraries shared from the host itself: `clojure.*` (`core.async`
 and `rrb-vector` included), `babashka.fs`, `babashka.process`, and the kmet
-layers (`kmet.extension`, `kmet.tui.*`, `kmet.libs.*` and the shared
-renderer namespaces).
+layers (`kmet.extension`, `kmet.tui.*`, `kmet.libs.*`, `kmet.reakt.*`,
+`kmet.hikap.*` and the shared renderer namespaces).
 
 The **guarantee is the namespace surface, not the version**: on babashka a
 bundled port decides its own edition, while Jolt uses the version kmet pins
@@ -948,7 +949,7 @@ request a timeout.
 #### Tag aliases — named tag-level components
 
 `ext/register-alias!` registers a **qualified-keyword tag** for any hiccup
-tree the host or another extension parses (`kmet.libs.hikap.alias`, tui.md §2.9).
+tree the host or another extension parses (`kmet.hikap.alias`, tui.md §2.9).
 Use it to contribute UI by name: a tree site embeds
 `[:my-ext/chip {:label "ready"}]` without requiring the provider.
 
@@ -982,7 +983,7 @@ Use it to contribute UI by name: a tree site embeds
 - The registration is removed automatically when the extension unloads
   (the alias registry is process-global, so unload runs the deregister fn it
   returned).
-  Do **not** use `kmet.libs.hikap.alias/defalias` in an extension — it registers
+  Do **not** use `kmet.hikap.alias/defalias` in an extension — it registers
   directly and would survive the unload.
 - Names must be qualified keywords that no rendering backend declares as
   a host tag (unqualified keywords are always host tags), and there is no

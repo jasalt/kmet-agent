@@ -1,9 +1,9 @@
-(ns kmet.libs.reakt.core
+(ns kmet.reakt.core
   "Standalone reactive engine: a Babashka port of reagent.ratom's semantics
    — auto-dependency-discovering reactions, cursors, batching — with plain
    clojure.lang.Atoms as first-class inputs. Generic by design: no terminal,
    rendering, or component concepts (the TUI render-cache layer that rides
-   on it lives in kmet.libs.hikap.component/track!; kmet.tui.core drains flush! on
+   on it lives in kmet.hikap.component/track!; kmet.tui.core drains flush! on
    every render-loop wake and installs set-enqueue-hook! so a dirty reaction
    wakes the parked loop instead of waiting for its idle heartbeat).
 
@@ -19,12 +19,12 @@
    IRefs).
 
    A reaction is kept alive by its derefers, never by its dependencies: dep
-   watches are registered through kmet.libs.reakt.weak against the reaction (the
+   watches are registered through kmet.reakt.weak against the reaction (the
    handler captures the registry key only, never the reaction), so an
    unreachable reaction is collected and the next sweep unsubscribes its dep
    watches. Owned liveness is the flip side — a reaction
    nothing derefs could never be invalidated usefully — so holders that are
-   themselves weak (kmet.libs.hikap.component/track-render's per-width cache) pin the
+   themselves weak (kmet.hikap.component/track-render's per-width cache) pin the
    reactions they validate.
 
    Coverage contract: tracked reads are explicit tracked-deref calls and
@@ -55,7 +55,7 @@
    write back through the source (=-gated, nested lenses composing), and a
    disposed lens refuses writes instead of writing back from the dead."
   (:refer-clojure :exclude [derive])
-  (:require [kmet.libs.reakt.weak :as weak]))
+  (:require [kmet.reakt.weak :as weak]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Context
@@ -66,7 +66,7 @@
    builds its cache from, each an atom of a map — ATOMS is {ref value} for
    plain IRefs, RX is {ref value} for library refs. tracked-deref files
    each read into the bucket ref-kind selects. Bound by
-   kmet.libs.hikap.component/track-render around render bodies; nil outside one."
+   kmet.hikap.component/track-render around render bodies; nil outside one."
   nil)
 
 (def ^:dynamic *reaction-frame*
@@ -208,7 +208,7 @@
    frame loop and drain the batch — without it, a derived ref's re-run waits
    for the host's own flush cadence. nil restores the no-op default. Runs
    inside a dep watch: a failure is logged and swallowed, never thrown into
-   the write that dirtied the dep (the kmet.libs.hikap.component/set-frame-hook! policy).
+   the write that dirtied the dep (the kmet.hikap.component/set-frame-hook! policy).
    Process-global and host-owned: the TUI installs and clears its own hook
    (kmet.tui.core), so other consumers must not replace it."
   [f]
@@ -224,7 +224,7 @@
       (f)
       (catch Throwable e
         (binding [*out* *err*]
-          (println "kmet.libs.reakt.core enqueue hook error:" (ex-message e))))))
+          (println "kmet.reakt.core enqueue hook error:" (ex-message e))))))
   nil)
 
 (defn- enqueue!
@@ -265,7 +265,7 @@
   "Live reactions in the weak registry (tests and guards): reactions whose
    subject is still reachable. Dead-but-unswept entries are excluded.
    track! components share the registry with a different payload shape and
-   are counted by kmet.libs.hikap.component/live-watch-count instead."
+   are counted by kmet.hikap.component/live-watch-count instead."
   []
   (weak/live-count (fn [payload] (contains? payload :rx-watch-key))))
 
@@ -290,7 +290,7 @@
    short-circuits before the CAS: non-reactive derefs settle the queue on
    every read (reaction deref-fn), and the empty case is the common one —
    the swap machinery must not be its price. After a drain, a weak
-   subscription sweep runs (kmet.libs.reakt.weak) so headless
+   subscription sweep runs (kmet.reakt.weak) so headless
    consumers that never start a TUI still reclaim collected subscribers."
   []
   (when (and (pos? (count @queue))
@@ -319,7 +319,7 @@
               (when-some [e @error]
                 (throw e)))
             (when (> round max-rounds)
-              (throw (ex-info "kmet.libs.reakt.core: reaction queue did not settle (cyclic reactions?)"
+              (throw (ex-info "kmet.reakt.core: reaction queue did not settle (cyclic reactions?)"
                               {:rounds round})))
             (recur (inc round)))))
       (finally
@@ -460,7 +460,7 @@
                      (enqueue! r)))))
              (catch Throwable e
                (binding [*out* *err*]
-                 (println "kmet.libs.reakt.core dep-handler error:" (.getMessage e))))))
+                 (println "kmet.reakt.core dep-handler error:" (.getMessage e))))))
          update-watching!
          (fn [collected]
            ;; Set-diff (Reagent's _update-watching), identity-flavored:
@@ -506,7 +506,7 @@
                  ;; value being replaced rather than recursing forever.
                  (= :busy state) value
                  (> guard max-rounds)
-                 (throw (ex-info "kmet.libs.reakt.core: reaction did not converge after repeated mid-run invalidation"
+                 (throw (ex-info "kmet.reakt.core: reaction did not converge after repeated mid-run invalidation"
                                  {:rounds guard}))
                  :else
                  ;; Fresh re-check: dispose may have landed between the
@@ -575,7 +575,7 @@
                                (fl key @self value result)
                                (catch Throwable e
                                  (binding [*out* *err*]
-                                   (println "kmet.libs.reakt.core watcher error:"
+                                   (println "kmet.reakt.core watcher error:"
                                             (.getMessage e)))))))
                          (if (= :dirty (:state @cell))
                            (recur (inc guard))
@@ -836,7 +836,7 @@
          _ (when-not (or (writable-cursor? source)
                          (instance? clojure.lang.IAtom source))
              (throw (ex-info
-                     (str "kmet.libs.reakt.core/writable-cursor: source must be "
+                     (str "kmet.reakt.core/writable-cursor: source must be "
                           "a plain atom or another writable cursor — "
                           (pr-str (class source))
                           " has no write-back path (a read-only cursor "
@@ -879,8 +879,8 @@
 
 (defn- not-writable! [fname ref]
   (throw (ex-info
-          (str "kmet.libs.reakt.core/" fname ": not a writable cursor — make one "
-               "over the source with kmet.libs.reakt.core/writable-cursor "
+          (str "kmet.reakt.core/" fname ": not a writable cursor — make one "
+               "over the source with kmet.reakt.core/writable-cursor "
                "(a read-only cursor has no path to write back to, and a "
                "plain atom is written with swap!/reset! directly)")
           {:ref ref})))

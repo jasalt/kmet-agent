@@ -8,7 +8,7 @@
    [kmet.libs.terminal-image :as timg]
    [kmet.tui.theme :as theme]
    [kmet.tui.timers :as timers]
-   [kmet.libs.hikap.component :as component]
+   [kmet.hikap.component :as component]
    [kmet.ui.tui.subs :as subs]
    [kmet.ui.tui.tool-execution :as te]
    [kmet.agent.ui.tui.tool-renderers :as renderers]
@@ -835,7 +835,7 @@
   (testing "repeated cache-miss renders do not grow the watch registry — the
             dropped children are disposed each pass"
     (let [c (te/make-tool-execution :name "read" :args {:path "a.clj"} :content "x")
-          watchers (fn [] (kmet.libs.hikap.component/live-watch-count))]
+          watchers (fn [] (kmet.hikap.component/live-watch-count))]
       (core/render c 60)
       (let [baseline (watchers)]
         (dotimes [i 5]
@@ -849,7 +849,7 @@
             no zombie track! watches (the 1s ticker rebuilds it every second
             while a tool runs)"
     (let [c (te/make-tool-execution :name "bash" :args {:command "echo hi"} :status true)
-          watchers (fn [] (kmet.libs.hikap.component/live-watch-count))]
+          watchers (fn [] (kmet.hikap.component/live-watch-count))]
       (te/tool-execution-mark-execution-started! c)
       (reset! (:content-atom c) "out -1")  ;; result body present → steady state
       (core/render c 60)

@@ -3,7 +3,7 @@
    §6.1). Headless: pump! is driven by hand instead of by the frame loop."
   (:require [clojure.test :as t]
             [kmet.libs.concurrent :as concurrent]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.timers :as timers]))
 
 (t/use-fixtures :each (fn [f] (timers/cancel-all!) (f) (timers/cancel-all!)))

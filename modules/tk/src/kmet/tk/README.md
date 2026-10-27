@@ -14,11 +14,11 @@ backend's extra-tag seam.
 ## Where the layers sit
 
 ```
-kmet.libs.reakt.core           reactions over plain atoms (host-agnostic)
-kmet.libs.hikap.core           the hiccup engine: parse, keyed reconcile,
+kmet.reakt.core           reactions over plain atoms (host-agnostic)
+kmet.hikap.core           the hiccup engine: parse, keyed reconcile,
                           ComponentFn, refs — parameterized by a backend map
-kmet.libs.hikap.component track! render cache, with-let stores, frame hook
-kmet.libs.hikap.alias     the qualified-keyword alias registry
+kmet.hikap.component      track! render cache, with-let stores, frame hook
+kmet.hikap.alias          the qualified-keyword alias registry
 kmet.tui.hikap            the TUI backend (tag table, *width*, IComponent)
 kmet.tk.dsl               the Tk widget machinery: Tcl quoting and script
                           building, widget records, the callback/binding
@@ -43,21 +43,21 @@ backend),
 which mounts through the backend's extra-tag seam
 (`kmet.tk.core/mount-backend!`, `run-backend!`). A declared host tag wins
 over the alias registry, so `:tk/canvas` and `:ttk/frame` are host tags —
-see kmet.libs.hikap.core's parse-host — while any other qualified keyword
+see kmet.hikap.core's parse-host — while any other qualified keyword
 still resolves as an alias; a `:ui/…` tag is unknown to the plain Tk
 backend on purpose.
 
 The pre-split `kmet.tui.hiccup` was one namespace; the toolkit-agnostic
-half is now `kmet.libs.hikap.core` (+ `.component` / `.alias`), and
+half is now `kmet.hikap.core` (+ `.component` / `.alias`), and
 `kmet.tui.hikap` is the TUI backend over it: the tag table, the
 width-bound render context, the `IComponent` extension, and the TUI-bound
 entry points (`root`, `compile-tree`, `render-lines`, `materialize-ref!`).
 Backend-independent pieces (`ref`, `compute`, the counters) are required
-from `kmet.libs.hikap.core`.
+from `kmet.hikap.core`.
 
 ## The backend map
 
-`kmet.libs.hikap.core` reaches every toolkit-specific operation through a map:
+`kmet.hikap.core` reaches every toolkit-specific operation through a map:
 
 | key | meaning |
 |---|---|
@@ -73,7 +73,7 @@ from `kmet.libs.hikap.core`.
 | `:did-you-mean` | optional unknown-tag suggestion hook |
 
 Backends whose widgets are live objects (Tk) render nothing: `:render*`
-return nil, and re-renders are driven by `kmet.libs.hikap.component/set-frame-hook!`
+return nil, and re-renders are driven by `kmet.hikap.component/set-frame-hook!`
 plus a pump on the UI thread. See `kmet.tk.core/run!`.
 
 ## Running the Tk backend
@@ -700,7 +700,7 @@ loop's thread). The backend map and the mounted structure are captured at
 mount time, so a change inside `kmet.tk.core` itself needs a remount.
 
 A mounted body is memoized by the engine, so state it depends on must be
-declared: read it with `kmet.libs.reakt.core/tracked-deref` (a plain `@atom`
+declared: read it with `kmet.reakt.core/tracked-deref` (a plain `@atom`
 read caches the tree and a click repaints nothing).
 
 ## Testing

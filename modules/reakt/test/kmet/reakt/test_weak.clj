@@ -1,5 +1,5 @@
-(ns kmet.libs.test-weak
-  "Unit tests for kmet.libs.reakt.weak: registration and
+(ns kmet.reakt.test-weak
+  "Unit tests for kmet.reakt.weak: registration and
    refresh, key conflicts, unregister payloads, queue-gated sweeps and
    on-dead isolation. Collection is simulated deterministically (`.clear` +
    `.enqueue` on the entry's WeakReference, exactly what the GC does) so the
@@ -7,7 +7,7 @@
    integrations (Stages B/C)."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.libs.reakt.weak :as weak]))
+            [kmet.reakt.weak :as weak]))
 
 (defn- fresh-key []
   (keyword (gensym "weak-test")))
@@ -73,7 +73,7 @@
                    nil
                    (catch Exception ex ex))]
         (is (some? e) "register! throws")
-        (is (= :kmet.libs.reakt.weak/subject-conflict (:type (ex-data e))))
+        (is (= :kmet.reakt.weak/subject-conflict (:type (ex-data e))))
         (is (identical? s1 (weak/subject k)) "the original entry survived")
         (is (= {:n 1} (weak/payload k)))))))
 

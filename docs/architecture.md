@@ -17,8 +17,8 @@ remain at the repository root by convention.
 
 ```
 modules/
-├── reakt/  — reactive primitives                    (kmet.libs.reakt.*)
-├── hikap/  — toolkit-agnostic hiccup UI framework   (kmet.libs.hikap.*)
+├── reakt/  — reactive primitives                    (kmet.reakt.*)
+├── hikap/  — toolkit-agnostic hiccup UI framework   (kmet.hikap.*)
 ├── libs/   — generic, self-contained helpers        (kmet.libs.*)
 ├── tui/    — terminal backend over hikap            (kmet.tui.*; tui.md)
 ├── ai/     — provider/auth library                  (kmet.ai.*)
@@ -31,9 +31,8 @@ modules/
 
 `modules.edn` is the workspace manifest: it lists the module trees and the
 extra source roots, and the tasks read it instead of repeating the paths
-(`kmet.tasks.modules`). `kmet.libs.hikap.*` is namespaced under `kmet.libs`
-(the framework may require only `kmet.libs.*`) but its sources live in
-`modules/hikap`.
+(`kmet.tasks.modules`). A module's namespaces sit under the root it is
+named for: `reakt` holds `kmet.reakt.*`, `hikap` holds `kmet.hikap.*`.
 
 Ranks are the manifest's layering guard (`kmet.test-module-deps`): a module
 may depend only on strictly lower-ranked ones, and a *namespace* may require
@@ -170,31 +169,33 @@ root `AGENTS.md` topic map.
 - `kmet.loader.*` is an outer module (`modules/loader`); it may use
   third-party deps and `kmet.loader.*`, but no other `kmet.*` namespace.
 - `kmet.libs.*` is generic and self-contained; it may not require non-libs
-  `kmet.*` namespaces (app, TUI, mode, AI). Sibling-lib composition is fine
-  and expected (`http → concurrent/json/process`,
-  `oauth → concurrent/crypto/http/json`, `reakt → weak`);
+  `kmet.*` namespaces (app, TUI, mode, AI, the framework modules).
+  Sibling-lib composition is fine and expected (`http →
+  concurrent/json/process`, `oauth → concurrent/crypto/http/json`);
   `modules/libs/test/kmet/libs/test_self_contained.clj` enforces exactly this.
-  `kmet.libs.reakt.weak` is the one namespace allowed to touch `java.lang.ref` —
-  a platform exception like the terminal backends.
-- `kmet.libs.hikap.core` is the toolkit-agnostic UI framework owned by
-  `modules/hikap` (namespaced under `kmet.libs` because it may require only
-  `kmet.libs.*`): the hiccup engine (`kmet.libs.hikap.core`), the component
-  runtime (`kmet.libs.hikap.component`) and the alias registry
-  (`kmet.libs.hikap.alias`). `kmet.tui.*` and `kmet.tk.*` are backends over
+- `kmet.reakt.*` is the standalone reactive engine (`modules/reakt`, rank 0):
+  reactions, cursors and batching over plain atoms. `kmet.reakt.weak` is the
+  one namespace allowed to touch `java.lang.ref` — a platform exception like
+  the terminal backends.
+- `kmet.hikap.core` is the toolkit-agnostic UI framework owned by
+  `modules/hikap` (rank 1, so it may require only `kmet.libs.*` and
+  `kmet.reakt.*`): the hiccup engine (`kmet.hikap.core`), the component
+  runtime (`kmet.hikap.component`) and the alias registry
+  (`kmet.hikap.alias`). `kmet.tui.*` and `kmet.tk.*` are backends over
   it — they pass their backend map in, the engine never requires them.
 - `kmet.ai.*` is a standalone provider/auth library and depends only on
   `kmet.libs.*` plus standard/third-party code.
 - `kmet.tui.*` is the generic UI layer (the terminal backend for
-  `kmet.libs.hikap.core`). It may depend on `kmet.libs.*`, never on app, LLM, or
-  session concepts.
+  `kmet.hikap.core`). It may depend on `kmet.libs.*`, `kmet.reakt.*` and
+  `kmet.hikap.*`, never on app, LLM, or session concepts.
 - `kmet.tk.*` is the Tk GUI backend (Jolt-only; kmet.tk.core with the
   classic `:tk/…` widget set, kmet.tk.ttk the `:ttk/…` set, kmet.tk.dsl
   their shared machinery and kmet.tk.options the Tk option vocabulary —
   plus kmet.tk.tcl, the host FFI adapter). Like `kmet.tui.*`, `kmet.tk.*`
-  builds on `kmet.libs.*` and nothing above it. The module also carries the
-  `kmet.gui-sample.*` widget skeleton (the `:ui/…` widgets, today
-  `:ui/transcript`), which is dependency-free like the backend; no app module
-  requires the sample or Tk.
+  builds on `kmet.libs.*` / `kmet.reakt.*` / `kmet.hikap.*` and nothing
+  above it. The module also carries the `kmet.gui-sample.*` widget skeleton
+  (the `:ui/…` widgets, today `:ui/transcript`), which is dependency-free
+  like the backend; no app module requires the sample or Tk.
 - `kmet.app.*` is the application below every front end, and `kmet.app.modes.*`
   is its mode-row layer: a mode row is what a profile runs, and the row mounts
   the front end that does the work. The direction is front end → app services,

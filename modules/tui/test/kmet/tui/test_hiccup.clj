@@ -18,14 +18,14 @@
             [kmet.tui.components.settings-list :as settings-list]
             [kmet.tui.components.text :as text]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.hikap :as h]
-            [kmet.libs.hikap.component :as component :refer [with-let]]
+            [kmet.hikap.component :as component :refer [with-let]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.stack :as stack]
             [kmet.tui.utils :as u]
-            [kmet.libs.reakt.core :as rag]
+            [kmet.reakt.core :as rag]
             [kmet.libs.terminal-image :as timg]))
 
 (defn- joined [tree width]
@@ -114,7 +114,7 @@
 
 (t/deftest key-and-ref-pseudo-props-are-stripped
   ;; ctors never see them; no unknown-key crash, no behavior change vs the
-  ;; same tree without them. :ref must be a real (kmet.libs.hikap.core/ref) handle.
+  ;; same tree without them. :ref must be a real (kmet.hikap.core/ref) handle.
   (let [tree (fn [extra]
                [:box extra
                 [:text (merge {:padding-x 0 :padding-y 0} extra) "hi"]])]
@@ -125,7 +125,7 @@
     (t/is (= ["" " hi" ""]
              (mapv str/trimr (h/render-lines (tree {:key 1}) 20))))
     ;; non-ref :ref values are rejected loudly at parse
-    (t/is (thrown-with-msg? Exception #"kmet\.libs\.hikap\.core/ref"
+    (t/is (thrown-with-msg? Exception #"kmet\.hikap\.core/ref"
                             (h/render-lines [:text {:ref :fake} "x"] 10)))))
 
 ;; ── contents are concatenated / lazy & eager seqs (hiccup core_test) ────

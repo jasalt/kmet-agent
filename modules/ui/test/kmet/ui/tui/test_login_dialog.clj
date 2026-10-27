@@ -6,10 +6,10 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.ui.tui.login-dialog :as ld]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
-            [kmet.libs.reakt.core :as r]))
+            [kmet.reakt.core :as r]))
 
 (defn- strip-ansi [s]
   (str/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))

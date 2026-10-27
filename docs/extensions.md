@@ -341,8 +341,8 @@ reference's § Allowed namespaces and isolation):
 - kmet core and `clojure.*` / `babashka.*` namespaces are shared references
   (never re-evaluated), so extension registrations always reach the real
   kmet registries. Extensions may depend only on `kmet.extension`, `kmet.srce.core`, plus the
-  shared `kmet.tui.*` / `kmet.libs.*` libraries; other kmet internals are
-  not resolvable from an extension context (the load fails with an explicit
+  shared `kmet.tui.*` / `kmet.libs.*` / `kmet.reakt.*` / `kmet.hikap.*` libraries; other kmet
+  internals are not resolvable from an extension context (the load fails with an explicit
   error) — the loader, `kmet.loader*`, is one of those internals.
 - **Contexts are forks of one shared base** — the shared layers and the
   seeded classes are built once and forked per extension, so your
@@ -470,7 +470,7 @@ reimplement.
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
             [kmet.tui.theme :as theme]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent MyDialog [this width]
@@ -487,7 +487,7 @@ selectors share — the caller supplies rows, filtering and chrome), `stack`,
 `v-stack`, `h-stack`, `expandable-text`, `image`,
 `spinner`, ...), `kmet.tui.theme` (styling — including
 `theme/get-settings-list-theme` for the selector look),
-`kmet.libs.hikap.component` (`track!`/`track-deps` reactive caching,
+`kmet.hikap.component` (`track!`/`track-deps` reactive caching,
 `with-let`), `kmet.tui.macros` (`defcomponent`), `kmet.tui.keybindings`, `kmet.tui.keys`,
 `kmet.tui.fuzzy` and `kmet.tui.autocomplete`. Extension components must follow
 the duck-typed `{:render :handle-input :invalidate}` contract accepted by

@@ -1,7 +1,7 @@
-(ns kmet.libs.test-reakt-features
-  "Additional behavior-oriented tests for kmet.libs.reakt.core."
+(ns kmet.reakt.test-reakt-features
+  "Additional behavior-oriented tests for kmet.reakt.core."
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.libs.reakt.core :as r]))
+            [kmet.reakt.core :as r]))
 
 (deftest test-in-reaction-predicate
   (let [a (atom 1)

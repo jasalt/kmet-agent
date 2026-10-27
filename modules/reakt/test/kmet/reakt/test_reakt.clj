@@ -1,12 +1,12 @@
-(ns kmet.libs.test-reakt
-  "Pure engine tests for kmet.libs.reakt.core — no TUI, no components: dependency
+(ns kmet.reakt.test-reakt
+  "Pure engine tests for kmet.reakt.core — no TUI, no components: dependency
    discovery across branches, =-gated watch notification, cursors, manual
    tracks, disposal semantics, and the changed? gate. (The engine's
    integration with component render bodies is covered in
    kmet.tui.test-reakt-integration / test-compute / test-track.)"
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [kmet.libs.reakt.core :as r]
-            [kmet.libs.reakt.weak :as weak]
+            [kmet.reakt.core :as r]
+            [kmet.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
 
 (deftest test-changed-gate
@@ -344,7 +344,7 @@
     (let [a (atom 1)
           cur (r/cursor a [])
           doubled (r/derive [cur] (fn [v] (* 2 v)))
-          shape-ns (create-ns 'kmet.libs.test-reakt.held-shape)
+          shape-ns (create-ns 'kmet.reakt.test-reakt.held-shape)
           v (intern shape-ns 'var-held
                     (r/make-reaction (fn [] (r/tracked-deref a))))]
       (is (= 2 @doubled))

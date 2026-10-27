@@ -1,4 +1,4 @@
-(ns kmet.libs.reakt.weak
+(ns kmet.reakt.weak
   "Queue/sweep weak-subscription registry: a subscription never keeps its
    subject alive. Entries hold their subject through a `WeakReference`; once
    the subject is collected the reference lands on a `ReferenceQueue`, the
@@ -11,7 +11,7 @@
    `WeakReference` while the subject is identical (a streaming render pass
    must not allocate one ref per pass) and sweeps opportunistically, which
    is one `.poll` when nothing died. `sweep!` runs at the render loop's wake
-   and after `kmet.libs.reakt.core/flush!`, so headless consumers sweep too.
+   and after `kmet.reakt.core/flush!`, so headless consumers sweep too.
 
    This is the one namespace allowed to touch `java.lang.ref` (the
    platform-dependency exception, like the terminal backends); both hosts
@@ -54,7 +54,7 @@
       ((:on-dead entry) k (:payload entry))
       (catch Throwable t
         (binding [*out* *err*]
-          (println "kmet.libs.reakt.weak on-dead error:" (ex-message t)))))))
+          (println "kmet.reakt.weak on-dead error:" (ex-message t)))))))
 
 (defn- register-entry
   "The registry map with KEY registered or refreshed for SUBJECT. Throws on

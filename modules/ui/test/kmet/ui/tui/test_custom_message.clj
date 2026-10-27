@@ -6,7 +6,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.ui.tui.subs :as subs]
             [kmet.ui.tui.custom-message :as cm]
-            [kmet.libs.hikap.component :as component]))
+            [kmet.hikap.component :as component]))
 
 (defn- strip-ansi [s]
   (clojure.string/replace s #"\u001b\[[0-9;]*[a-zA-Z]" ""))

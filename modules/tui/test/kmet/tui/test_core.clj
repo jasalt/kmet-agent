@@ -4,7 +4,7 @@
             [clojure.string :as str]
             [kmet.libs.concurrent :as concurrent]
             [kmet.tui.core :as core]
-            [kmet.libs.reakt.core :as reakt]
+            [kmet.reakt.core :as reakt]
             [kmet.tui.terminal-escape :as lib]
             [kmet.libs.terminal-image :as img]
             [kmet.tui.keys :as keys]

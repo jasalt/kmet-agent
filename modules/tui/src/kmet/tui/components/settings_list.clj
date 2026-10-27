@@ -13,7 +13,7 @@
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.utils :as u]
-            [kmet.libs.hikap.component :refer [track! track-deps schedule-frame!]]
+            [kmet.hikap.component :refer [track! track-deps schedule-frame!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.components.input :as input]))
 

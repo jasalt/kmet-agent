@@ -6,7 +6,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.utils :as utils]))
 
 (def ^:private png

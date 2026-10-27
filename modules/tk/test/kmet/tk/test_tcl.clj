@@ -10,7 +10,7 @@
             [kmet.tk.test-support :refer [find-class-src rerender! stop-live-tk! with-live-tk]]
             [kmet.tk.core :as tk]
             [kmet.tk.options :as opt]
-            [kmet.libs.hikap.core :as engine]))
+            [kmet.hikap.core :as engine]))
 
 (defn- live-adapter
   "The real Tcl adapter with libtcl loaded, or nil (JVM, or no libtcl)."

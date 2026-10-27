@@ -5,7 +5,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.autocomplete :as ac]
             [kmet.tui.components.select-list :as select-list]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.utils :as u]
             [kmet.tui.keybindings :as kb]

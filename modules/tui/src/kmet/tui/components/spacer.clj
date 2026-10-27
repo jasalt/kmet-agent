@@ -1,6 +1,6 @@
 (ns kmet.tui.components.spacer
   "Spacer component - renders empty lines."
-  (:require [kmet.libs.hikap.component :refer [track!]]
+  (:require [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent Spacer nil [lines-atom cache-atom]

@@ -663,7 +663,8 @@
       (let [result (load "app" "(ns bad-app (:require [kmet.app.commands :as c]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
-                             "may depend only on kmet.extension, kmet.tui.*, kmet.libs.* and kmet.srce.core"))))
+                             (str "may depend only on kmet.extension, kmet.tui.*,"
+                                  " kmet.libs.*, kmet.reakt.*, kmet.hikap.* and kmet.srce.core")))))
     (testing "the loader is host machinery — not shared, not requireable"
       (let [result (load "loader-ns"
                          (str "(ns bad-loader (:require [kmet.loader.core :as ldr]))\n"
@@ -688,11 +689,11 @@
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
                              "not part of the kmet.tui.* library shared with extensions"))))
-    (testing "a kmet.libs.* typo is rejected (sci would NPE silently)"
+    (testing "a shared-library typo is rejected (sci would NPE silently)"
       (let [result (load "lib-typo" "(ns bad-lib-typo (:require [kmet.libs.hashh :as h]))\n(defn init [api] nil)\n")]
         (t/is (some? (:error result)))
         (t/is (str/includes? (:error result)
-                             "not part of the kmet.libs.* library shared with extensions"))))
+                             "not part of the shared library layers"))))
     (testing "valid kmet.tui.* requires load and share the real library"
       (let [result (load "tui" "(ns good-tui\n  (:require [kmet.tui.components.text :as text]\n            [kmet.tui.protocols :as protocols]))\n(defn init [api]\n  (let [c (text/make-text \"hi\")]\n    (when-not (vector? (protocols/render c 20))\n      (throw (ex-info \"render failed\" {})))))\n")]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))))

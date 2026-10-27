@@ -11,7 +11,7 @@
             [kmet.ui.tui.summary-message :as sm]
             [kmet.tui.core :as core]
             [kmet.tui.keybindings :as kb]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.theme :as theme]))
 
 (defn- strip-ansi [s]

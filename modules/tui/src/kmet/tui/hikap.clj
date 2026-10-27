@@ -1,17 +1,17 @@
 (ns kmet.tui.hikap
-  "TUI backend for the generic hiccup engine (kmet.libs.hikap.core): the entry
+  "TUI backend for the generic hiccup engine (kmet.hikap.core): the entry
    points bound to the TUI backend — compile-element/compile-tree/root,
    reconcile!, materialize-ref!, and the headless render-lines surface —
    plus what the engine takes from this backend: the closed host tag
    table, the width-bound render context (*width*/*comp*), and the
    IComponent protocol extension for the engine's ComponentFn.
 
-   Backend-independent engine surface stays in kmet.libs.hikap.core and is
-   required directly: ref handles (kmet.libs.hikap.core/ref), derived refs
-   (kmet.libs.hikap.core/compute), counters. This namespace forwards nothing."
+   Backend-independent engine surface stays in kmet.hikap.core and is
+   required directly: ref handles (kmet.hikap.core/ref), derived refs
+   (kmet.hikap.core/compute), counters. This namespace forwards nothing."
   (:refer-clojure :exclude [ref])
   (:require
-   [kmet.libs.hikap.core :as engine]
+   [kmet.hikap.core :as engine]
    [kmet.tui.components.alt-screen-flash :as alt-screen-flash]
    [kmet.tui.components.box :as box]
    [kmet.tui.components.cancellable-loader :as cancellable-loader]
@@ -505,7 +505,7 @@
     ""))
 
 (def tui-backend
-  "The TUI host backend for kmet.libs.hikap.core: tag table, width-bound
+  "The TUI host backend for kmet.hikap.core: tag table, width-bound
    context, line rendering through protocols/IComponent."
   {:name :tui
    :tags tags
@@ -522,7 +522,7 @@
 
 ;; The engine owns the fn-component wrapper; the TUI side teaches it the
 ;; IComponent protocol (render to lines, no input, no extra cache state).
-(extend-type kmet.libs.hikap.core.ComponentFn
+(extend-type kmet.hikap.core.ComponentFn
   protocols/IComponent
   (render [this width] (engine/render-component this width))
   (handle-input [_this _data] nil)
@@ -584,7 +584,7 @@
 
 (defn root
   "Mount TREE-OR-FN as an IComponent — the one way trees enter the TUI.
-   See kmet.libs.hikap.core/root."
+   See kmet.hikap.core/root."
   [tree-or-fn]
   (engine/root tui-backend tree-or-fn))
 

@@ -18,7 +18,7 @@
             [kmet.tui.components.container :as container]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.app.project-context :as context]
-            [kmet.libs.reakt.core :as r]
+            [kmet.reakt.core :as r]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.commands :as commands]

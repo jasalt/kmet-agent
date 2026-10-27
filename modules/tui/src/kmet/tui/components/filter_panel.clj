@@ -7,8 +7,8 @@
    make-panel). The panel owns the `{:search :selected-idx}` keys of the
    caller's state atom; everything else in it is the caller's."
   (:require [clojure.string :as str]
-            [kmet.libs.hikap.core :as engine]
-            [kmet.libs.reakt.core :as r]
+            [kmet.hikap.core :as engine]
+            [kmet.reakt.core :as r]
             [kmet.tui.components.input :as input]
             [kmet.tui.hikap :as h]
             [kmet.tui.keybindings :as kb]

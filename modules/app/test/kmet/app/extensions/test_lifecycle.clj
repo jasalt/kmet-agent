@@ -14,7 +14,7 @@
             [kmet.srce.core :as srce]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
-            [kmet.libs.hikap.alias :as alias]
+            [kmet.hikap.alias :as alias]
             [kmet.tui.theme :as theme]
             [kmet.app.test-support :as support]
             [kmet.test-utils :refer [spit-plugin]]

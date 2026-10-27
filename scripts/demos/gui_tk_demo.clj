@@ -11,7 +11,7 @@
      re-renders on the UI thread."
   (:require [clojure.string :as str]
             [kmet.tk.tcl :as tcl]
-            [kmet.libs.hikap.component :as component]))
+            [kmet.hikap.component :as component]))
 
 (defonce ^:private log (atom ["hiccup-tk ready"]))
 

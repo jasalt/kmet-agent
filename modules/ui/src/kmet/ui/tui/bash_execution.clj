@@ -9,10 +9,10 @@
    re-renders fresh on every driven frame, so a frame driver at the shared
    spinner bucket (spinner/default-interval-ms) animates it like pi's Loader
    setInterval while output chunks stream through the reaction."
-  (:require [kmet.libs.reakt.core :as r]
+  (:require [kmet.reakt.core :as r]
             [kmet.tui.border :as border]
             [kmet.tui.hikap :as hiccup]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]

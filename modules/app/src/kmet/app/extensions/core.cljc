@@ -2,8 +2,9 @@
   "Extension runtime: discovers, loads, reloads and unloads Clojure
    extensions. The extension contract lives in kmet.extension — extensions
    depend on that namespace plus the shared library layers kmet.tui.*
-   (the generic TUI layer; the port of pi's @earendil-works/pi-tui) and
-   kmet.libs.* (generic, self-contained utilities) — all shared by
+   (the generic TUI layer; the port of pi's @earendil-works/pi-tui),
+   kmet.libs.* (generic, self-contained utilities) and kmet.reakt.* /
+   kmet.hikap.* (the framework modules they compose) — all shared by
    reference; this runtime wires the api capabilities to the registries
    and the interactive/loop surfaces.
 
@@ -68,7 +69,7 @@
             [kmet.app.tools.bash :as bash-tool]
             [kmet.app.config :as cfg]
             [kmet.app.debug :as debug]
-            [kmet.libs.hikap.alias :as alias]
+            [kmet.hikap.alias :as alias]
             [kmet.libs.host :as host]
             [kmet.loader.core :as loader]
             ;; Jolt only: pulls the fixed bundled extension set into the
@@ -1227,7 +1228,7 @@
      :register-message-renderer! (fn [custom-type renderer]
                                    (register-message-renderer!
                                     (extension-owner name) custom-type renderer))
-     ;; tag aliases (kmet.libs.hikap.alias): the registry is process-global, so the
+     ;; tag aliases (kmet.hikap.alias): the registry is process-global, so the
      ;; registration MUST be tracked — unload removes exactly this fn's
      ;; registration (a later re-registration by another owner survives)
      :register-alias! (fn [alias-kw f]

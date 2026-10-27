@@ -1,7 +1,7 @@
-(ns kmet.libs.hikap.test-support
-  "Minimal fake backend for exercising kmet.libs.hikap.core without a toolkit."
+(ns kmet.hikap.test-support
+  "Minimal fake backend for exercising kmet.hikap.core without a toolkit."
   (:require [clojure.string :as str]
-            [kmet.libs.hikap.core :as engine]))
+            [kmet.hikap.core :as engine]))
 
 (defrecord FakeComp [kind props children-atom disposed-atom])
 

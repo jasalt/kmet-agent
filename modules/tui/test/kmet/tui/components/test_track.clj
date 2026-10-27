@@ -4,7 +4,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
@@ -12,15 +12,15 @@
             [kmet.tui.components.select-list :as sl]
             [kmet.tui.components.settings-list :as settings]
             [kmet.ui.tui.footer :as footer]
-            [kmet.libs.reakt.core :as reakt]
-            [kmet.libs.reakt.weak :as weak]
+            [kmet.reakt.core :as reakt]
+            [kmet.reakt.weak :as weak]
             [kmet.test-utils :as test-utils]))
 
 (defn- watch-key-of
   "The track! watch key COMPONENT's cache allocated, or nil before its first
    render."
   [component]
-  (:kmet.libs.hikap.component/watch-key (meta (:cache component))))
+  (:kmet.hikap.component/watch-key (meta (:cache component))))
 
 (t/deftest test-set!-auto-invalidates
   ;; text-set! no longer calls invalidate — the watch must do it

@@ -1,6 +1,6 @@
-(ns kmet.libs.hikap.alias
+(ns kmet.hikap.alias
   "Qualified-keyword tag aliases — reusable, named tag-level components for
-   the hiccup engine (kmet.libs.hikap.core).
+   the hiccup engine (kmet.hikap.core).
 
    A hiccup element whose head is a QUALIFIED keyword resolves through this
    registry to a fn `(fn [attrs children] tree)` — unless the rendering
@@ -39,7 +39,7 @@
 
 (defn- invalid!
   [alias-kw f why]
-  (throw (ex-info (str "kmet.libs.hikap.alias: invalid alias registration (" why
+  (throw (ex-info (str "kmet.hikap.alias: invalid alias registration (" why
                        "): " (pr-str alias-kw) " → " (pr-str f))
                   {:alias alias-kw :f f})))
 
@@ -85,7 +85,7 @@
    wrapper resolves per call, never at parse."
   [alias-kw]
   (or (lookup alias-kw)
-      (throw (ex-info (str "kmet.libs.hikap.alias: alias " alias-kw " is no longer "
+      (throw (ex-info (str "kmet.hikap.alias: alias " alias-kw " is no longer "
                            "registered — it mounted while registered and was "
                            "removed since (extension unload?); remount the "
                            "tree or re-register the alias")

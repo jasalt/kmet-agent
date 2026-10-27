@@ -5,7 +5,7 @@
             [kmet.test-utils :as tu :refer [strip-ansi]]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.hikap :as hiccup]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.core :as tui]
             [kmet.ui.tui.interactive.auth :as ia]

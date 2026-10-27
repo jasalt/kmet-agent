@@ -1,17 +1,17 @@
-(ns kmet.libs.hikap.component
+(ns kmet.hikap.component
   "Host-agnostic component runtime over the standalone reactive engine
-   (kmet.libs.reakt.core — reactions, cursors, batching).
+   (kmet.reakt.core — reactions, cursors, batching).
 
    track! — reactive render cache: rewrites @atom reads in the render body
-   to tracked derefs (kmet.libs.reakt.core/tracked-deref), so any atom change
+   to tracked derefs (kmet.reakt.core/tracked-deref), so any atom change
    invalidates the cache automatically and setters need no manual
    invalidate call. It must be a macro because deref rewriting happens at
    compile time. Also hosts with-let — per-instance component state — the
    frame-scheduler hook, and the track! watch registry. Every backend
    (kmet.tui.hikap, kmet.tk.core) builds its component records on top of
    this namespace; nothing here knows a toolkit."
-  (:require [kmet.libs.reakt.core :as reakt]
-            [kmet.libs.reakt.weak :as weak]))
+  (:require [kmet.reakt.core :as reakt]
+            [kmet.reakt.weak :as weak]))
 
 (def ^:private deref-form?
   "Only the 1-arg (deref x) form — @x reads as (clojure.core/deref x).
@@ -31,7 +31,7 @@
   (cond
     (or (symbol? form) (not (coll? form))) form
     (and (seq? form) (= 'quote (first form))) form
-    (deref-form? form) (list 'kmet.libs.reakt.core/tracked-deref (rewrite-derefs (second form)))
+    (deref-form? form) (list 'kmet.reakt.core/tracked-deref (rewrite-derefs (second form)))
     (seq? form) (apply list (map rewrite-derefs form))
     (vector? form) (mapv rewrite-derefs form)
     (map? form) (into (empty form) (map (fn [[k v]] [(rewrite-derefs k) (rewrite-derefs v)]) form))
@@ -136,7 +136,7 @@
    Atom handlers capture the component's watch KEY only and find the
    component through the weak registry, so a watch never roots a component;
    a collected component's watches are removed by the next sweep
-   (kmet.libs.reakt.weak). A reaction entry is
+   (kmet.reakt.weak). A reaction entry is
    [REACTION value]: the entry pins the reaction, so the cache can never
    keep validating a reaction the GC already collected."
   [component width render-fn]
@@ -270,7 +270,7 @@
   "Live track! registry entries (tests/guards): components whose render ran
    with track! and are still reachable. Reactions share the weak registry
    (their payload carries :rx-watch-key, the components' :watched) and are
-   counted by kmet.libs.reakt.core/live-reaction-count instead. Dead-but-unswept
+   counted by kmet.reakt.core/live-reaction-count instead. Dead-but-unswept
    entries are excluded; (weak/entry-count) includes them."
   []
   (weak/live-count (fn [payload] (contains? payload :watched))))
@@ -318,10 +318,10 @@
    instance its own element instead."
   [site init-fn]
   (when (nil? *store*)
-    (throw (ex-info "kmet.libs.hikap.component/fetch-local called outside a with-let store" {:site site})))
+    (throw (ex-info "kmet.hikap.component/fetch-local called outside a with-let store" {:site site})))
   (when (contains? (:pass-sites @*store*) site)
     (throw (ex-info
-            (str "kmet.libs.hikap.component: the same with-let is being used more "
+            (str "kmet.hikap.component: the same with-let is being used more "
                  "than once in the same render pass (site " site ") — each "
                  "instance needs its own element/component")
             {:site site})))
@@ -341,7 +341,7 @@
    grow the cleanup list per frame. Cleanups run LIFO at destroy-store!."
   [site f]
   (when (nil? *store*)
-    (throw (ex-info "kmet.libs.hikap.component/register-cleanup! called outside a with-let store" {:site site})))
+    (throw (ex-info "kmet.hikap.component/register-cleanup! called outside a with-let store" {:site site})))
   (when-not (contains? (:cleanup-sites @*store*) site)
     (swap! *store* (fn [s]
                      (-> s
@@ -358,7 +358,7 @@
       (f)
       (catch Throwable e
         (binding [*out* *err*]
-          (println "kmet.libs.hikap.component with-let cleanup error:" (ex-message e))))))
+          (println "kmet.hikap.component with-let cleanup error:" (ex-message e))))))
   (swap! store assoc :cleanups () :cleanup-sites #{} :locals {})
   nil)
 
@@ -401,11 +401,11 @@
                            pairs)
         cleanup-site (gensym "with-let-cleanup-")]
     `(let [~@(mapcat (fn [[s init] site]
-                       [s `(kmet.libs.hikap.component/fetch-local '~site (fn [] ~init))])
+                       [s `(kmet.hikap.component/fetch-local '~site (fn [] ~init))])
                      pairs binding-sites)]
        ~@(when cleanup
-           [`(kmet.libs.hikap.component/register-cleanup! '~cleanup-site
-                                                          (fn [] ~@(rest cleanup)))])
+           [`(kmet.hikap.component/register-cleanup! '~cleanup-site
+                                                     (fn [] ~@(rest cleanup)))])
        ~@body-forms)))
 
 ;; ═════════════════════════════════════════════════════════════════
@@ -436,7 +436,7 @@
       (f)
       (catch Throwable e
         (binding [*out* *err*]
-          (println "kmet.libs.hikap.component schedule-frame! error:" (.getMessage e))))))
+          (println "kmet.hikap.component schedule-frame! error:" (.getMessage e))))))
   nil)
 
 ;; ═════════════════════════════════════════════════════════════════

@@ -5,7 +5,7 @@
    fns and regenerate pre-baked colors; set-expanded! switches the variant."
   (:require [kmet.tui.protocols :as protocols]
             [kmet.tui.components.text :as text]
-            [kmet.libs.hikap.component :refer [track! track-deps]]
+            [kmet.hikap.component :refer [track! track-deps]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent ExpandableText nil [collapsed-fn expanded-fn expanded?-atom text-comp cache-atom]

@@ -5,7 +5,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.ui.tui.assistant-message :as am]))
 
 (t/use-fixtures :each tu/with-extension-host)

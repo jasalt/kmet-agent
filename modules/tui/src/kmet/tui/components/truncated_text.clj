@@ -7,7 +7,7 @@
    above and below. Empty text still renders the padded line (pi parity)."
   (:require [clojure.string :as str]
             [kmet.tui.utils :as u]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent TruncatedText nil [text-atom padding-x-atom padding-y-atom cache]

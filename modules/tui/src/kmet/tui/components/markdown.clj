@@ -8,7 +8,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.border :as border]
             [kmet.tui.utils :as u]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.libs.markdown :as md]))
 

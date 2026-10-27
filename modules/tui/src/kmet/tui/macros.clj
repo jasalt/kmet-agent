@@ -3,11 +3,11 @@
    implementing kmet.tui.protocols/IComponent, wiring in track! cache
    invalidation and track-watch teardown.
 
-   The compiled expansion depends on kmet.libs.hikap.component
+   The compiled expansion depends on kmet.hikap.component
    (invalidate-cache and watch teardown), so this namespace requires it;
    the runtime macros/vars — track!/with-let, stores, the frame-scheduler
    hook, the track-watch registry — are required directly by their users."
-  (:require [kmet.libs.hikap.component]))
+  (:require [kmet.hikap.component]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; defcomponent — record + IComponent boilerplate
@@ -16,7 +16,7 @@
 (defn- track!-form?
   "True when FORM is a (track! ...) call — recognized however the macro is
    reached: bare/referred, or through any namespace alias of
-   kmet.libs.hikap.component."
+   kmet.hikap.component."
   [form]
   (and (seq? form)
        (let [h (first form)]
@@ -34,7 +34,7 @@
    reactive watches make it redundant, but explicit invalidation must stay
    correct)."
   []
-  '(invalidate [this] (kmet.libs.hikap.component/invalidate-cache this)))
+  '(invalidate [this] (kmet.hikap.component/invalidate-cache this)))
 
 (defn- prepend-cache-clear
   "Prepend the track! cache clear to a custom invalidate method body, using
@@ -44,7 +44,7 @@
   (let [[_ args & body] invalidate-form
         this-arg (first args)]
     (list* 'invalidate args
-           (list 'kmet.libs.hikap.component/invalidate-cache this-arg)
+           (list 'kmet.hikap.component/invalidate-cache this-arg)
            body)))
 
 (defn- body-method
@@ -59,7 +59,7 @@
   (let [[_ args & body] dispose-form
         this-arg (first args)]
     (list* 'dispose args
-           (list 'kmet.libs.hikap.component/remove-track-watches! this-arg)
+           (list 'kmet.hikap.component/remove-track-watches! this-arg)
            body)))
 
 (defmacro defcomponent
@@ -88,7 +88,7 @@
    (their own ns need not require it — clj-kondo would flag that as
    unused); the symbol is inserted literally (`~'`) so a template bare
    `kmet.tui.protocols` cannot be resolved by syntax-quote at
-   macro-definition time into `kmet.libs.hikap.component/kmet.tui.protocols` when
+   macro-definition time into `kmet.hikap.component/kmet.tui.protocols` when
    this namespace is compiled before protocols is loaded (jolt's all-ns
    exposes vendored namespaces before they are loaded)."
   [name _kind fields & body]
@@ -106,7 +106,7 @@
           dispose (if custom-dispose
                     (prepend-dispose-cleanup custom-dispose)
                     '(dispose [_this]
-                              (kmet.libs.hikap.component/remove-track-watches! _this)))
+                              (kmet.hikap.component/remove-track-watches! _this)))
           custom-invalidate (body-method body 'invalidate)
           invalidate (cond
                        custom-invalidate (if track?

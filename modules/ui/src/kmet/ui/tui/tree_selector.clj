@@ -29,7 +29,7 @@
             [kmet.tui.core :as tui]
             [kmet.tui.keys :as keys]
             [kmet.tui.keybindings :as tui-kb]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]

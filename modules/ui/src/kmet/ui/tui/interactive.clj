@@ -4,7 +4,7 @@
    pi: modes/interactive/interactive-mode.ts."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.terminal :as term]
             [kmet.tui.theme :as th]
@@ -24,7 +24,7 @@
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.session-selector :refer [show-session-selector]]
             [kmet.libs.process :as process]
-            [kmet.libs.reakt.core :as reakt]
+            [kmet.reakt.core :as reakt]
             [kmet.ui.tui.interactive.layout :as layout]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.ui.tui.interactive.state :as state]))

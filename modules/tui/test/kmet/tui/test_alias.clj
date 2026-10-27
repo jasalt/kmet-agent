@@ -1,18 +1,18 @@
 (ns kmet.tui.test-alias
   "Headless tests for qualified-keyword tag aliases (tui.md §2.9):
-   resolution through kmet.libs.hikap.alias, attrs/children delivery, the
+   resolution through kmet.hikap.alias, attrs/children delivery, the
    fn-component behaviors an alias inherits (keyed reuse, with-let state,
    reactions, refs, dispose), registration lifecycle (last-wins, identity-
    guarded deregistration, call-time re-resolution), defalias, and the
    loud unknown/unregistered errors."
   (:require [clojure.string :as str]
             [clojure.test :as t]
-            [kmet.libs.hikap.alias :as alias]
+            [kmet.hikap.alias :as alias]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.hikap :as h]
-            [kmet.libs.hikap.component :refer [with-let]]
-            [kmet.libs.reakt.core :as r]))
+            [kmet.hikap.component :refer [with-let]]
+            [kmet.reakt.core :as r]))
 
 ;; restore the load-time registry (the defalias below) after each test so
 ;; tests never leak registrations into one another

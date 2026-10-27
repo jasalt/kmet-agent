@@ -24,7 +24,7 @@
             [kmet.libs.http :as http]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.components.expandable-text :as expandable-text]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.hikap :as h]
             [kmet.tui.core :as tui]
             [kmet.tui.protocols :as protocols]

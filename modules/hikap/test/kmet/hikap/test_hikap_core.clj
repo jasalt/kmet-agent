@@ -1,9 +1,9 @@
-(ns kmet.libs.test-hikap-core
+(ns kmet.hikap.test-hikap-core
   (:require [clojure.test :as t]
-            [kmet.libs.hikap.core :as engine]
-            [kmet.libs.hikap.alias :as alias]
-            [kmet.libs.hikap.test-support :as ts]
-            [kmet.libs.hikap.component :as component]))
+            [kmet.hikap.core :as engine]
+            [kmet.hikap.alias :as alias]
+            [kmet.hikap.test-support :as ts]
+            [kmet.hikap.component :as component]))
 
 (def backend ts/backend)
 
@@ -201,14 +201,14 @@
     (t/is (= 42 @r))))
 
 (t/deftest compute-auto-disposes-with-store
-  (let [s (kmet.libs.hikap.component/new-store)
+  (let [s (kmet.hikap.component/new-store)
         _calls (atom [])]
-    (kmet.libs.hikap.component/with-store s
-      (kmet.libs.hikap.component/begin-pass! s)
+    (kmet.hikap.component/with-store s
+      (kmet.hikap.component/begin-pass! s)
       (let [r (engine/compute [] (fn [] 99))]
         (t/is (= 99 @r))
         ;; register cleanup? compute registered cleanup when *store* bound
-        (kmet.libs.hikap.component/destroy-store! s)
+        (kmet.hikap.component/destroy-store! s)
         (t/is (true? true))))))
 
 ;; ── render-component props re-run ────────────────────────────────────────────

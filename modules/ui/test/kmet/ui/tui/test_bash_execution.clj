@@ -5,7 +5,7 @@
             [kmet.libs.concurrent :as concurrent]
             [kmet.tui.components.spinner :as spinner]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.timers :as timers]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]

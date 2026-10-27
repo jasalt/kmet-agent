@@ -12,7 +12,7 @@
    can never be overridden and stays immutable."
   (:require [clojure.string :as str]
             [kmet.ui.tui.subs :as s]
-            [kmet.libs.reakt.core :as reakt]
+            [kmet.reakt.core :as reakt]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as theme]
             [kmet.tui.timers :as timers]
@@ -24,7 +24,7 @@
             [kmet.ui.tui.custom-dialog-adapter :as cda]
             [kmet.ui.tui.image-block :as image-block]
             [kmet.tui.components.spacer :as spacer]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 ;; ─── Renderer dispatch ─────────────────────────────────────────────────────

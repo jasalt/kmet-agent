@@ -1,6 +1,6 @@
-(ns kmet.libs.test-hikap-alias
+(ns kmet.hikap.test-hikap-alias
   (:require [clojure.test :as t]
-            [kmet.libs.hikap.alias :as alias]))
+            [kmet.hikap.alias :as alias]))
 
 (t/use-fixtures :each (fn [f]
                         (let [snapshot (alias/registered)]

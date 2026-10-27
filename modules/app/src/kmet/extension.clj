@@ -3,8 +3,9 @@
    on (psi: the extension-api contract; pi: the `pi` object passed to the
    extension factory). Extensions may also use the shared library layers
    kmet.tui.* (generic TUI components; pi: @earendil-works/pi-tui) and
-   kmet.libs.* (generic, self-contained utilities) — injected by reference,
-   never re-evaluated. Everything else in kmet.* is off-limits.
+   kmet.libs.* / kmet.reakt.* / kmet.hikap.* (generic, self-contained
+   utilities and the framework modules they compose) — injected by
+   reference, never re-evaluated. Everything else in kmet.* is off-limits.
 
    **Building UI**: extensions build their own components with kmet.tui.*
    (Container/Text/SelectList/Input/... + kmet.tui.theme for styling) and
@@ -78,7 +79,7 @@
 ;;   :register-shortcut! :register-markdown-transformer! :send-message!
 ;;   :register-entry-renderer! :register-message-renderer!
 ;;   :register-alias!                                   — tag aliases
-;;     (kmet.libs.hikap.alias): register a qualified-keyword tag into the hiccup
+;;     (kmet.hikap.alias): register a qualified-keyword tag into the hiccup
 ;;     tree; removed automatically on unload
 ;;   :register-skill! :register-prompt!                 — bundled resources
 ;;   :set-model :get-thinking-level :set-thinking-level :send-user-message
@@ -190,7 +191,7 @@
   ((:register-message-renderer! api) custom-type renderer))
 
 (defn register-alias!
-  "Register a tag alias (kmet.libs.hikap.alias): a qualified keyword usable as a
+  "Register a tag alias (kmet.hikap.alias): a qualified keyword usable as a
    hiccup element head, resolving to F — (fn [attrs children] tree); attrs
    is the element's props map without :key/:ref, children a flat vector of
    raw child nodes ([] when none). Trees elsewhere then embed

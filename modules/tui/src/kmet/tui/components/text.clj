@@ -2,7 +2,7 @@
   "Text component - displays multi-line text with word wrapping."
   (:require [clojure.string :as str]
             [kmet.tui.utils :as u]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defcomponent Text nil [text-atom padding-x padding-y bg-fn cache]

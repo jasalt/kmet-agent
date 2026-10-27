@@ -15,7 +15,7 @@
    footer below never jump."
   (:require [clojure.string :as str]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt.core :as r]
+            [kmet.reakt.core :as r]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]
             [kmet.tui.components.spinner :as spinner]

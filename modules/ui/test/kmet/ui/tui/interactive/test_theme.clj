@@ -8,7 +8,7 @@
             [kmet.tui.components.editor :as editor]
             [kmet.tui.components.expandable-text :as expandable-text]
             [kmet.tui.components.text :as text]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.theme :as theme]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.core :as tui]

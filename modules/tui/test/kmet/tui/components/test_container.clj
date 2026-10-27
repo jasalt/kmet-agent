@@ -4,7 +4,7 @@
             [kmet.tui.core :as core]
             [kmet.tui.components.container :as container]
             [kmet.tui.components.text :as text]
-            [kmet.libs.hikap.component :as component]
+            [kmet.hikap.component :as component]
             [kmet.tui.protocols :as protocols]))
 
 (t/deftest test-container-create

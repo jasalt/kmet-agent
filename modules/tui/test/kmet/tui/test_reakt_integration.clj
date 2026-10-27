@@ -1,5 +1,5 @@
 (ns kmet.tui.test-reakt-integration
-  "Integration tests: kmet.libs.reakt.core exercised through
+  "Integration tests: kmet.reakt.core exercised through
    the TUI harness (dsl.md Stage 1).
    No terminal, no sleeps: dependency discovery, watch set-diff, =-gated
    notification, queue draining, plain-atom interop, component-body capture
@@ -11,8 +11,8 @@
             [kmet.tui.components.text :as text]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.hikap :as hicc]
-            [kmet.libs.hikap.component :as component :refer [with-let]]
-            [kmet.libs.reakt.core :as r]))
+            [kmet.hikap.component :as component :refer [with-let]]
+            [kmet.reakt.core :as r]))
 
 (defn- rd
   "Tracked deref for reaction bodies under test."

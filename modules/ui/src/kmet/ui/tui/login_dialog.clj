@@ -19,11 +19,11 @@
             [kmet.tui.components.input :as input]
             [kmet.tui.keybindings :as kb]
             [kmet.tui.core :as tui]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.hikap :as hiccup]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt.core :as r]
+            [kmet.reakt.core :as r]
             [kmet.tui.theme :as theme]
             [kmet.tui.utils :as u]))
 

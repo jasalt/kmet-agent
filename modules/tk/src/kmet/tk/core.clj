@@ -29,13 +29,13 @@
    The engine's :render-items/:render-all hooks exist for output-producing
    toolkits; Tk widgets are live the moment reconcile constructs them, so
    they return nil and kmet.tk.tcl drives re-renders with a pump armed
-   through kmet.libs.hikap.component/set-frame-hook!."
+   through kmet.hikap.component/set-frame-hook!."
   (:require [clojure.string :as str]
             [kmet.tk.dsl :as dsl]
             [kmet.tk.options :as opt]
             [kmet.tk.ttk :as ttk]
-            [kmet.libs.hikap.component :as component]
-            [kmet.libs.hikap.core :as engine])
+            [kmet.hikap.component :as component]
+            [kmet.hikap.core :as engine])
   (:refer-clojure :exclude [run!]))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
@@ -481,7 +481,7 @@
                                                  {:text (or text "") :anchor :w :justify :left}))))
 
 (def tk-backend
-  "The Tk backend map for kmet.libs.hikap.core."
+  "The Tk backend map for kmet.hikap.core."
   {:name :tk
    :tags tags
    :text-leaf text-leaf

@@ -11,7 +11,7 @@
             [kmet.app.tools.config :as tools-config]
             [kmet.ui.tui.resource-config :as rc]
             [kmet.app.config :as cfg]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.keybindings :as tui-kb]
             [kmet.tui.protocols :as protocols]
             [kmet.tui.theme :as th]

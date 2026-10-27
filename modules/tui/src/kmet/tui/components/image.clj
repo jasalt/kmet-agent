@@ -5,7 +5,7 @@
   (:require [kmet.tui.protocols :as protocols]
             [kmet.libs.terminal-image :as img]
             [kmet.tui.utils :as utils]
-            [kmet.libs.hikap.component :refer [track!]]
+            [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]))
 
 (defn image-get-id

@@ -1,6 +1,6 @@
-(ns kmet.libs.test-hikap-component
+(ns kmet.hikap.test-hikap-component
   (:require [clojure.test :as t]
-            [kmet.libs.hikap.component :as c]))
+            [kmet.hikap.component :as c]))
 
 (t/deftest new-store-shape
   (let [s (c/new-store)]

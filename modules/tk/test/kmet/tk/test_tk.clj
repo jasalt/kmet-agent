@@ -12,10 +12,10 @@
             [kmet.tk.core :as tk]
             [kmet.tk.dsl :as dsl]
             [kmet.tk.options :as opt]
-            [kmet.libs.hikap.core :as engine]
-            [kmet.libs.hikap.alias :as alias]
-            [kmet.libs.hikap.component :as component]
-            [kmet.libs.reakt.core :as r]))
+            [kmet.hikap.core :as engine]
+            [kmet.hikap.alias :as alias]
+            [kmet.hikap.component :as component]
+            [kmet.reakt.core :as r]))
 
 ;; ─── Tcl quoting ──────────────────────────────────────────────────────────
 

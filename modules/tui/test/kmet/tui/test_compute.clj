@@ -1,5 +1,5 @@
 (ns kmet.tui.test-compute
-  "Headless tests for kmet.libs.hikap.core/compute (dsl.md §3.1, Stage 5): derived refs —
+  "Headless tests for kmet.hikap.core/compute (dsl.md §3.1, Stage 5): derived refs —
    sugar over reactions with the dep list seeding tracking — with equal-value
    no-op notification, auto-disposal for per-instance computes, record
    components subscribing through the track!/RXRef bridge, and the
@@ -8,13 +8,13 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [kmet.tui.core :as core]
-            [kmet.libs.hikap.core :as engine]
+            [kmet.hikap.core :as engine]
             [kmet.tui.hikap :as h]
-            [kmet.libs.hikap.component :as component :refer [with-let track!]]
+            [kmet.hikap.component :as component :refer [with-let track!]]
             [kmet.tui.macros :refer [defcomponent]]
             [kmet.tui.protocols :as protocols]
-            [kmet.libs.reakt.core :as rag]
-            [kmet.libs.reakt.weak :as weak]))
+            [kmet.reakt.core :as rag]
+            [kmet.reakt.weak :as weak]))
 
 (defcomponent Probe nil [cache-atom render-count-atom body]
   (render [this width]
@@ -261,7 +261,7 @@
         c1 (make-probe dep-a)
         c2 (make-probe dep-b)]
     (t/is (= ["0"] (protocols/render c1 40)))
-    (let [key (:kmet.libs.hikap.component/watch-key (meta shared))]
+    (let [key (:kmet.hikap.component/watch-key (meta shared))]
       (t/is (contains? (.getWatches dep-a) key))
       ;; width 41 busts c1's cache, so c2 reaches the register path
       (t/is (thrown? clojure.lang.ExceptionInfo (protocols/render c2 41)))

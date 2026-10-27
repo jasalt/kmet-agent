@@ -53,8 +53,8 @@
                ;; the whole module: the theme loader lives here now, under its
                ;; kmet.tui name, because app (rank 2) and tui (rank 2) both read it
                ["" "modules/libs/src"]
-               ["kmet.libs" "modules/hikap/src/kmet/libs"]
-               ["kmet.libs" "modules/reakt/src/kmet/libs"]]]
+               ["kmet.hikap" "modules/hikap/src/kmet/hikap"]
+               ["kmet.reakt" "modules/reakt/src/kmet/reakt"]]]
     (into #{}
           (mapcat (fn [[prefix dir]]
                     (map #(library-ns-name prefix dir %)
