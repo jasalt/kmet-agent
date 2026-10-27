@@ -1467,6 +1467,11 @@ DSL tags of §2.2):
 | `image` | inline image protocol rendering (kitty/iTerm style) |
 | `alt_screen_flash` | transient flash messages — host-composited over the screen bottom, inline lines when tree-mounted |
 
+Editor submit callbacks receive expanded paste content, not the collapsed display
+markers (including command-name autocomplete submission). App follow-up submission
+and queue restoration likewise read `editor-get-expanded-text` before replacing or
+clearing the editor; `editor-get-text` remains the raw display-text accessor.
+
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the
 app-layer `bash_execution` its top/bottom rules — each with a `:border` style.

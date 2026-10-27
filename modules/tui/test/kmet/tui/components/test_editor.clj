@@ -876,6 +876,20 @@
     (t/is (= "/model " @submitted) "slash completion applies then submits")
     (t/is (nil? @(:autocomplete-state e)))))
 
+(t/deftest test-submit-expands-collapsed-pastes
+  (doseq [autocomplete? [false true]]
+    (let [e (make-ac-editor)
+          pasted (clojure.string/join "\n" (repeat 15 "original text"))
+          submitted (atom nil)]
+      (core/editor-set-on-submit! e #(reset! submitted %))
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #1"))
+      (when autocomplete?
+        (swap! (:state-atom e) assoc :cursor-line 0 :cursor-col 0)
+        (doseq [c "/mo"] (core/handle-input e (str c))))
+      (core/handle-input e K-ENTER)
+      (t/is (= (str (when autocomplete? "/model ") pasted) @submitted)))))
+
 (t/deftest test-autocomplete-escape-cancels
   (let [e (make-ac-editor)
         submitted (atom :none)]
