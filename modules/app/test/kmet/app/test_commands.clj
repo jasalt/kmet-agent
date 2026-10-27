@@ -130,6 +130,50 @@
     (t/is (str/includes? (second @got) ":sessionPersistence")
           "a service name prints bare in inject=")))
 
+(t/deftest units-renders-the-process-tree-over-the-agent-s-own-ctx
+  ;; The command ctx carries the run's engine, whose agent runs on a child ctx
+  ;; (`kmet.app.agents`, 4c-iii-b). The mounted rows this command exists to
+  ;; show hang under the process root; an agent's ctx holds only what a preset
+  ;; composed on it, so rendering that subtree answered with one line and no
+  ;; units. The root wins; the agent line is a unit in its tree.
+  (let [root (support/composition-ctx)
+        _ (builtins/register-runtime-commands! (constantly root))
+        agent-ctx (srce/extend root {:name :agent/probe})
+        engine {:agent-state (atom {:ctx agent-ctx})}
+        got (atom nil)]
+    (try
+      ((:handler (commands/find-command "units"))
+       {:runtime engine
+        :ui {:info (fn [label content] (reset! got [label content]))}} nil)
+      (t/is (= "Units" (first @got)))
+      (t/is (str/starts-with? (second @got) "[:app]")
+            "the process root is the first line, not the agent's ctx")
+      (t/is (str/includes? (second @got) "[:app :agent/probe]")
+            "the agent is a unit in the process tree")
+      (t/is (str/includes? (second @got) ":commands")
+            "the app's mounted rows are there, which the agent subtree lacks")
+      (finally
+        (srce/detach! agent-ctx)))))
+
+(t/deftest units-falls-back-to-the-agent-ctx-with-no-root-behind-it
+  ;; A bare engine (a test, an embedded run) has no process root: its own agent
+  ;; ctx is then the most specific tree the command can answer.
+  (let [root (support/composition-ctx)
+        _ (builtins/register-runtime-commands! (constantly nil))
+        agent-ctx (srce/extend root {:name :agent/probe})
+        engine {:agent-state (atom {:ctx agent-ctx})}
+        got (atom nil)]
+    (try
+      ((:handler (commands/find-command "units"))
+       {:runtime engine
+        :ui {:info (fn [_ content] (reset! got content))}} nil)
+      (t/is (str/starts-with? @got "[:app :agent/probe]")
+            "the render is scoped to the agent's ctx")
+      (t/is (not (str/includes? @got ":commands"))
+            "the app's rows are above it, not in it")
+      (finally
+        (srce/detach! agent-ctx)))))
+
 (t/deftest units-shows-a-pending-fiber-and-what-it-waits-for
   ;; The question the store could only answer as absence: a row that is not
   ;; active says so, and says what it is waiting for.

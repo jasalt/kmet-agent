@@ -122,22 +122,25 @@
       nil)))
 
 (defn- handle-units
-  "Show the unit tree under the ctx the command runs in: one flat line per ctx
-   and per mounted fiber, with a pending fiber's `waiting-for` and a failed
-   one's error, and each fiber's state, `inject`, `provides` and effect labels
-   (`kmet.app.inspect`). A command run inside an agent renders that agent's
-   subtree; a bare engine has none, so the process root's — ROOT-CTX-FN returns
-   it, read per invocation so a root booted after registration is the one
-   rendered."
+  "Show the process's unit tree: one flat line per ctx and per mounted fiber,
+   with a pending fiber's `waiting-for` and a failed one's error, and each
+   fiber's state, `inject`, `provides` and effect labels (`kmet.app.inspect`).
+
+   ROOT-CTX-FN returns the ctx to render and is read per invocation, so a root
+   booted after registration is the one rendered. It is the **process root**,
+   not the command's agent: the rows `/units` exists to show are mounts under
+   the root (the same tree `--dump-state` prints), while an agent's ctx holds
+   what a preset composed on it. An engine with no root behind it renders its
+   own agent ctx — the most specific tree a bare engine can answer."
   [root-ctx-fn {:keys [ui] engine :runtime} _]
   (out ui :info "Units"
-       (inspect/units (or (runtime/agent-ctx engine) (root-ctx-fn)))))
+       (inspect/units (or (root-ctx-fn) (runtime/agent-ctx engine)))))
 
 (defn register-runtime-commands!
   "Register the engine-portable builtins (untagged: every front end
    dispatches them) on the app root. A front end calls this with its builtin
-   registration and ROOT-CTX-FN, the process root ctx `/units` falls back to for
-   an engine that has no agent ctx of its own."
+   registration and ROOT-CTX-FN, the process root ctx `/units` renders — read
+   per invocation, so a root booted after registration is the one rendered."
   [root-ctx-fn]
   (commands/register-builtin!
 

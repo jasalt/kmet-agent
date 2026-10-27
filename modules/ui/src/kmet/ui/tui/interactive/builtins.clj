@@ -346,10 +346,11 @@
   "Register kmet's builtin slash commands. Handlers receive [cs args];
    argument completions feed the editor autocomplete dropdown.
 
-   ROOT-CTX-FN returns the ctx `/units` falls back to for an engine with no
-   agent ctx of its own. The layout passes the run's composition root; the
-   1-arity reads the process root, which is what kmet1's entry registers
-   against (and what a bare test has)."
+   ROOT-CTX-FN returns the ctx `/units` renders: the process tree, because the
+   mounted units it lists hang under the root, not under the agent the command
+   runs in (an agent's ctx holds what a preset composed on it). The layout
+   passes the run's composition root; the 1-arity reads the process root, which
+   is what kmet1's entry registers against (and what a bare test has)."
   ([config] (register-builtin-commands! config root/ctx))
   ([_config root-ctx-fn]
    (runtime-commands/register-runtime-commands! root-ctx-fn)

@@ -2,8 +2,11 @@
   "The booted view: a ctx tree as text — `/units` and `--dump-state`.
 
    One renderer, two entry points: `units` renders the subtree of the ctx it is
-   given, so `/units` inside an agent shows that agent and the flag shows the
-   root. A command and a flag that compute a listing separately drift.
+   given, and both entry points hand it the **process root** — `/units` the
+   live one, `--dump-state` the one it booted — so the command and the flag
+   cannot compute two listings that drift. A subtree is still a valid origin (an
+   agent's ctx holds what a preset composed on it, not the app's mounts); it is
+   just not what either entry point asks for.
 
    One unit per line with no indentation (the path is in the line), parents
    before children and fibers in mount order — the two properties that made
@@ -149,6 +152,7 @@
 (defn units
   "The unit tree under CTX as text: one flat line per unit, parents before
    children, fibers in mount order. CTX itself renders as a ctx even when it is
-   a mount's own ctx, because it is the origin of what was asked for."
+   a mount's own ctx, because it is the origin of what was asked for — the
+   process root for both entry points."
   [ctx]
   (render (into [(ctx-line ctx)] (mapcat unit-lines (srce/children ctx)))))

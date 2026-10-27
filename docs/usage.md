@@ -170,7 +170,7 @@ startup and on `/reload`, after the auto resource dirs.
 | `/scoped-models` | Enable/disable/reorder the models Ctrl+P cycles through (Ctrl+S saves to settings) |
 | `/settings` | Settings menu — thinking, display, tool display, steering/follow-up mode, HTTP transport + timeouts, auto-compact, retry, repeat guard, images, skill commands, terminal progress, clear on shrink, theme (single or automatic light/dark) |
 | `/tools` | List available tools with parameters |
-| `/units` | List the unit tree — one flat line per ctx and per mounted plugin fiber, with its state, what it injects and provides, its effect labels, and what a pending fiber waits for or why a failed one failed |
+| `/units` | List the process's unit tree — one flat line per ctx and per mounted plugin fiber, with its state, what it injects and provides, its effect labels, and what a pending fiber waits for or why a failed one failed |
 | `/login [provider]` | Configure provider auth — API key, or OAuth: Copilot device-code, Codex browser/device, Anthropic & OpenRouter browser PKCE |
 | `/logout [provider]` | Remove stored provider credentials |
 | `/new` | Start a new session |
