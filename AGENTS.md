@@ -27,7 +27,7 @@ entry or a new global.
 | Area | Authoritative reference |
 |------|-------------------------|
 | Application layout and contributor workflow | [`docs/architecture.md`](docs/architecture.md) |
-| Kernel: ctx tree, services, inject, fibers, effects, events | [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
+| Kernel: ctx tree, services, inject, fibers, effects, events | usage: [`modules/srce/README.md`](modules/srce/README.md); contracts: [`modules/srce/src/kmet/srce/srce.md`](modules/srce/src/kmet/srce/srce.md) |
 | kmet2 application: services, agents, sessions, profiles, landings | [`docs/architecture.md`](docs/architecture.md); design record and migration ledger in [`new-app.md`](new-app.md) |
 | TUI, components, Hiccup, reactivity, input, and rendering | [`modules/tui/src/kmet/tui/tui.md`](modules/tui/src/kmet/tui/tui.md) |
 | Tk backend and its widget sample (`kmet.tk.*`, `kmet.gui-sample.*`) | [`modules/tk/src/kmet/tk/README.md`](modules/tk/src/kmet/tk/README.md) |

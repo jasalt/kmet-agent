@@ -4,7 +4,9 @@ Implementation note for the `kmet.srce.*` module, beside its code. kmet2's
 application architecture — services, agents, sessions, profiles, landings — is
 in `new-app.md`; this file is the kernel only: its
 ctx model, the lifecycle, the plugin contract, the contracts the tests pin, and
-what was deliberately left out.
+what was deliberately left out. User-facing usage (what srce is for, the five
+principles and a how-to) is [`modules/srce/README.md`](../../../README.md); this
+file is the reference its contracts and internal decisions live in.
 
 The name is **`srce`** — heart (South Slavic). Cordis is Latin for the same
 thing (`cor`, `cordis`), which is what the kernel is to the system: the one
@@ -118,7 +120,7 @@ not a set of modules whose callers each pick their own:
 (srce/runtimes ctx)                      ; [runtime …], mount order
 (srce/dispose! fiber)                    ; effects LIFO; sync → nil
 (srce/restart! fiber)                    ; dispose then mount again → a new fiber
-(srce/dispose-plugin! web-search)        ; every fiber of one source
+(srce/dispose-plugin! ctx web-search)    ; every fiber of one source
 (srce/dispose-subtree! ctx)              ; every fiber under ctx, children first
 (srce/effect ctx f)                      ; → disposer (single-shot, sync)
 (srce/effects fiber)                     ; the effect labels, creation order
@@ -262,12 +264,13 @@ Cordis's reflect layer, minus everything the light kernel doesn't need.
   siblings under the root, so `kmet.app.events` provides its service
   `{:in (:parent ctx)}`. The duplicate check reads from the target scope, and
   the entry still dies with the providing fiber.
-- **`check` is a predicate on the value.** `(provide! ctx :ui v {:check ready?})`
-  — false or a throw reads as "unavailable" for `get` and for inject. It is
-  evaluated on every read and at every pass, and a pass always re-evaluates
-  `:pending` fibers (even with an empty change set), so a check that turns true
-  is noticed at the next `settle!`. A check that turns **false** on an active
-  provider is not a revocation: dispose or re-provide to revoke.
+- **`check` is a thunk answering whether the value is available now.**
+  `(provide! ctx :ui v {:check ready?})` — `(ready?)` is called on every read
+  and at every pass; false or a throw reads as "unavailable" for `get` and for
+  inject. A pass always re-evaluates `:pending` fibers (even with an empty
+  change set), so a check that turns true is noticed at the next `settle!`. A
+  check that turns **false** on an active provider is not a revocation: dispose
+  or re-provide to revoke.
 - **`provider` is a read**, not state: it returns the
   `{:name :fiber :value :check}` record, including one whose fiber is not yet
   active.
@@ -459,7 +462,7 @@ The kernel needs a notification path, not an event framework:
 - `(names ctx)` enumerates what is registered on the chain, sorted: the kernel
   owns the table, so reporting a subscription list is the kernel's read, not a
   second atom anything can drift from.
-- A ctx's listeners run for emits on that ctx **and its ancestors**, so a
+- A ctx's listeners run for emits on that ctx **and its descendants**, so a
   subtree scopes naturally; `:filter` receives each listener's own ctx (a
   listener cannot opt out), which is the shape the node-scoped bus needs.
 - Registration order, `once` disposes before invoking, and the disposer reports

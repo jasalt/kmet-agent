@@ -10,7 +10,7 @@
 
    `on!` registers through `srce/on` with `{:data owner}`, so a registration is
    an effect of the registering fiber (an unload unregisters it LIFO), what a
-   listener hears is decided by where it registers (the ctx and its ancestors),
+   listener hears is decided by where it registers (the ctx and its descendants),
    and `srce/collect-all!` reports `[owner result]` pairs — a contribution
    applied under the owner that made it.
 
