@@ -1475,7 +1475,9 @@ Paste expansion preserves stored content literally, matches each marker id
 exactly (`#1` never claims `#10`), and runs in one pass, so marker-like text
 inside pasted content is never expanded. Marker IDs must start immediately after
 `[paste #` and remain within the closing bracket; malformed markers without an
-ID stay literal rather than borrowing digits from later text.
+ID stay literal rather than borrowing digits from later text. Scanning resumes
+inside rejected candidates so an unfinished literal prefix cannot hide a later
+valid paste marker.
 
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the

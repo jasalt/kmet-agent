@@ -1122,7 +1122,8 @@
           "#1 does not claim the #10/#11 markers")))
 
 (t/deftest test-editor-get-expanded-text-preserves-markers-without-ids
-  (doseq [literal ["[paste #]" "[paste #oops1]" "[paste #] 1"]]
+  (doseq [literal ["[paste #]" "[paste #oops1]" "[paste #] 1"
+                   "[paste #" "[paste #oops1" "[paste # then [paste #"]]
     (let [e (editor/make-editor)
           pasted (clojure.string/join "\n" (repeat 15 "payload"))
           prefix (str "literal " literal " followed by ")

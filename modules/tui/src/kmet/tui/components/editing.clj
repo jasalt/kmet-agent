@@ -355,7 +355,7 @@
           (if id-str
             (recur (inc end-idx)
                    (conj found {:id (parse-long id-str) :start idx :end (inc end-idx)}))
-            (recur (inc end-idx) found)))
+            (recur (+ idx (count paste-marker-prefix)) found)))
         found)
       found)))
 
