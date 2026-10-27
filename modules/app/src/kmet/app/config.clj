@@ -337,6 +337,27 @@
   []
   (str (fs/path (fs/cwd) ".kmet")))
 
+;; ─── Composition layers ────────────────────────────────────────────────
+
+(defn global-patch-path
+  "Path of the global composition layer (~/.kmet/agent/patch.edn,
+   KMET_CODING_AGENT_DIR-aware)."
+  []
+  (str (fs/path (get-agent-dir) "patch.edn")))
+
+(defn project-patch-path
+  "Path of the project composition layer (.kmet/patch.edn, resolved against
+   the current working directory)."
+  []
+  (str (fs/path (fs/cwd) ".kmet" "patch.edn")))
+
+(defn patch-paths
+  "The user composition layers that apply to every profile, in application
+   order: the agent dir's patch.edn, then the project's. A missing file is not
+   a layer; an existing one is read and validated by the composition."
+  []
+  (filterv fs/exists? [(global-patch-path) (project-patch-path)]))
+
 (defn save-setting!
   "Persist a setting to the global settings.edn (pi: SettingsManager.save —
    only the given field is merged into the current file content, nested keys

@@ -31,9 +31,11 @@ one thing every other part is wired through. The name also stays clear of
 ## Reconciliation (HEAD `214b551b`)
 
 The ledger closed at `fc13faf1`; the tree moved once more before HEAD, and two
-promises in this note were never delivered: `:ext/…` composition rows, and the
-profile file layers beyond `--patch`. This section is the truth pass, so the
-sections below can stay the design record of their time.
+promises in this note were not delivered there: `:ext/…` composition rows and
+the profile file layers beyond `--patch`. Both have since shipped (the layers
+at `~/.kmet/agent/patch.edn` / `.kmet/patch.edn`; the rows through
+`kmet.app.extensions.rows`). This section is the truth pass, so the sections
+below can stay the design record of their time.
 
 **One app, one entry.** kmet1 was retired in `5ff5d34d`, before this note was
 deleted: `modules/agent` is gone, `--app` is `:kmet.app/bad-args`
@@ -91,27 +93,28 @@ names for transport. kmet1's process table and the "two tables" bridge are
 gone (`6f5b7885`, `62e710d7`, and the kmet1 retirement), so any passage below
 that describes a kmet1 bus alongside the app's is history.
 
-**Open: `:ext/…` composition rows.** This is the one promise from landing 4
-that did not ship, and the reason this note is back. § Profiles and presets,
-§ Pluggable modes and the 4b row all say a profile row resolves an extension id
-(`:ext/grep-tool`). At HEAD:
+**`:ext/…` composition rows (closed).** This was the one promise from
+landing 4 that had not shipped. At the reconciliation pass,
+`kmet.app.catalog/describe` named an `:ext/…` source and stopped, and
+`kmet.app.runtime/row-source` refused it; the row's `:config` never reached the
+extension. It now does, end to end:
 
-- `kmet.app.catalog/describe` names an `:ext/…` source and stops — the card is
-  `{:name :ext/… :external true}`.
-- `kmet.app.runtime/row-source` refuses it (`:kmet.app/external-source`), and
-  `kmet.app.test-runtime` / `kmet.app.test-catalog` pin the refusal.
-- Extensions load through `kmet.app.world` → `kmet.app.packages` after the
-  composition mounts, and the host mounts each under the root ctx. Nothing
-  resolves an extension id *to a plugin map* before boot, and the wrapper
-  ignores the row's `:config` (`_config` in `mount-plugin!`).
+- `kmet.app.extensions.rows` resolves an id from the installed set before boot
+  (`kmet.app.packages/resolve-configured-packages`: top-level entries, auto
+  dirs, packages, bundled) without loading anything. The id is the manifest
+  `:name`, or a single file's basename without `.clj`; first in pi precedence
+  wins.
+- `catalog/describe` uses the resolver for the card and
+  `runtime/row-source` returns the row's adapter plugin.
+- The row's config arrives as `(:config api)` in the extension's api map, and
+  the row unloads the extension when it disposes.
+- The world loader already skips a path in the extension registry, so a named
+  extension never loads twice; `:extensions` and `:bundled-extensions` still
+  cover everything a composition does not name.
 
-Closing it means: (1) the host exposes a pre-boot resolver (`:ext/<name>` → the
-plugin map, from the discovered artifacts, without mounting); (2)
-`catalog/describe` uses it for the card and `runtime/row-source` for the mount;
-(3) the row's `:config` reaches the plugin's `:apply`; and (4) a profile that
-names `:ext/<name>` must not *also* let the world load that extension, or it
-mounts twice. Until then an extension is configured only by settings paths
-(`:extensions`) and `:bundled-extensions`, and it is not a row.
+The remaining limit: the extension's own plugin still mounts under the host
+ctx (app-wide), so an `:ext/…` row belongs to a root profile, not an agent
+preset.
 
 ## Decisions (locked)
 
@@ -920,10 +923,9 @@ where Node uses package names:
 ```
 
 - A row's `:plugin` is the **source**: a var (`kmet.app.tools.bash/plugin`) for
-  a built-in, or `:ext/grep-tool` for an extension the host resolves (**not
-  shipped** — the catalog names it and boot refuses it, § Reconciliation).
-  `:id` is the row identity `--dump-config` prints and a patch targets; it
-  defaults to the plugin's `:name`.
+  a built-in, or `:ext/grep-tool` for an installed extension by id
+  (`kmet.app.extensions.rows`). `:id` is the row identity `--dump-config`
+  prints and a patch targets; it defaults to the plugin's `:name`.
 - A **bundle** is a reusable row list + patches — the analog of dsh's
   `dsh.bundle`; a profile stacks bundles in order, then its own rows and
   patches. Presets (Standard / Minimal / PTC) are bundles.
@@ -932,14 +934,17 @@ where Node uses package names:
   `:plugin` inserts a row (positioned by `:after`/`:before`, else appended).
   A patch that names an unknown row without a `:plugin` is an error; so is a
   duplicate id across stacked bundles. Layers at HEAD: the built-in table <
-  `--patch <file>` (repeatable); the planned agent-dir `patch.edn` and the
-  further profile layers were never built, so `--patch` is the only user layer.
-  Config *values* still deep-merge as `settings.edn` does, composition does not.
+  `~/.kmet/agent/patch.edn` < `.kmet/patch.edn` < `--patch <file>`
+  (repeatable), so a project layer overrides a global one and a flag overrides
+  both. `--dump-default-config` prints the table alone. Config *values* still
+  deep-merge as `settings.edn` does, composition does not.
 - Profiles and bundles were to be EDN staged beside the binary the way
   `target/kmet-bundled` is, so a project could ship its own, and a profile
   under the agent dir could name out-of-tree plugins the way dsh's Harness home
-  does. **Not shipped:** `kmet.app.profile` reads the built-in resource table
-  plus `--patch` layers; there is no home profile and no `patch.edn` file.
+  does. **Partly shipped:** the ambient `patch.edn` layers exist, but
+  `kmet.app.profile` still reads only the built-in resource table plus the
+  layers the entry point hands it; there is no named home profile and no
+  project-shipped profile table.
 - **Package subcommands are commands, not profiles.** `install`, `remove`,
   `update`, `list` and `config` run the shared package CLI
   (`kmet.app.packages-cli`, now `app`'s) before the app's own flags, exactly
@@ -3610,10 +3615,10 @@ to landing 6.
   resolve is `:kmet.app/unknown-plugin` in `--dump-config` as well as in boot.
 - **Rows arrive described.** `kmet.app.catalog/describe` turns a row into a
   card (`:id :name :inject :provide`) without mounting anything: a var source
-  is resolved and read from its plugin map, an `:ext/…` keyword is external
-  (the host was to supply its card at load; at HEAD the dump names it and
-  stops, and boot refuses it — § Reconciliation), and `:id` defaults to the
-  plugin's `:name`. Composition is then pure data: bundle layers in order,
+  is resolved and read from its plugin map, an `:ext/…` keyword is resolved
+  from the installed extensions by name (`kmet.app.extensions.rows`; it used
+  to be an external marker at HEAD — § Reconciliation), and `:id` defaults to
+  the plugin's `:name`. Composition is then pure data: bundle layers in order,
   config deep-merged by row id, `:remove`, and an insert — a patch naming an
   unknown id that carries a `:plugin` — positioned by `:after`/`:before`.
   A patch entry's allowed keys are checked, so a typo is an error and a patch

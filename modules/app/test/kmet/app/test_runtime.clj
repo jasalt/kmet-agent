@@ -8,6 +8,7 @@
    a fixpoint including the kernel's own pass."
   (:require [clojure.test :refer [deftest is testing]]
             [kmet.app.events :as events]
+            [kmet.app.packages :as packages]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
 
@@ -95,9 +96,14 @@
     (is (= :kmet.app/unresolved-source
            (error-type #(runtime/boot {:rows [{:id :missing
                                                :plugin 'kmet.app.test-runtime/no-such-plugin}]}))))
-    (is (= :kmet.app/external-source
-           (error-type #(runtime/boot {:rows [{:id :ext :plugin :ext/unknown}]})))
-        "an :ext/… id belongs to the extension host, which has not landed")))
+    (is (= :kmet.app/bad-row
+           (error-type #(runtime/boot {:rows [{:id :registry :plugin :some/keyword}]})))
+        "a keyword that is not an :ext/… id is refused")
+    (with-redefs [packages/resolve-configured-packages
+                  (constantly {:extensions []})]
+      (is (= :kmet.app/unknown-extension
+             (error-type #(runtime/boot {:rows [{:id :ext :plugin :ext/unknown}]})))
+          "an :ext/… id resolves against the installed extensions, and an unknown one fails"))))
 
 (deftest a-diagnostic-boot-returns-the-failed-rows-instead-of-throwing
   ;; `--dump-state` must render the tree that explains a failure, so the

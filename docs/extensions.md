@@ -64,6 +64,11 @@ select which discovered items stay enabled (e.g.
 `kmet config` screen lists and toggles every discovered resource
 (extensions, skills, prompts, themes) across both scopes.
 
+A composition can also name an installed extension as a row (`:ext/<id>`):
+the row loads it with its own `:config` and owns its lifetime, and the world
+loader does not load it again. See
+[Profiles and composition](profiles.md#extensions-as-rows).
+
 ## Built-in extensions (`extensions/`)
 
 The repo ships a set of opt-in extensions in `extensions/` — nothing there is

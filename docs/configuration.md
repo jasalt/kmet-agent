@@ -47,6 +47,15 @@ A copyable starting point with the current keys is available in
 [`examples/settings.edn`](examples/settings.edn); see the
 [examples guide](examples/README.md#settings) for installation and notes.
 
+## Composition vs settings
+
+`settings.edn` holds **values** — provider, model, theme, tool selection and
+the other per-run knobs. What a run **mounts** (services, modes, and the
+plugin rows a profile stacks) is composition data: the built-in table plus a
+global `~/.kmet/agent/patch.edn` and a project `.kmet/patch.edn`. See
+[Profiles and composition](profiles.md) for the layer order and the patch
+shape.
+
 ## Provider catalogs
 
 `kmet` reads its provider catalog from `modules/ai/src/kmet/ai/model_data/*.edn`

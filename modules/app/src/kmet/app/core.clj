@@ -5,10 +5,12 @@
    The app resolves a profile's rows, patches them by row id and prints the
    result (`--dump-config`); a run without `--dump-config` composes the same
    rows and **boots** them (`kmet.app.runtime`), which is what proves a profile
-   mounts. `--dump-state` is the other half of an inspection: it boots the same
-   rows and prints the ctx tree the boot produced (`kmet.app.inspect`), which is
-   the one question a composition listing cannot answer — what is `:pending` and
-   on what, what failed and with which error.
+   mounts. Two ambient layers apply to every profile — `~/.kmet/agent/patch.edn`
+   then `.kmet/patch.edn` — and `--dump-default-config` prints the built-in
+   table without them. `--dump-state` is the other half of an inspection: it
+   boots the same rows and prints the ctx tree the boot produced
+   (`kmet.app.inspect`), which is the one question a composition listing cannot
+   answer — what is `:pending` and on what, what failed and with which error.
 
    A profile with a **mode row** runs it: the row is marked `:mode true`, and
    the entry point boots the world rows with that one deferred, loads the process
@@ -38,6 +40,7 @@
    command's output and status without forking a process."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
+            [kmet.app.config :as cfg]
             [kmet.app.debug :as debug]
             [kmet.app.packages-cli :as packages-cli]
             [kmet.app.maintenance :as maintenance]
@@ -56,6 +59,7 @@
    "--help" :help?
    "-h" :help?
    "--dump-config" :dump-config?
+   "--dump-default-config" :dump-default-config?
    "--dump-state" :dump-state?
    ;; kmet1's session-lifecycle switches. They name which session a run opens
    ;; instead of the new one it would otherwise create; only a mode that opens
@@ -169,8 +173,8 @@
 
 (defn parse-args
   "Parse kmet2's argv → `{:profile kw :patch [path …] :args [rest …] :version?
-   :help? :dump-config? :dump-state? :format kw :model str :provider kw
-   :thinking kw :models [pattern …] :system-prompt str
+   :help? :dump-config? :dump-default-config? :dump-state? :format kw :model str
+   :provider kw :thinking kw :models [pattern …] :system-prompt str
    :append-system-prompt [str …] :session-dir path :continue? :resume?
    :session str :debug :generate-models :list-models str-or-true
    :token str :socket path :max-sessions long :queue-depth long
@@ -182,15 +186,17 @@
    then applied by the mode — `kmet.app.invocation`). An `@file` argument is
    read into `:args` as kmet1 reads it. An unsupported `--flag` is an extension
    flag (`:ext-flags`), kmet1's three forms; a single-dash unknown flag stays a
-   usage error. The two dumps are different views of one composition, so asking
-   for both is a usage error rather than a silent pick."
+   usage error. The three dumps are different views of one composition, so
+   asking for more than one is a usage error rather than a silent pick."
   [args]
   (loop [in (seq args) opts {:patch [] :args []}]
     (if-not in
       (let [opts (-> (resolve-mode opts)
                      (update :profile #(or % profile/default-profile)))]
-        (when (and (:dump-config? opts) (:dump-state? opts))
-          (throw (bad-args "--dump-config and --dump-state are separate dumps; pass one")))
+        (when (> (count (filter opts [:dump-config? :dump-default-config?
+                                      :dump-state?]))
+                 1)
+          (throw (bad-args "--dump-config, --dump-default-config and --dump-state are separate dumps; pass one")))
         opts)
       (let [arg (first in)
             [flag value] (split-flag arg)]
@@ -284,10 +290,10 @@
 
           :else (recur (next in) (update opts :args conj arg)))))))
 
-;; ── --dump-config and --dump-state ───────────────────────────────────────
+;; ── --dump-config, --dump-default-config and --dump-state ────────────────
 
 (defn- read-layer
-  "Read a `--patch FILE` composition layer."
+  "Read a composition layer file: a `--patch FILE` or an ambient patch.edn."
   [path]
   (let [layer (try
                 (edn/read-string (slurp path))
@@ -300,16 +306,28 @@
                       {:type :kmet.app/bad-patch-file :path path :content layer})))))
 
 (defn compose-config
-  "Compose OPTS' profile plus its `--patch` layers, describing every row
-   through the catalog on the way. Returns `{:profile kw :rows … :patches n}`;
-   composition errors are `:kmet.app/*` ex-infos."
+  "Compose OPTS' profile plus its layers, describing every row through the
+   catalog on the way: the built-in table, then the ambient user layers
+   (`:user-layer-paths`, resolved by `main`), then the `--patch` files. Returns
+   `{:profile kw :rows … :patches n}`; composition errors are `:kmet.app/*`
+   ex-infos."
   [opts]
   (let [chosen (:profile opts)
         table (profile/builtin)
         layers (concat (profile/layers table chosen)
+                       (map read-layer (:user-layer-paths opts))
                        (map read-layer (:patch opts)))
         composed (profile/compose (map catalog/describe-layer layers))]
     (assoc composed :profile chosen)))
+
+(defn- apply-user-layers
+  "OPTS with the ambient layer paths a run applies: the agent dir's patch.edn
+   then the project's. `--dump-default-config` asks for the built-in table
+   alone, so it drops them and the `--patch` flags."
+  [opts]
+  (if (:dump-default-config? opts)
+    (assoc opts :user-layer-paths [] :patch [])
+    (assoc opts :user-layer-paths (cfg/patch-paths))))
 
 (defn- dump-config
   "The `--dump-config` text: the composed rows the boot would mount, without
@@ -384,6 +402,8 @@
   (println "  --session <id>     Open a session by id, prefix or path (the TUI)")
   (println "  --session-dir <dir> Session storage directory")
   (println "  --dump-config      Print the composed plugin rows and exit")
+  (println "  --dump-default-config")
+  (println "                     Print the built-in composition without user layers or --patch")
   (println "  --dump-state       Boot the composition, print the ctx tree, and exit")
   (println "  --version          Print the version and exit")
   (println "  -h, --help         Show this help")
@@ -411,7 +431,7 @@
     (println "  kmet --profile print \"list the files\"   one prompt, then exit")
     (println "  kmet --profile rpc                       a command stream on stdin/stdout")
     (println "  kmet --profile server [--port n]         the same protocol on a socket, per connection")
-    (println "  kmet --dump-config / --dump-state / --version")
+    (println "  kmet --dump-config / --dump-default-config / --dump-state / --version")
     (when (seq args) (println "Arguments:" (pr-str (vec args))))
     (flush))
   1)
@@ -586,8 +606,8 @@
   (try
     (if (packages-cli/package-command? args)
       (package-command args)
-      (let [{version? :version? help? :help? dump-config? :dump-config?
-             dump-state? :dump-state? leftover :args :as opts} (parse-args args)]
+      (let [{:keys [version? help? dump-config? dump-default-config? dump-state?]
+             leftover :args :as opts} (parse-args args)]
         (cond
           version? (do (println (str "kmet " (version/kmet-version))) (flush) 0)
           help? (do (print-usage) (flush) 0)
@@ -597,10 +617,13 @@
           :else
           (do
             (enable-debug! opts)
-            (cond
-              dump-config? (do (print (dump-config opts)) (flush) 0)
-              dump-state? (do (print (dump-state opts)) (flush) 0)
-              :else (run-composed opts leftover))))))
+            (let [opts (apply-user-layers opts)]
+              (cond
+                (or dump-config? dump-default-config?)
+                (do (print (dump-config opts)) (flush) 0)
+
+                dump-state? (do (print (dump-state opts)) (flush) 0)
+                :else (run-composed opts leftover)))))))
     (catch Exception e
       (cond
         (= :kmet.app/bad-args (:type (ex-data e)))

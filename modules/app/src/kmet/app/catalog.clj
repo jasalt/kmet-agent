@@ -9,12 +9,14 @@
    in the path. `defplugin` defines a valid map and dereferencing it mounts
    nothing, so this is inspection, not boot.
 
-   A source that does not resolve is a composition error (`:kmet.app/unknown-plugin`),
-   reported by `--dump-config` as well as by boot: a profile naming a plugin
-   that is not there is a typo, not a runtime condition. An `:ext/…` keyword is
-   the exception — the extension host supplies its card when it loads, so the
-   dump names it and stops there."
-  (:require [clojure.string :as str]
+   A source that does not resolve is a composition error, reported by
+   `--dump-config` as well as by boot: a var source that is not there is
+   `:kmet.app/unknown-plugin`, an extension id that is not installed is
+   `:kmet.app/unknown-extension` — both a typo, not a runtime condition. An
+   `:ext/…` source is resolved from the installed extensions by name
+   (`kmet.app.extensions.rows`) without loading it, so the dump names a real
+   row."
+  (:require [kmet.app.extensions.rows :as extension-rows]
             [kmet.srce.core :as srce]))
 
 (defn- plugin-map
@@ -41,19 +43,18 @@
 (defn describe
   "The composition card for ROW: the row plus `:id`, `:name`, `:inject` and
    `:provide`. A var `:plugin` is loaded and read; an `:ext/…` keyword is
-   external — the extension host supplies its card when it loads, so the dump
-   names it and stops there. Any other keyword is a bad row: a built-in source
-   is a var, never a registry key."
+   resolved from the installed extensions without loading it. Any other keyword
+   is a bad row: a built-in source is a var, never a registry key."
   [row]
   (let [source (:plugin row)
         described
         (cond
-          (and (keyword? source) (str/starts-with? (str source) ":ext/"))
-          (merge {:name source :external true} row {:id (or (:id row) source)})
+          (extension-rows/source? source)
+          (extension-rows/card row)
 
           (keyword? source)
-          (bad-row row (str "a keyword :plugin source is an :ext/… id the extension"
-                            " host resolves; a built-in source is a var symbol — got "
+          (bad-row row (str "a keyword :plugin source must be an :ext/… extension"
+                            " id; a built-in source is a var symbol — got "
                             (pr-str source)))
 
           (symbol? source)

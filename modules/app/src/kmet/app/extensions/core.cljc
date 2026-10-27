@@ -1111,7 +1111,8 @@
 (declare loader-aware loader-aware-map)
 
 (defn- create-extension-api
-  "Build the api map for an extension. A registration the app owns (commands,
+  "Build the api map for an extension, with the composition row's CONFIG (nil
+   for a load outside a row). A registration the app owns (commands,
    tools, tool sources, skills, prompts, hooks, renderers, flags) lands under
    the extension's own owner path, so unload deregisters it owner by owner; the
    registrations the host or a library owns (event subscriptions, aliases,
@@ -1123,142 +1124,146 @@
    process registry reaches every engine, and an owner that binds an agent's
    handle and its own ctx gets a per-agent api. The host holds no handle of
    its own."
-  [ext]
-  (let [track (fn [f] (track-deregister! ext f) f)
-        name (:name ext)]
-    {:extension-name name
-     :extension-path (:path ext)
-     ;; the extension's own directory (dir ext = the dir itself, file ext
-     ;; = the file's parent) — nil for jar extensions, which have no
-     ;; directory (use io/resource instead)
-     :extension-dir (extension-dir-of ext)
-     ;; the ctx this extension's registrations land in (the bound service's
-     ;; ctx) — exposed so an extension can use kmet.srce.core directly
-     ;; (defining plugins, providing services, using the ctx tree) while
-     ;; keeping the host as the srce authority. This is the app root the
-     ;; extension's plugin mounts under — app-wide by construction; the
-     ;; plugin's own ctx is `:apply`'s first argument. nil when no ctx is
-     ;; bound.
-     :ctx (try (:ctx (services)) (catch Exception _ nil))
-     ;; host agent dir (KMET_CODING_AGENT_DIR-aware; pi: getAgentDir) —
-     ;; extensions keep their configs/caches under it
-     :agent-dir (cfg/get-agent-dir)
-     :register-command! (fn [cmd]
+  ([ext] (create-extension-api ext nil))
+  ([ext config]
+   (let [track (fn [f] (track-deregister! ext f) f)
+         name (:name ext)]
+     {:extension-name name
+      :extension-path (:path ext)
+      ;; the row's :config when the extension mounted from an `:ext/<id>` row;
+      ;; nil for a load outside a composition
+      :config config
+      ;; the extension's own directory (dir ext = the dir itself, file ext
+      ;; = the file's parent) — nil for jar extensions, which have no
+      ;; directory (use io/resource instead)
+      :extension-dir (extension-dir-of ext)
+      ;; the ctx this extension's registrations land in (the bound service's
+      ;; ctx) — exposed so an extension can use kmet.srce.core directly
+      ;; (defining plugins, providing services, using the ctx tree) while
+      ;; keeping the host as the srce authority. This is the app root the
+      ;; extension's plugin mounts under — app-wide by construction; the
+      ;; plugin's own ctx is `:apply`'s first argument. nil when no ctx is
+      ;; bound.
+      :ctx (try (:ctx (services)) (catch Exception _ nil))
+      ;; host agent dir (KMET_CODING_AGENT_DIR-aware; pi: getAgentDir) —
+      ;; extensions keep their configs/caches under it
+      :agent-dir (cfg/get-agent-dir)
+      :register-command! (fn [cmd]
                           ;; the handler is stored under :extension-handler so
                           ;; the runner can pass it the extension context
                           ;; (pi: handler(args, ctx)) while builtin commands
                           ;; keep receiving CoreState. Registered under the
                           ;; extension's own owner, so unload removes it.
-                          (let [cmd (loader-aware-map
-                                     ext (assoc cmd :extension-handler
-                                                (:handler cmd)))]
-                            ((:register! (resources :commands))
-                             cmd (extension-owner name))))
-     :unregister-command! (fn [cmd-name]
-                            ((:unregister! (resources :commands))
-                             cmd-name (extension-owner name)))
-     ;; sanitized — other extensions must not see :handler/:extension-handler
-     :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
-                          ((:all (resources :commands))))
-     :register-tool! (fn [tool]
-                       (tools/register-tool! (handle)
-                                             (loader-aware-map ext tool)
-                                             (extension-owner name)))
-     :unregister-tool! (fn [tool-name]
-                         (tools/unregister-tool! (handle)
-                                                 tool-name
-                                                 (extension-owner name)))
-     ;; sandbox-only tools: contributed into the run_code tool's surface, never
-     ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
-     :register-tool-source! (fn [id tools-fn]
-                              (tools/register-tool-source!
-                               (handle) id tools-fn
-                               (extension-owner name)))
-     :unregister-tool-source! (fn [id]
-                                (tools/unregister-tool-source!
-                                 (handle) id
-                                 (extension-owner name)))
-     ;; pi: createBashTool — the bash tool constructor with its options
-     ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
-     ;; operations). The built-in bash tool is the same constructor with
-     ;; default options; registering the result under a name replaces it.
-     :create-bash-tool bash-tool/create-tool
-     :get-all-tools #(vals (tools/get-all-tools (handle)))
-     :get-active-tools get-active-tools
-     :set-active-tools set-active-tools
-     :on-event (fn [event-type handler]
-                 (let [dereg (event-bus/on-event
-                              event-type (extension-owner name)
-                              (wrap-event-handler (loader-aware ext handler)))]
-                   (track dereg)
-                   dereg))
-     :emit-event! event-bus/emit-event!
-     ;; The hooks, renderers and flags live in the app's registries under the
-     ;; extension's own owner, so unload's owner sweep is their teardown and
-     ;; they are NOT tracked: the tracked list stays for what lives outside any
-     ;; registry (subscriptions, aliases, shortcuts, model providers).
-     :on-input (fn [hook]
-                 (register-input-hook! (extension-owner name) (loader-aware ext hook)))
-     :on-before-agent-start (fn [hook]
-                              (register-before-agent-start-hook!
-                               (extension-owner name) (loader-aware ext hook)))
-     :on-tool-call (fn [hook]
-                     (register-tool-call-hook! (extension-owner name)
-                                               (loader-aware ext hook)))
-     :on-tool-result (fn [hook]
-                       (register-tool-result-hook! (extension-owner name)
-                                                   (loader-aware ext hook)))
-     :register-flag! (fn [flag-name & [opts]]
-                       (register-flag! (extension-owner name) flag-name opts))
-     :get-flag get-flag
-     :register-shortcut! (fn [key-id & [opts]]
-                           (let [dereg (register-shortcut!
-                                        key-id
-                                        (cond-> opts
-                                          (:handler opts) (update :handler #(loader-aware ext %))))]
-                             (track dereg)
-                             dereg))
-     :register-markdown-transformer! (fn [transformer]
-                                       (register-markdown-transformer!
-                                        (extension-owner name)
-                                        (loader-aware ext transformer)))
-     :register-entry-renderer! (fn [custom-type renderer]
-                                 (register-entry-renderer!
-                                  (extension-owner name) custom-type renderer))
-     :register-message-renderer! (fn [custom-type renderer]
-                                   (register-message-renderer!
-                                    (extension-owner name) custom-type renderer))
-     ;; tag aliases (kmet.hikap.alias): the registry is process-global, so the
-     ;; registration MUST be tracked — unload removes exactly this fn's
-     ;; registration (a later re-registration by another owner survives)
-     :register-alias! (fn [alias-kw f]
-                        (let [dereg (alias/register! alias-kw f)]
-                          (track dereg)
-                          dereg))
-     :register-skill! (fn [raw-content & [opts]]
+                           (let [cmd (loader-aware-map
+                                      ext (assoc cmd :extension-handler
+                                                 (:handler cmd)))]
+                             ((:register! (resources :commands))
+                              cmd (extension-owner name))))
+      :unregister-command! (fn [cmd-name]
+                             ((:unregister! (resources :commands))
+                              cmd-name (extension-owner name)))
+      ;; sanitized — other extensions must not see :handler/:extension-handler
+      :get-commands #(mapv (fn [c] (select-keys c [:name :description]))
+                           ((:all (resources :commands))))
+      :register-tool! (fn [tool]
+                        (tools/register-tool! (handle)
+                                              (loader-aware-map ext tool)
+                                              (extension-owner name)))
+      :unregister-tool! (fn [tool-name]
+                          (tools/unregister-tool! (handle)
+                                                  tool-name
+                                                  (extension-owner name)))
+      ;; sandbox-only tools: contributed into the run_code tool's surface, never
+      ;; the model's tool set (mcp-adapter's MCP catalog — run_code.md T2)
+      :register-tool-source! (fn [id tools-fn]
+                               (tools/register-tool-source!
+                                (handle) id tools-fn
+                                (extension-owner name)))
+      :unregister-tool-source! (fn [id]
+                                 (tools/unregister-tool-source!
+                                  (handle) id
+                                  (extension-owner name)))
+      ;; pi: createBashTool — the bash tool constructor with its options
+      ;; (spawnHook / exposeSessionEnvironment / commandPrefix / shellPath /
+      ;; operations). The built-in bash tool is the same constructor with
+      ;; default options; registering the result under a name replaces it.
+      :create-bash-tool bash-tool/create-tool
+      :get-all-tools #(vals (tools/get-all-tools (handle)))
+      :get-active-tools get-active-tools
+      :set-active-tools set-active-tools
+      :on-event (fn [event-type handler]
+                  (let [dereg (event-bus/on-event
+                               event-type (extension-owner name)
+                               (wrap-event-handler (loader-aware ext handler)))]
+                    (track dereg)
+                    dereg))
+      :emit-event! event-bus/emit-event!
+      ;; The hooks, renderers and flags live in the app's registries under the
+      ;; extension's own owner, so unload's owner sweep is their teardown and
+      ;; they are NOT tracked: the tracked list stays for what lives outside any
+      ;; registry (subscriptions, aliases, shortcuts, model providers).
+      :on-input (fn [hook]
+                  (register-input-hook! (extension-owner name) (loader-aware ext hook)))
+      :on-before-agent-start (fn [hook]
+                               (register-before-agent-start-hook!
+                                (extension-owner name) (loader-aware ext hook)))
+      :on-tool-call (fn [hook]
+                      (register-tool-call-hook! (extension-owner name)
+                                                (loader-aware ext hook)))
+      :on-tool-result (fn [hook]
+                        (register-tool-result-hook! (extension-owner name)
+                                                    (loader-aware ext hook)))
+      :register-flag! (fn [flag-name & [opts]]
+                        (register-flag! (extension-owner name) flag-name opts))
+      :get-flag get-flag
+      :register-shortcut! (fn [key-id & [opts]]
+                            (let [dereg (register-shortcut!
+                                         key-id
+                                         (cond-> opts
+                                           (:handler opts) (update :handler #(loader-aware ext %))))]
+                              (track dereg)
+                              dereg))
+      :register-markdown-transformer! (fn [transformer]
+                                        (register-markdown-transformer!
+                                         (extension-owner name)
+                                         (loader-aware ext transformer)))
+      :register-entry-renderer! (fn [custom-type renderer]
+                                  (register-entry-renderer!
+                                   (extension-owner name) custom-type renderer))
+      :register-message-renderer! (fn [custom-type renderer]
+                                    (register-message-renderer!
+                                     (extension-owner name) custom-type renderer))
+      ;; tag aliases (kmet.hikap.alias): the registry is process-global, so the
+      ;; registration MUST be tracked — unload removes exactly this fn's
+      ;; registration (a later re-registration by another owner survives)
+      :register-alias! (fn [alias-kw f]
+                         (let [dereg (alias/register! alias-kw f)]
+                           (track dereg)
+                           dereg))
+      :register-skill! (fn [raw-content & [opts]]
                         ;; The extension reads its own bundled SKILL.md via
                         ;; io/resource and hands the content over, so jarred
                         ;; skills need no filesystem path. Registered under the
                         ;; extension's owner, so unload disposes it.
-                        ((:register! (resources :skills))
-                         raw-content
-                         (assoc opts
-                                :extension name
-                                :owner (extension-owner name))))
-     :register-prompt! (fn [prompt & [opts]]
-                         ((:register! (resources :prompts))
-                          (assoc (merge opts prompt)
+                         ((:register! (resources :skills))
+                          raw-content
+                          (assoc opts
                                  :extension name
                                  :owner (extension-owner name))))
-     :set-model set-model
-     :get-thinking-level get-thinking-level
-     :set-thinking-level set-thinking-level
-     :send-user-message send-user-message
-     :send-message! send-message!
-     :exec exec
-     :ui (api-ui track)
-     :models (api-models track)
-     :session (api-session)}))
+      :register-prompt! (fn [prompt & [opts]]
+                          ((:register! (resources :prompts))
+                           (assoc (merge opts prompt)
+                                  :extension name
+                                  :owner (extension-owner name))))
+      :set-model set-model
+      :get-thinking-level get-thinking-level
+      :set-thinking-level set-thinking-level
+      :send-user-message send-user-message
+      :send-message! send-message!
+      :exec exec
+      :ui (api-ui track)
+      :models (api-models track)
+      :session (api-session)})))
 
 ;; ─── Load orchestration + entry points ──────────────────────────────────
 ;; The isolation machinery (jars, class seeding, SCI base, loaders,
@@ -1329,8 +1334,9 @@
    The body runs `loader-aware`, like every other extension callback: a shipped
    extension reads its bundled files at mount time (a SKILL.md, a prompt
    template), and on Jolt `clojure.java.io/resource` resolves through the
-   extension's own loader only while that context is in effect."
-  [ext plugin-sym path]
+   extension's own loader only while that context is in effect. CONFIG is the
+   composition row's config, carried to the extension's api map."
+  [ext plugin-sym path config]
   (let [var-name (if plugin-sym (symbol (clojure.core/name plugin-sym)) 'plugin)
         plugin-var (extension-var ext @(:entry-ns ext) var-name)]
     (when-not plugin-var
@@ -1353,7 +1359,7 @@
                    (:ctx (services))
                    (assoc plugin
                           :apply (fn [fctx _config]
-                                   (let [api (create-extension-api ext)]
+                                   (let [api (create-extension-api ext config)]
                                      (reset! (:api ext) api)
                                      ((loader-aware ext (:apply plugin)) fctx api)
                                      (reset! (:initialized? ext) true)))))]
@@ -1373,7 +1379,7 @@
    already in the registry (D11: the bundled layer ranks last, so a user's
    own copy loads first) is returned skipped, and no second context is
    built."
-  [resolved path]
+  [resolved path config]
   (let [{:keys [name kind artifact entry-ns plugin-sym file declared-loaders
                 legacy-loader? bundled?]} resolved
         loader-kind (if (context/resource-kind? kind)
@@ -1479,7 +1485,7 @@
                 (do
                   (loader/load l {:kind :ns :name (str file-ns)})
                   (reset! (:entry-ns ext) file-ns)))
-              (mount-plugin! ext plugin-sym path))
+              (mount-plugin! ext plugin-sym path config))
             (swap! extensions conj ext)
             (debug/log "extension loaded: " name " kind=" (clojure.core/name kind)
                        " loader=" (clojure.core/name loader-kind)
@@ -1501,7 +1507,8 @@
    evaluates in its own isolated context; deps.edn jars are served only to
    that context, so different extensions may pin different versions of the
    same library. Mounts the extension's plugin (its `:apply` receives the
-   extension's ctx and its api map). A successful load
+   extension's ctx and its api map; CONFIG, when given, is the composition
+   row's config and arrives as `(:config api)`). A successful load
    returns {:extension NAME :error nil :loader-kind :sci/:jolt}; an
    extension whose declared :loader this host does not offer is returned
    skipped ({:extension NAME :skipped true :reason :unsupported-loader
@@ -1510,14 +1517,15 @@
    failure everything is rolled back and {:extension nil :path PATH :error
    MSG} is returned (PATH names what failed — the result map has no
    extension name to report)."
-  [path]
-  (try
-    (load-extension* (context/resolve-extension path) path)
-    (catch Exception e
-      {:extension nil
-       :path path
-       :error (or (ex-message e)
-                  (str "load failed: " (.getName (class e))))})))
+  ([path] (load-extension! path nil))
+  ([path config]
+   (try
+     (load-extension* (context/resolve-extension path) path config)
+     (catch Exception e
+       {:extension nil
+        :path path
+        :error (or (ex-message e)
+                   (str "load failed: " (.getName (class e))))}))))
 
 (defn load-extension-descriptor!
   "Load a single bundled extension from DESCRIPTOR
@@ -1527,16 +1535,25 @@
    built artifact the files come from the extensions/ resource prefix. On
    Jolt, directory descriptors use their native `embed:<prefix>` root and
    single-file descriptors map their namespace to the exact embedded key
-   (embedded roots are part of the Jolt floor; see forced-loader-kind)."
-  [descriptor]
-  (let [path (:path descriptor)]
-    (try
-      (load-extension* (context/resolve-extension-descriptor descriptor) path)
-      (catch Exception e
-        {:extension nil
-         :path path
-         :error (or (ex-message e)
-                    (str "load failed: " (.getName (class e))))}))))
+   (embedded roots are part of the Jolt floor; see forced-loader-kind).
+   CONFIG is the composition row's config, as in `load-extension!`."
+  ([descriptor] (load-extension-descriptor! descriptor nil))
+  ([descriptor config]
+   (let [path (:path descriptor)]
+     (try
+       (load-extension* (context/resolve-extension-descriptor descriptor) path config)
+       (catch Exception e
+         {:extension nil
+          :path path
+          :error (or (ex-message e)
+                     (str "load failed: " (.getName (class e))))})))))
+
+(defn loaded-record
+  "The loaded Extension record named NAME, or nil. `load-extension!` answers
+   with its name; a caller that owns the lifetime (a composition row) reads the
+   record here to hand it to `unload-extension!`."
+  [name]
+  (some #(when (= name (:name %)) %) @extensions))
 
 (defn unload-extension!
   "Unload an extension in two steps: shutdown (if it initialized), then
@@ -1599,10 +1616,7 @@
    so it is a diagnostic and a contract-test hook, not a shared surface: what
    an extension may rely on is `kmet.extension`."
   [name]
-  (some->> @extensions
-           (some (fn [ext] (when (= name (:name ext)) ext)))
-           :api
-           deref))
+  (some-> (loaded-record name) :api deref))
 
 (defn get-loaded-extensions
   "Loaded extensions as {:name str :path str :kind :file/:dir/:jar

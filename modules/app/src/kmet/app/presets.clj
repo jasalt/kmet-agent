@@ -22,7 +22,8 @@
    releases the child ctx on top of that, which is the belt to this
    suspenders: a caller mounting onto a ctx it keeps is the case only this can
    undo."
-  (:require [kmet.app.profile :as profile]
+  (:require [kmet.app.extensions.rows :as extension-rows]
+            [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
 
@@ -32,15 +33,29 @@
    parse of a jar entry for data that cannot change while the process lives."
   (delay (profile/builtin)))
 
+(defn- check-extension-rows!
+  "Refuse an `:ext/…` row in a preset: the extension's plugin mounts under the
+   host ctx (app-wide), so a per-agent row would own a process-wide extension."
+  [preset-name rows]
+  (when-let [row (some #(when (extension-rows/source? (:plugin %)) %) rows)]
+    (throw (ex-info (str "preset " (pr-str preset-name) " names extension row "
+                         (pr-str (:id row)) " — :ext/… rows belong to a profile")
+                    {:type :kmet.app/preset-extension-row
+                     :preset preset-name
+                     :row row}))))
+
 (defn mount!
   "Mount PRESET-NAME's rows under CTX and return `{:preset :rows :fibers}`.
-   Throws `:kmet.app/preset-failed` when a row is not active, naming it.
+   Throws `:kmet.app/preset-failed` when a row is not active, naming it, and
+   `:kmet.app/preset-extension-row` for an `:ext/…` row (an extension mounts
+   app-wide; it belongs to a profile).
 
    CTX is the ctx the preset is for — an agent's child ctx from
    `:agents/create!`'s `:setup` — and the fibers live and die with it."
   ([ctx preset-name] (mount! ctx @builtin preset-name))
   ([ctx table preset-name]
    (let [{:keys [rows]} (profile/compose [(profile/bundle table preset-name)])
+         _ (check-extension-rows! preset-name rows)
          fibers (runtime/mount-rows! ctx rows)]
      (srce/settle! ctx)
      (if-let [failed (seq (runtime/inactive-rows rows fibers))]

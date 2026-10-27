@@ -186,12 +186,13 @@
   (let [text (profile/render :tui
                              {:rows [bash-row
                                      {:id :ext/grep-tool :plugin :ext/grep-tool
-                                      :name :ext/grep-tool :external true}]
+                                      :name :ext/grep-tool}]
                               :patches 2})]
     (is (str/starts-with? text "profile :tui rows=2 patches=2\n"))
     (is (str/includes? text ":tool/bash"))
     (is (str/includes? text "kmet.app.test/bash"))
     (is (str/includes? text "inject={:tools nil} provide=[:tool/bash] config={:shell {:args [\"-c\"]}}"))
-    (is (str/includes? text "external") "an :ext/… row names its source and stops")
+    (is (str/includes? text ":ext/grep-tool  :ext/grep-tool")
+        "an :ext/… row prints its source and card like any other row")
     (is (not (str/includes? text "name=:tool/bash")) "the id is the name")
     (is (str/ends-with? text "\n"))))

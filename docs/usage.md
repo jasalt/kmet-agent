@@ -48,6 +48,8 @@ bb start @tasks.md "summarize the tasks"
   --session <id>        Open a session by id, prefix or path (the TUI)
   --session-dir <dir>   Session storage directory
   --dump-config         Print the composed plugin rows and exit
+  --dump-default-config
+                        Print the built-in composition without user layers or --patch
   --dump-state          Boot the composition, print the ctx tree, and exit
   --version             Print the version and exit
   -h, --help            Show this help

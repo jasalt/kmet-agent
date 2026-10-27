@@ -23,6 +23,10 @@ Optionally define `(defn shutdown [api])` for teardown — it runs on
 unload/reload, and **everything the extension registered is automatically
 unregistered** afterwards.
 
+A composition can mount an installed extension as a row (`:ext/<id>`, see
+[`docs/profiles.md`](../../../../docs/profiles.md#extensions-as-rows)); the
+row's `:config` then arrives as `(:config api)`.
+
 ```clojure
 (ns my.hello-ext
   (:require [kmet.extension :as ext]
@@ -203,6 +207,8 @@ the wrappers below or directly.
 (:extension-path api)   ; absolute path to the extension file/dir/jar
 (:extension-dir api)    ; the extension's own directory — nil for jars
                         ; (a jar has no directory; use io/resource)
+(:config api)           ; the composition row's :config when a profile mounts
+                        ; the extension as :ext/<id>; nil otherwise
 (:ctx api)              ; the app root ctx the extension's plugin mounts
                         ; under — pass it to kmet.srce.core for app-wide
                         ; `provide!`/`plugin!`; the plugin's own ctx arrives

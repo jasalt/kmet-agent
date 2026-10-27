@@ -1,12 +1,19 @@
 (ns kmet.app.test-catalog
   "kmet.app.catalog — row cards read from the plugin map itself, and the
-   `:ext/…` form whose card the extension host supplies."
-  (:require [clojure.test :refer [deftest is testing]]
-            [kmet.app.catalog :as catalog]))
+   `:ext/…` form resolved from the installed extensions by name."
+  (:require [babashka.fs :as fs]
+            [clojure.test :refer [deftest is testing]]
+            [kmet.app.catalog :as catalog]
+            [kmet.app.packages :as packages]))
 
 (def not-a-plugin
   "A var a row can name that is not a plugin map."
   {:name "not a keyword"})
+
+(def no-inject-plugin
+  "A plugin that declares no dependencies: its card's :inject is `{}`."
+  {:name :app/no-inject
+   :apply (fn [_ctx _cfg] nil)})
 
 (def vector-plugin
   "A plugin that declares its dependencies in the vector form — all required."
@@ -25,14 +32,39 @@
 (defn- error-type [f]
   (try (f) nil (catch Exception e (:type (ex-data e)))))
 
-(deftest external-sources-are-named-not-resolved
-  (let [card (catalog/describe {:plugin :ext/grep-tool :config {}})]
-    (is (= :ext/grep-tool (:id card)) "the id defaults to the source")
-    (is (= :ext/grep-tool (:name card)))
-    (is (:external card))
-    (is (= {} (:config card))))
-  (testing "an explicit :id wins"
-    (is (= :grep (:id (catalog/describe {:plugin :ext/grep-tool :id :grep}))))))
+(defn- with-probe-extension
+  "Run F with the installed set replaced by one single-file extension, so
+   resolution never reads the developer's real extensions."
+  [f]
+  (let [dir "target/test-catalog-ext"
+        path (str dir "/probe_ext.clj")]
+    (fs/delete-tree dir)
+    (fs/create-dirs dir)
+    (spit path (str "(ns probe-ext)\n"
+                    "(def plugin {:name :ext/probe :apply (fn [_ _] nil)})\n"))
+    (try
+      (with-redefs [packages/resolve-configured-packages
+                    (constantly {:extensions [{:path path :enabled true
+                                               :metadata {}}]})]
+        (f))
+      (finally (fs/delete-tree dir)))))
+
+(deftest extension-sources-resolve-to-a-card
+  (with-probe-extension
+    (fn []
+      (let [card (catalog/describe {:plugin :ext/probe_ext :config {:a 1}})]
+        (is (= :ext/probe_ext (:id card)) "the id defaults to the source")
+        (is (= :ext/probe_ext (:name card)))
+        (is (= {} (:inject card)))
+        (is (= {:a 1} (:config card))))
+      (testing "an explicit :id wins"
+        (is (= :probe (:id (catalog/describe {:plugin :ext/probe_ext :id :probe})))))
+      (testing "an explicit :name wins, like a var source's card"
+        (is (= :custom (:name (catalog/describe {:plugin :ext/probe_ext
+                                                 :name :custom})))))
+      (testing "an unknown id is a composition error"
+        (is (= :kmet.app/unknown-extension
+               (error-type #(catalog/describe {:plugin :ext/nope}))))))))
 
 (deftest a-var-source-is-read-from-the-plugin-map
   (let [card (catalog/describe {:plugin 'kmet.app.test-catalog/test-plugin})]
@@ -50,7 +82,7 @@
   ;; `--dump-config` renders, which is how a vector form used to break the dump.
   (is (= {:tools nil :events nil}
          (:inject (catalog/describe {:plugin 'kmet.app.test-catalog/vector-plugin}))))
-  (is (= {} (:inject (catalog/describe {:plugin :ext/grep-tool})))
+  (is (= {} (:inject (catalog/describe {:plugin 'kmet.app.test-catalog/no-inject-plugin})))
       "a row with no :inject says so")
   (is (= {:tools nil}
          (:inject (catalog/describe {:plugin 'kmet.app.test-catalog/test-plugin})))

@@ -22,6 +22,7 @@
    ctx reaches it by `srce/attr` and nothing holds a pointer back to the
    root."
   (:require [clojure.string :as str]
+            [kmet.app.extensions.rows :as extension-rows]
             [kmet.srce.core :as srce]))
 
 ;; ── submissions ───────────────────────────────────────────────────────────
@@ -124,13 +125,15 @@
 
 (defn- row-source
   "The plugin source ROW names: a var symbol resolved off the classpath, a var,
-   or a plugin map as it is. A keyword is an `:ext/…` id, which the extension
-   host resolves once it lands (`new-app.md`, landing 4); boot refuses it rather
-   than mounting nothing."
+   or a plugin map as it is. An `:ext/<id>` keyword resolves to the adapter
+   plugin that loads the installed extension (`kmet.app.extensions.rows`); any
+   other keyword is a bad row."
   [row]
   (let [source (:plugin row)]
     (cond
       (or (var? source) (map? source)) source
+
+      (extension-rows/source? source) (extension-rows/plugin source)
 
       (symbol? source)
       (try
@@ -142,10 +145,15 @@
                                ": " (or (ex-message t) (str t)))
                           {:type :kmet.app/unresolved-source :row row} t))))
 
+      (keyword? source)
+      (throw (ex-info (str "row " (pr-str (:id row)) " names " (pr-str source)
+                           " — a keyword source must be an :ext/… extension id")
+                      {:type :kmet.app/bad-row :row row}))
+
       :else
-      (throw (ex-info (str "row " (pr-str (:id row)) " names an external source "
-                           (pr-str source) " — the extension host resolves those")
-                      {:type :kmet.app/external-source :row row})))))
+      (throw (ex-info (str "row " (pr-str (:id row)) " needs a :plugin source, got "
+                           (pr-str source))
+                      {:type :kmet.app/bad-row :row row})))))
 
 (defn mount-rows!
   "Mount ROWS under CTX and return one fiber per row, in composition order.

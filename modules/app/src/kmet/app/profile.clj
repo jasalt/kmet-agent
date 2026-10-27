@@ -4,7 +4,9 @@
    A **bundle** is a reusable row list — the analog of dsh's `dsh.bundle` —
    and a **profile** is the app entry: it stacks bundles in order, then adds
    its own rows and patches (`new-app.md` § Profiles and presets). A row names
-   a plugin **source** (`:plugin`), never a keyword registry entry:
+   a plugin **source** (`:plugin`) — a var, or an `:ext/<id>` for an installed
+   extension (resolved before composition by `kmet.app.extensions.rows`) —
+   never a keyword registry entry:
    `{:id :tool/bash :plugin kmet.app.tools.bash/plugin :config {}}`. `:id`
    is the row identity a patch targets and `--dump-config` prints; it defaults
    to the plugin's `:name`, which the catalog resolves before composition.
@@ -53,11 +55,11 @@
   :tui)
 
 (def patch-keys
-  "The keys a patch entry may carry. `:name :inject :provide :external` are
-   the card keys an insert/replace patch gains when `kmet.app.catalog`
-   describes it; the rest are the patch itself."
+  "The keys a patch entry may carry. `:name :inject :provide` are the card
+   keys an insert/replace patch gains when `kmet.app.catalog` describes it;
+   the rest are the patch itself."
   #{:id :plugin :config :remove :after :before
-    :name :inject :provide :external})
+    :name :inject :provide})
 
 (defn builtin
   "The built-in composition table: `{:bundles {name bundle} :profiles {name
@@ -156,7 +158,7 @@
   "The row a source/config patch produces: its source and card replaced (an
    insert/replace patch arrives already described), its config deep-merged."
   [row patch]
-  (let [row (merge row (select-keys patch [:plugin :name :inject :provide :external]))]
+  (let [row (merge row (select-keys patch [:plugin :name :inject :provide]))]
     (if-let [cfg (:config patch)]
       (update row :config #(deep-merge (or % {}) cfg))
       row)))
@@ -215,16 +217,14 @@
 
 (defn- render-row
   "One row line: id and source aligned, then the card (name when it differs,
-   inject, provide, config) or `external` for a source the host resolves."
-  [id-w src-w {:keys [id plugin name inject provide config external]}]
+   inject, provide, config)."
+  [id-w src-w {:keys [id plugin name inject provide config]}]
   (let [head (str (pad (pr-str id) id-w) "  " (pad (pr-str plugin) src-w) "  ")]
-    (if external
-      (str head "external")
-      (str head
-           (when (not= name id) (str "name=" (pr-str name) " "))
-           "inject=" (pr-str (into (sorted-map) (or inject {})))
-           " provide=" (pr-str (vec (sort-by str (or provide []))))
-           " config=" (pr-str (or config {}))))))
+    (str head
+         (when (not= name id) (str "name=" (pr-str name) " "))
+         "inject=" (pr-str (into (sorted-map) (or inject {})))
+         " provide=" (pr-str (vec (sort-by str (or provide []))))
+         " config=" (pr-str (or config {})))))
 
 (defn render
   "The `--dump-config` text for a composed row list: one line per row, ids and

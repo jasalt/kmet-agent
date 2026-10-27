@@ -150,3 +150,17 @@
         (is (= :ask ((:policy policy) (:ctx boot) a-call))
             "and it is the gate's policy, not the allow-all default"))
       (finally (srce/dispose-subtree! (:ctx boot))))))
+
+(deftest a-preset-refuses-an-extension-row
+  ;; An :ext/… row mounts the extension under the host ctx, app-wide; owning it
+  ;; from one agent's ctx would unload a process-wide extension when that agent
+  ;; goes away. A profile may name it; a preset may not.
+  (let [ctx (srce/root {:name :app})
+        table {:bundles {:bundle/ext {:rows [{:id :ext/x :plugin :ext/x}]}}
+               :profiles {}}]
+    (try
+      (let [e (try (presets/mount! ctx table :bundle/ext) nil
+                   (catch Exception e e))]
+        (is (= :kmet.app/preset-extension-row (:type (ex-data e))))
+        (is (= :ext/x (get-in (ex-data e) [:row :id]))))
+      (finally (srce/dispose-subtree! ctx)))))

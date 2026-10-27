@@ -764,3 +764,21 @@
           (cfg/set-enable-skill-commands! false)
           (t/is (false? (:enable-skill-commands (edn/read-string (slurp settings-file)))))))
       (finally (fs/delete-tree tmp)))))
+
+(t/deftest test-patch-paths-layer-order-and-missing-files
+  (let [tmp (str (fs/absolutize (fs/file "target" (str "test-patch-paths-"
+                                                       (System/currentTimeMillis)))))
+        global (str tmp "/global-patch.edn")
+        project (str tmp "/project-patch.edn")]
+    (fs/create-dirs tmp)
+    (try
+      (with-redefs [cfg/global-patch-path (fn [] global)
+                    cfg/project-patch-path (fn [] project)]
+        (t/testing "a missing file is not a layer"
+          (t/is (= [] (cfg/patch-paths))))
+        (t/testing "the agent dir's layer precedes the project's"
+          (spit global "{:rows [] :patch []}\n")
+          (t/is (= [global] (cfg/patch-paths)))
+          (spit project "{:rows [] :patch []}\n")
+          (t/is (= [global project] (cfg/patch-paths)))))
+      (finally (fs/delete-tree tmp)))))

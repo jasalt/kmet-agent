@@ -5,7 +5,8 @@
    errors an unreadable or malformed layer raises."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is use-fixtures]]
+            [kmet.app.config :as cfg]
             [kmet.app.debug :as debug]
             [kmet.app.version :as version]
             [kmet.ai.models :as models]
@@ -45,6 +46,13 @@
 
 (defn- error-type [f]
   (try (f) nil (catch Exception e (:type (ex-data e)))))
+
+(use-fixtures :each
+  (fn [f]
+    ;; Composition tests would read the developer's ambient layers otherwise:
+    ;; an agent-dir or project patch.edn would change every row count below.
+    (with-redefs [cfg/patch-paths (fn [] [])]
+      (f))))
 
 (deftest parse-args-defaults
   (let [opts (core/parse-args [])]
@@ -124,7 +132,10 @@
       "choosing print mode twice, two ways, is a usage error")
   (is (= :kmet.app/bad-args
          (error-type #(core/parse-args ["--dump-config" "--dump-state"])))
-      "the two dumps are different views; asking for both is a usage error"))
+      "the two dumps are different views; asking for both is a usage error")
+  (is (= :kmet.app/bad-args
+         (error-type #(core/parse-args ["--dump-default-config" "--dump-config"])))
+      "the built-in dump is a third view; it excludes the other two"))
 
 (deftest the-maintenance-flags-run-where-their-contracts-put-them
   ;; `--debug` before any load, `--generate-models` before the world and without
@@ -383,6 +394,46 @@
                                               "target/definitely-missing-patch.edn"])]
     (is (= 1 code))
     (is (str/includes? err "cannot read patch file"))))
+
+(deftest dump-config-composes-user-layers-in-order
+  (let [global (scratch-patch!
+                (str "{:rows [{:plugin kmet.app.test-core/sample-plugin"
+                     " :config {:a 1}}] :patch []}\n"))
+        local (scratch-patch! "{:rows [] :patch [{:id :app/sample :config {:a 2}}]}\n")
+        cli (scratch-patch! "{:rows [] :patch [{:id :app/sample :config {:a 3}}]}\n")]
+    (try
+      (with-redefs [cfg/patch-paths (fn [] [global local])]
+        (let [{:keys [code out]} (support/run-main ["--dump-config"])]
+          (is (zero? code))
+          (is (str/starts-with? out "profile :tui rows=15 patches=2")
+              "the global layer inserts the row; the project layer patches it")
+          (is (str/includes? out "config={:a 2}")
+              "the project layer applies over the global one"))
+        (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" cli])]
+          (is (zero? code))
+          (is (str/includes? out "config={:a 3}")
+              "a --patch flag applies last")))
+      (finally
+        (doseq [p [global local cli]] (io/delete-file p true))))))
+
+(deftest dump-config-reports-a-bad-user-layer
+  (let [path (scratch-patch! "{:rows [] :nope 1}\n")]
+    (try
+      (with-redefs [cfg/patch-paths (fn [] [path])]
+        (let [{:keys [code err]} (support/run-main ["--dump-config"])]
+          (is (= 1 code))
+          (is (str/includes? err "a patch file holds"))))
+      (finally (io/delete-file path true)))))
+
+(deftest dump-default-config-ignores-user-layers-and-patch-flags
+  (let [path (scratch-patch! "{:rows [] :nope 1}\n")]
+    (try
+      (with-redefs [cfg/patch-paths (fn [] [path])]
+        (let [{:keys [code out]} (support/run-main ["--dump-default-config"
+                                                    "--patch" path])]
+          (is (zero? code) "neither the ambient layer nor --patch is read")
+          (is (str/starts-with? out "profile :tui rows=14 patches=1"))))
+      (finally (io/delete-file path true)))))
 
 (deftest dump-state-prints-the-booted-tree
   (let [{:keys [code out err]} (support/run-main ["--dump-state"])]

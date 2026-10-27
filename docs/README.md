@@ -13,7 +13,7 @@ are the deliberate exception.
 - [Usage](usage.md) — run the TUI or print mode, use slash commands, and
   navigate sessions.
 - [Profiles and composition](profiles.md) — what a run mounts, `--profile`, and
-  how `--patch` layers edit the row list.
+  how `--patch` and the global/project `patch.edn` layers edit the row list.
 - [RPC mode](rpc.md) — drive a long-lived session over EDN stdin/stdout:
   protocol, commands, and extension UI.
 - [Server mode](serve.md) — the same protocol on a socket, one agent per
