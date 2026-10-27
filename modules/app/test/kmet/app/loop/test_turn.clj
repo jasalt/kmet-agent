@@ -62,26 +62,28 @@
 ;; ─── run-agent-turn with no API key ──────────────────────────────────────
 
 (t/deftest test-loop-run-agent-turn-no-api-key
-  (let [errors (atom [])
-        events (atom [])
-        agent (support/make-agent-state {:on-event #(swap! events conj %)})
-        done (promise)]
-    (loop/run-agent-turn agent
-                         {:message "hello"
-                          :on-error (fn [e] (swap! errors conj e) (deliver done true))})
-    (t/is (true? (deref done 2000 :timeout)) "error callback fires")
-    (t/is (pos? (count @errors)))
-    (t/is (.contains (first @errors) "No API key"))
-    (t/is (= :error (:outcome (last (filter #(= :agent-settled (:type %)) @events))))
-          "the settle reports :error")
-    (t/is (some #(and (= :error (:type %))
-                      (str/includes? (str (:message %)) "No API key"))
-                @events)
-          "the event stream carries the refusal: a front end that only reads
-           events (print, the TUI) shows it instead of a silent settle")
-    (t/is (= :error @(:last-outcome agent))
-          "the outcome is recorded: a state reader (get-state, a client's
-           wait-idle) sees the failure, not the initial :completed")))
+  (support/with-no-credentials
+    (fn []
+      (let [errors (atom [])
+            events (atom [])
+            agent (support/make-agent-state {:on-event #(swap! events conj %)})
+            done (promise)]
+        (loop/run-agent-turn agent
+                             {:message "hello"
+                              :on-error (fn [e] (swap! errors conj e) (deliver done true))})
+        (t/is (true? (deref done 2000 :timeout)) "error callback fires")
+        (t/is (pos? (count @errors)))
+        (t/is (.contains (first @errors) "No API key"))
+        (t/is (= :error (:outcome (last (filter #(= :agent-settled (:type %)) @events))))
+              "the settle reports :error")
+        (t/is (some #(and (= :error (:type %))
+                          (str/includes? (str (:message %)) "No API key"))
+                    @events)
+              "the event stream carries the refusal: a front end that only reads
+               events (print, the TUI) shows it instead of a silent settle")
+        (t/is (= :error @(:last-outcome agent))
+              "the outcome is recorded: a state reader (get-state, a client's
+               wait-idle) sees the failure, not the initial :completed")))))
 
 (t/deftest test-loop-run-agent-turn-ambient-auth
   ;; google-vertex (ADC) and amazon-bedrock (AWS credentials) resolve no
@@ -250,21 +252,24 @@
 ;; ─── Regression: run-agent-turn signals cleanup ─────────────────────────
 
 (t/deftest test-loop-run-agent-turn-resets-signal
-  (let [agent (support/make-agent-state)]
-    (reset! (:signal agent) true)
-    (reset! (:status agent) :thinking)
-    ;; run with no API key — should exercise the error path
-    (let [errors (atom [])
-          done (promise)]
-      (loop/run-agent-turn agent
-                           {:message "test"
-                            :on-error (fn [e]
-                                        (swap! errors conj e)
-                                        (deliver done true))})
-      (t/is (true? (deref done 2000 false)) "error callback fires")
-      (t/is (false? @(:signal agent)) "Signal reset at start of turn")
-      (t/is (pos? (count @errors)) "Error callback called")
-      (t/is (.contains (first @errors) "No API key") "Error message is about API key"))))
+  (support/with-no-credentials
+    (fn []
+      (let [agent (support/make-agent-state)]
+        (reset! (:signal agent) true)
+        (reset! (:status agent) :thinking)
+        ;; run with no API key — should exercise the error path
+        (let [errors (atom [])
+              done (promise)]
+          (loop/run-agent-turn agent
+                               {:message "test"
+                                :on-error (fn [e]
+                                            (swap! errors conj e)
+                                            (deliver done true))})
+          (t/is (true? (deref done 2000 false)) "error callback fires")
+          (t/is (false? @(:signal agent)) "Signal reset at start of turn")
+          (t/is (pos? (count @errors)) "Error callback called")
+          (t/is (.contains (first @errors) "No API key")
+                "Error message is about API key"))))))
 
 (t/deftest test-loop-signal-clean-after-turn
   (let [agent (support/make-agent-state)

@@ -336,17 +336,18 @@
   (let [events (atom [])
         agent (support/make-agent-state
                :on-event (fn [e] (swap! events conj e)))]
-    (with-redefs [cfg/get-api-key (fn [_] nil)]
-      @(loop/run-agent-turn agent
-                            {:message "hello"
-                             :on-error (fn [_])})
-      (let [user-start (first (filter #(and (= :message-start (:type %))
-                                            (= :user (:role (:message %))))
-                                      @events))]
-        (t/is (some? user-start) ":message-start emitted for the submitted message")
-        (t/is (= "hello" (get-in user-start [:message :content 0 :text])))
-        (t/is (empty? (state/get-context agent))
-              "message is display-only — not added to context without a run")))))
+    (support/with-no-credentials
+      (fn []
+        @(loop/run-agent-turn agent
+                              {:message "hello"
+                               :on-error (fn [_])})
+        (let [user-start (first (filter #(and (= :message-start (:type %))
+                                              (= :user (:role (:message %))))
+                                        @events))]
+          (t/is (some? user-start) ":message-start emitted for the submitted message")
+          (t/is (= "hello" (get-in user-start [:message :content 0 :text])))
+          (t/is (empty? (state/get-context agent))
+                "message is display-only — not added to context without a run"))))))
 
 ;; ─── Queue modes (per-queue) ───────────────────────────────────────────────
 

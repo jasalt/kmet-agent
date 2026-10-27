@@ -15,7 +15,6 @@
             [kmet.app.packages :as packages]
             [kmet.ai.models :as models]
             [kmet.app.test-support :as support :refer [answering
-                                                       sessions-dir
                                                        with-mode-run
                                                        with-model-catalog]]
             [kmet.app.world :as world]
@@ -29,7 +28,7 @@
         (is (= 0 code) "a completed prompt exits 0")
         (is (= "hello from the model" out)
             "the run's text is printed from the app's event layer")
-        (is (seq (fs/glob sessions-dir "**/*.ednl"))
+        (is (seq (fs/glob (support/sessions-dir) "**/*.ednl"))
             "and the run left its session log behind: a mode drives the same
              durable session the rest of the app reads")))))
 
@@ -224,7 +223,7 @@
           (is (= 0 code) err)
           (is (seq (fs/glob dir "**/*.ednl"))
               "the session landed where the flag said")
-          (is (empty? (fs/glob sessions-dir "**/*.ednl"))
+          (is (empty? (fs/glob (support/sessions-dir) "**/*.ednl"))
               "and not in the settings' directory"))))))
 
 (deftest an-at-file-is-the-message

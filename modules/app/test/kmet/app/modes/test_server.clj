@@ -100,6 +100,16 @@
      :closed? (fn [] @closed)
      :close! close!}))
 
+(defn- narrow-receive-buffer!
+  "Ask for a small receive buffer, so a client that stops reading backs the
+   server's writes up in a few records rather than a few hundred. Jolt's
+   java.net.Socket shim has no setReceiveBufferSize (jolt-bugs.md), so this is
+   best-effort there: the flood the stalled-wire test sends is far larger than
+   any default receive buffer, so the lane behind it still fills."
+  [socket n]
+  (try (.setReceiveBufferSize socket (int n))
+       (catch IllegalArgumentException _ nil)))
+
 (defn- connect-tcp
   "A client socket to PORT with its reader, writer and the facts a client needs.
    OPTS is `{:token :auth :auth? :read? :receive-buffer}`: the server's token,
@@ -111,7 +121,7 @@
   [port {:keys [token auth auth? read? receive-buffer]
          :or {auth? true read? true}}]
   (let [socket (java.net.Socket.)]
-    (when receive-buffer (.setReceiveBufferSize socket (int receive-buffer)))
+    (when receive-buffer (narrow-receive-buffer! socket receive-buffer))
     (.connect socket (InetSocketAddress. "127.0.0.1" (int port)))
     (let [writer (io/writer (.getOutputStream socket))
           conn (assoc (client (fn [record]
@@ -158,6 +168,13 @@
   (first (filter #(= :listening (:type %))
                  (map edn/read-string (remove str/blank? (str/split-lines out))))))
 
+(def ^:private boot-wait-ms
+  "How long a mode boot may take to announce `:listening`. A cold Jolt process
+   pays several seconds of one-time cost (the composition's first require, the
+   extension host's first mount), so a tighter bound fails whichever server test
+   happens to run first."
+  60000)
+
 (defn- start!
   "Boot `--profile server` with ARGS and return the announcement plus `:stop!`.
    The mode's stdin is a loopback socket, so the test owns the supervisor
@@ -171,7 +188,7 @@
         out (java.io.StringWriter.)
         result (future (binding [*in* (io/reader (.getInputStream stdin-peer))]
                          (support/run-main-into (into ["--profile" "server"] args) out)))]
-    (when-not (support/wait-until #(str/includes? (str out) ":listening"))
+    (when-not (support/wait-until #(str/includes? (str out) ":listening") boot-wait-ms)
       (throw (ex-info "the server never announced a port" {:out (str out)})))
     (let [announced (listening-record (str out))]
       {:port (:port announced)
@@ -636,11 +653,11 @@
                 "and the other connection kept the process's")
             (is (str/starts-with? (get-in a-state [:session :file])
                                   (str (fs/absolutize
-                                        (session/session-dir-for-cwd support/sessions-dir dir-a))))
+                                        (session/session-dir-for-cwd (support/sessions-dir) dir-a))))
                 "the connection's :cwd placed its session")
             (is (str/starts-with? (get-in b-state [:session :file])
                                   (str (fs/absolutize
-                                        (session/session-dir-for-cwd support/sessions-dir dir-b)))))
+                                        (session/session-dir-for-cwd (support/sessions-dir) dir-b)))))
             (is (not= (get-in a-state [:session :file])
                       (get-in b-state [:session :file])))))))))
 

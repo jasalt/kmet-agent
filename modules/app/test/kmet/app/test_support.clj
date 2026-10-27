@@ -52,33 +52,49 @@
 ;; stubbed provider, and a session log under target/ (an entry-point test must
 ;; not write to the agent dir a developer's kmet reads).
 
-(def sessions-dir
-  "Where a mode test's session log goes."
+(def ^:dynamic *sessions-dir*
+  "Where the mode run in progress writes its session log. `with-mode-run`
+   binds a fresh directory per run: a mode test with a stalled provider can
+   still be finishing a run when the next test begins, and a shared directory
+   with a cleanup beforehand turned that into an unrelated failure — the
+   lingering run's publish lost its parent directory, or the delete itself hit
+   a file the run had just written. `target/` is thrown away by `bb clean`, so
+   the directories are left for inspection."
   "target/test-modes")
 
-(defn settings
-  "What the driver loads for a run: a provider and model that resolve."
+(defn sessions-dir
+  "The session log directory of the run in progress (see *sessions-dir*)."
   []
-  {:session-dir sessions-dir
-   :provider :opencode-go
-   :model "deepseek-v4-flash"})
+  *sessions-dir*)
+
+(defn settings
+  "What a mode run loads: a provider and model that resolve, over the run's
+   SESSION-DIR (default: the test-support root, see *sessions-dir*)."
+  ([] (settings *sessions-dir*))
+  ([session-dir]
+   {:session-dir (str session-dir)
+    :provider :opencode-go
+    :model "deepseek-v4-flash"}))
 
 (defn with-mode-run
   "Run F with the model stubbed by SEND-MESSAGE (a `send-message` stub) and the
-   settings above.
+   `settings` above.
 
-   The session dir is emptied *before* the run starts, never after it: a mode
-   test with a stalled provider can still be finishing a run when the next test
-   begins, and a cleanup that deleted the directory out from under it would turn
-   that into an unrelated failure. What the tests need is a clean start, and
-   `target/` is thrown away by `bb clean`."
+   Every run gets its own session directory (`target/test-modes/<uuid>`): the
+   stubbed `load-config` closes over it, so a run that outlives its test keeps
+   writing where it started and the next run neither deletes that directory nor
+   shares one with it. The directory is also bound for F, whose own assertions
+   read it through `sessions-dir` — the binding is not how the run learns it,
+   because a mode's threads are not all created under this one."
   [send-message f]
-  (fs/delete-tree sessions-dir)
-  (fs/create-dirs sessions-dir)
-  (with-redefs [cfg/load-config (fn [& _] (settings))
-                cfg/get-api-key (fn [_] "test-key")
-                llm/send-message send-message]
-    (f)))
+  (let [dir (str (fs/path "target" "test-modes" (str (random-uuid))))
+        settings (settings dir)]
+    (fs/create-dirs dir)
+    (binding [*sessions-dir* dir]
+      (with-redefs [cfg/load-config (fn [& _] settings)
+                    cfg/get-api-key (fn [_] "test-key")
+                    llm/send-message send-message]
+        (f)))))
 
 (defn answering
   "A `send-message` stub that streams TEXT and stops."

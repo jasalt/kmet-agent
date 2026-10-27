@@ -118,9 +118,12 @@
   (some #(when (str/includes? % "› ") %) (render-text sel width)))
 
 (defn- wait-for
-  "Poll PRED until truthy (async completions land on futures)."
+  "Poll PRED until truthy (async completions land on futures). The deadline is
+   the budget for a snapshot to land under a *full* suite's load, not a single
+   namespace's: a Jolt full run has thousands of tests behind it and delays the
+   pooled work this predicate reads, so a tighter bound fails now and then."
   [pred]
-  (let [deadline (+ (concurrent/monotonic-ms) 3000)]
+  (let [deadline (+ (concurrent/monotonic-ms) 10000)]
     (loop []
       (if (pred)
         true

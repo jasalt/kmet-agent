@@ -47,16 +47,24 @@
   (binding [engine/*construct-context* {:parent window}]
     (engine/render-component root nil)))
 
+(declare stop-live-tk!)
+
 (defn live-tk
   "The real adapter with Tk initialized (a display), or nil: no libtcl, no
-   libtk, or no display (a headless machine)."
+   libtk, or no display (a headless machine).
+
+   A probe that loaded Tcl but could not load Tk stops the interpreter it
+   created: it belongs to this thread, and leaving it behind would hand the
+   next namespace (whose tests run on another thread) an interpreter it must not
+   delete — Tcl aborts the process when an interpreter is torn down from a
+   thread other than its creator's."
   []
   (try
     (require 'kmet.tk.tcl)
     (let [a ((deref (ns-resolve 'kmet.tk.tcl 'adapter)))]
       ((:prepare! a))
       a)
-    (catch Throwable _ nil)))
+    (catch Throwable _ (stop-live-tk!) nil)))
 
 (defn stop-live-tk!
   "Stop the interpreter a live adapter installed, if one is running."

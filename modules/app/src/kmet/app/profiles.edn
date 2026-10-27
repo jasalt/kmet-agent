@@ -56,9 +56,9 @@
  ;; profile that renders stacks it after :bundle/minimal; print and rpc inject
  ;; :ui and bind `(:port (srce/get ctx :ui))`, and the server stacks it for the
  ;; per-connection surface landing 8 adds.
- :bundle/headless
- {:rows [{:id :ui :plugin kmet.ui.headless/plugin}]
-  :patch []}
+  :bundle/headless
+  {:rows [{:id :ui :plugin kmet.ui.headless/plugin}]
+   :patch []}
 
  ;; The terminal UI provider: a profile that draws answers dialogs through the
  ;; running TUI instead of the headless degraded answers. Its plugin supplies
@@ -66,19 +66,19 @@
  ;; a permission `:ask` are one human at one terminal. The patch removes the
  ;; minimal bundle's default approvals row — the provider's own seam replaces
  ;; it, and the kernel forbids two providers of one service on a chain.
- :bundle/terminal
- {:rows [{:id :ui :plugin kmet.ui.tui/provider-plugin}]
-  :patch [{:id :approvals :remove true}]}
+  :bundle/terminal
+  {:rows [{:id :ui :plugin kmet.ui.tui/provider-plugin}]
+   :patch [{:id :approvals :remove true}]}
 
  ;; The gate as a bundle: one row, the policy, mounted wherever an agent's child
  ;; ctx should decide per agent. A profile stacks it at the root (the `:rpc-ask`
  ;; profile below); a *preset* mounts it on one agent's ctx
  ;; (`kmet.app.presets`), which is what the row's own docstring asks for — a
  ;; policy decides per agent, so it mounts on the agent's ctx.
- :bundle/gated
- {:rows [{:id :permissions :plugin kmet.app.permissions/permissions
-          :config {:policy :ask-all}}]
-  :patch []}}
+  :bundle/gated
+  {:rows [{:id :permissions :plugin kmet.app.permissions/permissions
+           :config {:policy :ask-all}}]
+   :patch []}}
 
  :profiles
  {:tui
@@ -89,7 +89,7 @@
   ;; point may hand it -c/-r/--session instead of refusing them by name.
   {:bundles [[:bundle/minimal {}] [:bundle/terminal {}]]
    :rows [{:id :mode-tui :plugin kmet.ui.tui/plugin :mode true
-          :session-lifecycle true}]
+           :session-lifecycle true}]
    :patch []}
 
   ;; the TUI with the gate mounted per agent: no bundle change — the row names
@@ -112,7 +112,7 @@
   :print
   {:bundles [[:bundle/minimal {}] [:bundle/headless {}]]
    :rows [{:id :mode-print :plugin kmet.app.modes.print/plugin
-          :mode true :prompt true}]
+           :mode true :prompt true}]
    :patch []}
 
   ;; rpc is the same rows with a mode that serves a protocol instead of a

@@ -1323,7 +1323,12 @@
    body, and it receives the extension's ctx and its ABI map. A throwing body
    is the kernel's business — the fiber goes :failed rather than rethrowing —
    so a mount that failed *now* is turned back into a load error, or a broken
-   extension would report as loaded."
+   extension would report as loaded.
+
+   The body runs `loader-aware`, like every other extension callback: a shipped
+   extension reads its bundled files at mount time (a SKILL.md, a prompt
+   template), and on Jolt `clojure.java.io/resource` resolves through the
+   extension's own loader only while that context is in effect."
   [ext plugin-sym path]
   (let [var-name (if plugin-sym (symbol (clojure.core/name plugin-sym)) 'plugin)
         plugin-var (extension-var ext @(:entry-ns ext) var-name)]
@@ -1349,7 +1354,7 @@
                           :apply (fn [fctx _config]
                                    (let [api (create-extension-api ext)]
                                      (reset! (:api ext) api)
-                                     ((:apply plugin) fctx api)
+                                     ((loader-aware ext (:apply plugin)) fctx api)
                                      (reset! (:initialized? ext) true)))))]
         (reset! (:fiber ext) fiber)
         (when (= :failed (:state @fiber))

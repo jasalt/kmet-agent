@@ -19,6 +19,11 @@
                                                        with-mode-run
                                                        with-model-catalog]]))
 
+(def ^:private run-wait-ms
+  "How long a run may take to produce the record a test waits for: a cold Jolt
+   process spends several seconds reaching the provider on its first run."
+  60000)
+
 (defn- run-rpc
   "Run the mode with LINES on stdin, answering `{:code :err :records}` — the
    protocol records it wrote, in order.
@@ -29,8 +34,12 @@
    run is live cancels the run, which is right for a client that left and wrong
    for a test that only wanted to read the answer. `:until` is a string to wait
    for on the wire before closing, and `:then` lines are written after that
-   wait (a command whose answer depends on the run having ended). ARGS replace
-   `--profile rpc` when a test wants another spelling of the invocation."
+   wait (a command whose answer depends on the run having ended). The wait is
+   bounded by the same 60 s the file's stalled-run derefs use: Jolt's first run
+   in a process pays a cold-start cost (first tool, prompt and model
+   resolution) of several seconds, so a tighter bound fails whichever test
+   happens to run first. ARGS replace `--profile rpc` when a test wants another
+   spelling of the invocation."
   [{:keys [lines args until then]}]
   (let [server (java.net.ServerSocket. 0)
         accepted (future (.accept server))
@@ -55,7 +64,7 @@
                           e)))))
     (try
       (when until
-        (support/wait-until #(str/includes? (str out) until)))
+        (support/wait-until #(str/includes? (str out) until) run-wait-ms))
       (doseq [line then]
         (.write writer (str line "\n")))
       (.flush writer)

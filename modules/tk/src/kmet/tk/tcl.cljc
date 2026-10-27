@@ -230,6 +230,12 @@
 (defonce ^:private interp (atom nil))
 (defonce ^:private handlers (atom {}))
 
+;; The thread that created the interpreter. Tcl tears an interpreter down on it
+;; and nowhere else: a `Tcl_DeleteInterp` from another thread aborts the process
+;; (Tcl_AsyncDelete: async handler deleted by the wrong thread), because Tcl's
+;; async handler belongs to the thread whose notifier created it.
+(defonce ^:private interp-thread (atom nil))
+
 ;; {:key (search-key) :tried [names]} from the last failed resolution — a
 ;; miss is an installation fact, not interpreter state, so `stop!` leaves it
 ;; in place. Cleared when a search succeeds under a new key.
@@ -360,6 +366,7 @@
                                  (tcl-result i))
                             {:type :kmet.tk.tcl/init-failed})))
           (reset! interp i)
+          (reset! interp-thread (Thread/currentThread))
           i))))
 
 (defn- tcl-eval!
@@ -473,13 +480,21 @@
 (defn stop!
   "Delete the interpreter (tests, orderly shutdown). A memoized failed
    library search survives: it records an installation fact, not
-   interpreter state (`stop!` runs in every live-Tk test's teardown)."
+   interpreter state (`stop!` runs in every live-Tk test's teardown).
+
+   Only the thread that created the interpreter deletes it — Tcl's rule, not
+   kmet's preference: another thread's `Tcl_DeleteInterp` aborts the process
+   (Tcl_AsyncDelete: async handler deleted by the wrong thread). A stop from a
+   foreign thread is therefore a no-op that leaves the interpreter (and Tk's
+   loaded state) for its own thread to tear down, instead of killing the run."
   []
   (when-some [i @interp]
-    (tcl-delete-interp i))
-  (reset! interp nil)
-  (reset! tk-ready? false)
-  (reset! handlers {})
-  (reset! trampoline-callable nil)
-  (reset! trampoline-arena nil)
-  (reset! libraries nil))
+    (when (identical? (Thread/currentThread) @interp-thread)
+      (tcl-delete-interp i)
+      (reset! interp nil)
+      (reset! interp-thread nil)
+      (reset! tk-ready? false)
+      (reset! handlers {})
+      (reset! trampoline-callable nil)
+      (reset! trampoline-arena nil)
+      (reset! libraries nil))))

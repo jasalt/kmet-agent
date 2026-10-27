@@ -305,6 +305,18 @@
      (srce/settle! ctx)
      {:ctx ctx :tools handle})))
 
+(defn with-no-credentials
+  "Run F with the agent's provider unconfigured, as a machine that never logged
+   in. `run-agent-turn`'s no-key guard reads the api-key resolver *and*
+   `auth/configured?` — which sees a stored auth.edn entry, a configured
+   models.edn key, an env var, or an ambient credential — so a test asserting
+   the refusal pins both; otherwise a developer's `~/.kmet/agent/auth.edn`
+   turns the refusal into a real (model-less) request."
+  [f]
+  (with-redefs [cfg/get-api-key (fn [_] nil)
+                auth/configured? (fn [_] false)]
+    (f)))
+
 (defn with-host
   "Run F with a bound extension host over a fresh registry handle
    (`kmet.app.test-support/with-host`): the loop's tool and render paths ask the

@@ -675,11 +675,13 @@
 
 (deftest resume-refuses-an-id-no-session-carries
   ;; A handle id is not a session id, and nothing is guessed: the refusal is
-  ;; named, and the create leaves no child ctx behind.
+  ;; named, and the create leaves no child ctx behind. The resume carries
+  ;; TEST-CONFIG, like every other create here: `:resume!` without one loads the
+  ;; process's own config and would search the user's session dir.
   (let [{:keys [root agents]} (mounted)
         children (count (srce/children root))
         refused (fn [id]
-                  (try ((:resume! agents) root id)
+                  (try ((:resume! agents) root id {:config test-config})
                        nil
                        (catch Throwable t t)))]
     (let [e (refused "no-such-session")]
