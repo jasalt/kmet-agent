@@ -8,13 +8,18 @@
    reference; this runtime wires the api capabilities to the registries
    and the interactive/loop surfaces.
 
-   An extension is a .clj file defining (defn init [api]) in its namespace,
-   a directory containing an extension.edn manifest, or a .jar/.zip archive
-   with the same layout at its root:
-     {:name \"my-ext\" :entry my.ext.main :loader [:jolt :sci]}
-   The manifest lists the initial namespace (:entry, a symbol) and the
-   loader backends the extension supports (:loader — a non-empty vector of
-   :sci/:jolt). The host picks its own preference among the declared kinds
+   An extension **is a plugin**, in one of three layouts: a .clj file defining
+   `plugin` in its own namespace (a single file has no manifest, so the var is
+   the whole declaration), a directory containing an extension.edn manifest, or
+   a .jar/.zip archive with the same layout at its root:
+     {:name \"my-ext\" :plugin my.ext.core/plugin :loader [:jolt :sci]}
+   `:plugin` names a **qualified** var holding the plugin map; its namespace is
+   the entry namespace, loaded first. That map is the whole declaration —
+   `:inject` lives there, and there is no `:entry`/`init` form: a manifest
+   carrying `:entry` (the retired `(defn init [api])` shape) or a manifest-level
+   `:inject` is refused with the replacement named. `:loader` declares the
+   loader backends the extension supports (a non-empty vector of :sci/:jolt).
+   The host picks its own preference among the declared kinds
    (`select-loader-kind`): babashka loads :sci, Jolt prefers its native
    :jolt loader and falls back to :sci; an extension declaring none of the
    host's backends is skipped, not failed. A manifest without :loader (a
@@ -52,9 +57,15 @@
    extension recorded, and the plugin fiber the mount created is disposed by
    the kernel.
 
-   Extensions load at startup (core.clj), are re-loaded by /reload, and can
-   be unloaded/reloaded at runtime via unload-extension! /
-   reload-extensions!."
+   Extensions load when a composition row mounts them
+   (`kmet.app.extensions.rows`), not at startup from settings: `/reload`
+   reloads each mounted row's extension with the row's config
+   (`rows/reload-all!`), and disposing a row unloads the record it owns.
+   `load-extension!`/`unload-extension!` are the per-artifact entry points
+   those two call; the path and container loaders below
+   (`load-extension-paths!`, `load-extensions-from-dir`,
+   `reload-extensions!`) serve a caller holding a directory of artifacts and
+   are not on a boot path."
   (:require [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.string :as str]
@@ -1321,6 +1332,130 @@
       (loader/load l {:kind :var :name (str entry-ns "/" var-name)})
       (catch Throwable _ nil))))
 
+;; ─── Rows an extension mounts ──────────────────────────────────────────────
+
+(def ^:private extension-row-keys
+  "The keys an extension's `:rows` entry carries — the row shape, narrowed: an
+   extension row is mounted under the extension's own ctx, so a `:mode` flag has
+   no meaning there (the profile picks the run's mode) and an `:ext/…` source
+   cannot be composed from inside an extension."
+  #{:id :plugin :config})
+
+(defn- bad-extension-row
+  [ext row message]
+  (throw (ex-info (str "Extension " (:name ext) " " message)
+                  {:type :kmet.app/bad-extension-row
+                   :extension (:name ext)
+                   :row row})))
+
+(defn- row-source
+  "ROW's plugin source, ready to mount: a var as it is, or a symbol resolved two
+   ways — off the host classpath first, then through the extension's own loader.
+   The second path is what lets an extension structure **itself** out of rows:
+   its namespaces live in its loader and are not host-resolvable on every host."
+  [ext row]
+  (let [source (:plugin row)]
+    (if (var? source)
+      source
+      (or (try (requiring-resolve source) (catch Throwable _ nil))
+          ;; the extension's own namespaces: the loader answers with the var, so
+          ;; the map it holds is what `srce/plugin!` mounts
+          (when-some [loaded (extension-var ext (namespace source) (name source))]
+            (let [value (if (map? loaded)
+                          loaded
+                          (try (deref loaded) (catch Throwable _ nil)))]
+              (when (and (map? value) (keyword? (:name value)) (fn? (:apply value)))
+                value)))
+          (bad-extension-row ext row
+                             (str "row " (pr-str (:id row)) " cannot resolve "
+                                  source " — name a plugin var on the classpath"
+                                  " or in the extension's own namespaces"))))))
+
+(defn- extension-rows
+  "EXT's declared `:rows`, validated and their sources resolved, as
+   `[{:id :source :config} …]`.
+
+   An extension row is a **child** row: it mounts inside the extension's own
+   ctx, so it lives and dies with the extension, and a service it provides is
+   visible to the extension rather than to the app — the app-wide services
+   belong to the composition, and the kernel refuses a second provider on the
+   chain. That is the honest shape of an extension that composes: it builds a
+   subtree of rows rather than adding to the run's composition.
+
+   Everything is decided here, before anything mounts, so a bad declaration
+   fails the load before the extension's body runs. Refused: a non-map, a
+   `:mode` row, a row without a keyword `:id`, a source that is neither a var
+   nor a symbol (an `:ext/…` keyword would compose another installed
+   extension), and a key outside `extension-row-keys`."
+  [ext plugin]
+  (let [rows (:rows plugin)]
+    (when-not (or (nil? rows) (sequential? rows))
+      (bad-extension-row ext rows
+                         (str ":rows must be a vector of rows, got: "
+                              (pr-str (type rows)))))
+    (mapv (fn [row]
+            (cond
+              (not (map? row))
+              (bad-extension-row ext row "mixes a non-map into :rows")
+
+              (contains? row :mode)
+              (bad-extension-row ext row
+                                 (str "declares a :mode row " (pr-str (:id row))
+                                      " — the profile picks the run's mode"))
+
+              (not (keyword? (:id row)))
+              (bad-extension-row ext row
+                                 "needs every :rows entry to carry a keyword :id")
+
+              (not (or (symbol? (:plugin row)) (var? (:plugin row))))
+              (bad-extension-row ext row
+                                 (str "needs row " (pr-str (:id row))
+                                      " to name a plugin var; an :ext/… source"
+                                      " would compose another installed extension"))
+
+              (seq (remove extension-row-keys (keys row)))
+              (bad-extension-row ext row
+                                 (str "row " (pr-str (:id row))
+                                      " carries keys an extension row cannot: "
+                                      (vec (remove extension-row-keys (keys row)))
+                                      " (allowed: " (vec extension-row-keys) ")"))
+
+              :else
+              {:id (:id row)
+               :source (row-source ext row)
+               :config (:config row)}))
+          (or rows []))))
+
+(defn- mount-extension-rows!
+  "Mount ROWS under FCTX and return their fibers in declaration order. Each is a
+   child of the extension's fiber, so it is disposed with it.
+
+   This is `runtime/mount-rows!`'s mount without the composition's `:ext/…`
+   sources. `kmet.app.runtime` requires this namespace (through the catalog and
+   the `:ext/…` adapter), so the one-line mount is repeated here rather than
+   turning that edge into a cycle."
+  [rows fctx]
+  (mapv (fn [{:keys [source config]}] (srce/plugin! fctx source config)) rows))
+
+(defn- check-extension-rows-active!
+  "Throw when a row EXT mounted is not `:active` after the kernel settled. The
+   extension's own `:failed` check runs first, so this reports the rows that
+   mounted but never reached the app — an `:inject` nothing provides, most
+   often a typo in the list."
+  [ext rows fibers]
+  (doseq [[{:keys [id]} fiber] (map vector rows fibers)]
+    (when-not (= :active (:state @fiber))
+      (let [{:keys [state error waiting-for]} @fiber]
+        (throw (ex-info (str "Extension " (:name ext) " row " (pr-str id)
+                             " did not mount (" (pr-str state) "): "
+                             (or (some-> error ex-message)
+                                 (str "waiting for "
+                                      (vec (sort waiting-for)))))
+                        {:type :kmet.app/extension-row-failed
+                         :extension (:name ext)
+                         :row id})))))
+  nil)
+
 (defn- mount-plugin!
   "Mount EXT under the host ctx and return its fiber.
 
@@ -1355,7 +1490,9 @@
                              " keyword :name and an :apply fn (a srce/defplugin"
                              " var), got: " (pr-str (type plugin)))
                         {:path path})))
-      (let [fiber (srce/plugin!
+      ;; before anything mounts: a bad row list fails before the body runs
+      (let [rows (extension-rows ext plugin)
+            fiber (srce/plugin!
                    (:ctx (services))
                    (assoc plugin
                           :apply (fn [fctx _config]
@@ -1370,6 +1507,9 @@
                                    "its plugin body threw"))
                           {:path path
                            :cause (:error @fiber)})))
+        ;; the extension's own rows: children of its ctx, disposed with it
+        (reset! (:rows ext) (mount-extension-rows! rows (:ctx @fiber)))
+        (check-extension-rows-active! ext rows @(:rows ext))
         fiber))))
 
 (defn- load-extension*
@@ -1413,6 +1553,7 @@
                     :api (atom nil)
                     :deregister-fns (atom [])
                     :fiber (atom nil)
+                    :rows (atom [])
                     :initialized? (atom false)
                     :jar-files (atom {})})]
           (try
@@ -1586,6 +1727,11 @@
         (registry/deregister-owner! (handle) tag owner))
       (when-let [sweep (:deregister-owner! (services))]
         (sweep owner)))
+    ;; the rows the extension mounted are children of its ctx: dispose them
+    ;; first, so a service a row provided is gone before the extension's namespaces
+    (doseq [fiber (rseq (deref (:rows ext)))]
+      (srce/dispose! fiber))
+    (reset! (:rows ext) [])
     ;; a plugin-mounted extension is a fiber: disposing it unwinds the effects
     ;; the kernel holds and drops it from the tree, pending or active
     (when-let [fiber @(:fiber ext)]

@@ -14,6 +14,8 @@ are the deliberate exception.
   navigate sessions.
 - [Profiles and composition](profiles.md) — what a run mounts, `--profile`, and
   how `--patch` and the global/project `patch.edn` layers edit the row list.
+- [Composition catalog](composition.md) — every built-in bundle and profile row
+  by row, and the tools the model is offered (generated).
 - [RPC mode](rpc.md) — drive a long-lived session over EDN stdin/stdout:
   protocol, commands, and extension UI.
 - [Server mode](serve.md) — the same protocol on a socket, one agent per

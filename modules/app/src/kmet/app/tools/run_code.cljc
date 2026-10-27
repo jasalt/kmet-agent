@@ -1162,5 +1162,5 @@
 (srce/defplugin plugin
   {:name :tool/run_code
    :inject [:tools]
-   :apply (fn [ctx _config]
-            (registry/mount-tool! ctx (definition (srce/get ctx :tools))))})
+   :apply (fn [ctx config]
+            (registry/mount-tool! ctx (definition (srce/get ctx :tools)) config))})

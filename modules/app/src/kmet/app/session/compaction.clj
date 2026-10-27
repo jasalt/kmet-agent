@@ -14,7 +14,7 @@
    `abort-compaction!`, `queue-compaction-message!`, `clear-compaction-queue!`);
    the engine path and the loop handle share this implementation, so the
    deferred-completion rule has one copy."
-  (:require [kmet.app.compaction.stage :as agent-compact]
+  (:require [kmet.app.compaction :as agent-compact]
             [kmet.app.debug :as debug]
             [kmet.app.session.runtime :as runtime]))
 

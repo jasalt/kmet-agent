@@ -10,6 +10,9 @@
             [kmet.app.config :as cfg]
             [kmet.ai.llm :as llm]
             [kmet.app.tools.registry :as tools]
+            [kmet.app.compaction :as compaction]
+            [kmet.app.llm :as app-llm]
+            [kmet.app.loop.stages :as stages]
             [kmet.app.core :as core]
             [kmet.app.events :as events]
             [kmet.app.runtime :as runtime]
@@ -40,6 +43,18 @@
                                              (when-let [done (:on-done opts)]
                                                (done :stop))))]
             (let [handle ((:create! agents) (:ctx boot) {:config config})]
+              (is (= app-llm/builtin (srce/get (:ctx boot) :llm))
+                  "the :llm row mounted model access; the loop's completion and
+                   the summarizer resolve it here")
+              (is (= compaction/builtin (srce/get (:ctx boot) :compaction))
+                  (str "and the :compaction row mounted the builtin strategy, "
+                       "which the loop and the session handle resolve"))
+              (is (= (get-in stages/defaults [:retry-policy :call])
+                     (get-in (stages/for-ctx (:ctx (:agent handle)))
+                             [:retry-policy :call]))
+                  (str "the agent's ctx reads the composition's stage rows — the "
+                       "service the :retry-policy row provided at the mount "
+                       "site, not a library bound into the loop"))
               ((:send! agents) handle "hello" {:target :next-turn})
               (is (= :completed (:outcome (deref settled 20000 ::timeout)))
                   "the booted composition runs a turn and settles it once")

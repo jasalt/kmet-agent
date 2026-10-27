@@ -32,6 +32,7 @@
    kmet1's arity-less façade does while it survives."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
+            [kmet.app.profile :as profile]
             [kmet.app.registry :as registry]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
@@ -71,28 +72,38 @@
 
 (defn mount-tool!
   "Mount TOOL into CTX's `:tools` handle as this row's effect — what a tool
-   plugin's `:apply` calls. The registration is owned by and labelled
-   `(port-name (:name tool))`, so disposing the fiber takes the tool with it and
-   the mount's effect line names the tool the model sees.
+   plugin's `:apply` calls with the row's `:config`. The registration is owned
+   by and labelled `(port-name (:name tool))`, so disposing the fiber takes the
+   tool with it and the mount's effect line names the tool the model sees.
+
+   CONFIG is the composition's say over the record, applied through
+   `kmet.app.tools.tool/configure`: the model-facing presentation
+   (`:label`, `:description`, `:prompt-snippet`, `:prompt-guidelines`), merged
+   over the tool's defaults and validated here — an unknown key or a wrongly
+   shaped value throws rather than leaving the default in place as if the
+   override had landed. A nil CONFIG mounts TOOL as the plugin wrote it, which
+   is what every row without a `:config` gets.
 
    Returns nil on purpose: a row whose `:apply` returns a value registers a
    second, empty effect (the kernel labels it `apply <row>`), so the caller ends
    with this call and nothing else."
-  [ctx tool]
-  (let [handle (srce/get ctx :tools)
-        name (:name tool)
-        id (port-name name)]
-    (when-not handle
-      (throw (ex-info (str "a tool row needs the :tools service: " id
-                           " mounted on a ctx that provides none")
-                      {:type :kmet/no-tool-service :tool name})))
-    (srce/effect ctx
-                 (fn []
-                   (registry/register! handle :kmet/tool name
-                                       (tool/normalize-tool-definition tool)
-                                       id))
-                 id)
-    nil))
+  ([ctx tool] (mount-tool! ctx tool nil))
+  ([ctx tool config]
+   (let [tool (tool/configure tool config)
+         handle (srce/get ctx :tools)
+         name (:name tool)
+         id (port-name name)]
+     (when-not handle
+       (throw (ex-info (str "a tool row needs the :tools service: " id
+                            " mounted on a ctx that provides none")
+                       {:type :kmet/no-tool-service :tool name})))
+     (srce/effect ctx
+                  (fn []
+                    (registry/register! handle :kmet/tool name
+                                        (tool/normalize-tool-definition tool)
+                                        id))
+                  id)
+     nil)))
 
 ;; ─── Registration ──────────────────────────────────────────────────────────
 
@@ -254,18 +265,27 @@
 
 ;; ─── Default tool selection (pi: defaultTools) ─────────────────────────────
 
+(defn bundle-tool-names
+  "The model-facing tool names BUNDLE's rows declare, in composition order: the
+   `:tool/<name>` row ids read back through `tool-row-name`, so `{:id :tool/ls}`
+   contributes `\"ls\"` and a row that is not a tool contributes nothing. Data
+   only — a row's `:plugin` is never resolved."
+  [bundle]
+  (into [] (keep (comp tool-row-name :id)) (:rows bundle)))
+
 (def builtin-tool-names
   "Names of the built-in tools, in composition order — the base a modifier-only
    `:default-tools` list modifies, and the set the setting can exclude.
    Pi: DEFAULT_TOOL_NAMES; kmet ships every built-in active by default, so the
    base is the full built-in set (docs/configuration.md).
 
-   A list here rather than a reading of the table: the settings layer asks which
-   names exist before any composition mounts, and the tool rows are the same
-   list — `:bundle/minimal` names each one `(port-name <name>)`, and
-   `kmet.app.tools.test-tool-tables/the-rows-are-the-name-list` holds the two
-   equal."
-  ["read" "write" "edit" "bash" "run_code"])
+   Derived from `:bundle/minimal`'s rows, not restated beside them: the
+   composition is where a built-in tool is declared, so adding a tool row adds
+   its name here and patching one out of the bundle takes it away, with no
+   second list to keep in step. Reading the table is static (`kmet.app.profile`
+   is composition data and resolves no plugin), so the settings layer can still
+   ask which names exist before any composition mounts."
+  (bundle-tool-names (profile/bundle (profile/builtin) :bundle/minimal)))
 
 (defn tool-selection-modifier?
   "True when a :default-tools entry is a +name/-name modifier (pi:

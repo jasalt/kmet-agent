@@ -123,6 +123,15 @@
                                     (doseq [e errors] (println "  -" e))
                                     (System/exit 1))
                                 (println "Committed model data is valid."))))}
+  generate-catalog {:doc "Regenerate the committed composition catalog (docs/composition.md)\n\nBundles and profiles from the built-in table, the tool surface from a minimal boot; deterministic, so the diff is the change."
+                    :requires ([kmet.app.composition-gen :as catalog-gen])
+                    :task (help/with-help (println "Wrote" (catalog-gen/write!)))}
+  check-catalog {:doc "Check docs/composition.md against the built-in composition (offline)\n\nRun `bb generate-catalog` when it names a difference."
+                 :requires ([kmet.app.composition-gen :as catalog-gen])
+                 :task (help/with-help
+                         (if-let [problem (catalog-gen/check)]
+                           (do (println problem) (System/exit 1))
+                           (println "The composition catalog is current.")))}
   pack-extension {:doc "Verify an extension artifact root and pack it as .jar\n\nUsage: bb pack-extension <src-dir> [out.jar]; src-dir is the artifact root, e.g. extensions/clojure/src."
                   :requires ([kmet.tasks.build :as build])
                   :task (help/with-help (apply build/pack-extension! *command-line-args*))}

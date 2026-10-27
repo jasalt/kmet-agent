@@ -5,6 +5,45 @@
             [kmet.app.loop.stages :as stages]
             [kmet.srce.core :as srce]))
 
+(deftest a-composition-provides-the-stages
+  (let [ctx (srce/root)
+        replacement (fn [& _] :replacement)]
+    (srce/provide! ctx :retry-policy {:call replacement :config {:max-retries 2}})
+    (is (= #{:loop-guard :retry-policy} (set (keys (stages/base ctx)))))
+    (is (identical? replacement (get-in (stages/base ctx) [:retry-policy :call]))
+        "the mounted row is the implementation the loop reads")
+    (is (= {:max-retries 2} (get-in (stages/base ctx) [:retry-policy :config])))
+    (is (= (get-in stages/defaults [:loop-guard :call])
+           (get-in (stages/base ctx) [:loop-guard :call]))
+        "a stage with no row keeps its builtin")
+    (is (= (stages/base ctx) (stages/for-ctx ctx))
+        "a ctx with no run-seat of its own reads the composition")
+    (testing "a run's own map still wins whole"
+      (let [child (srce/extend ctx {:loop-stages (atom {:loop-guard {:call :own}})})]
+        (is (= {:loop-guard {:call :own}} (stages/for-ctx child)))))))
+
+(deftest the-stage-rows-provide-from-the-mount-sites-scope
+  (let [world (srce/root)
+        guard (get-in stages/defaults [:loop-guard :call])
+        seen (atom ::unseen)
+        probe {:name :probe
+               :apply (fn [ctx _config] (reset! seen (srce/get ctx :loop-guard)))}]
+    (srce/plugin! world #'stages/loop-guard-row nil)
+    (srce/plugin! world #'stages/retry-policy-row {:max-retries 1})
+    (srce/plugin! world probe)
+    (is (= {:call guard} @seen)
+        (str "a sibling row reads the stage from the shared scope — the mount "
+             "site, which is where the loop and every agent ctx below it look"))
+    (is (= {:max-retries 1} (:config (srce/get world :retry-policy)))
+        "and a row's :config is the stage's config")
+    (is (= (get-in stages/defaults [:retry-policy :call])
+           (get-in (stages/base world) [:retry-policy :call]))
+        "base composes both rows' values over their defaults")
+    (testing "a config the stage cannot read is refused, not silently ignored"
+      (is (thrown-with-msg? Exception #":config must be a map"
+                            ((stages/apply-stage :loop-guard)
+                             (srce/extend world {}) [:threshold 3]))))))
+
 (deftest the-defaults-are-the-two-stages-the-loop-reads
   (is (= #{:loop-guard :retry-policy} (set (keys stages/defaults))))
   (is (every? (comp fn? :call val) stages/defaults))

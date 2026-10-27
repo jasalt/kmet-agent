@@ -21,19 +21,16 @@ the extension host, the event bus, the tool registry, the session log, the
 agent factory, the system-prompt builder, the mode that runs the whole thing —
 and the row list is what a boot mounts, in order.
 
-`--dump-config` prints that list without booting anything:
+The built-in composition — every bundle and profile, row by row, with what each
+row injects and provides and the tools the model is offered — is the generated
+[`composition.md`](composition.md). Do not edit it: it is what the build ships,
+and `bb check-catalog` fails when it falls behind.
+
+For your own machine, `--dump-config` prints the same list with your layers
+applied, without booting anything:
 
 ```sh
 kmet --dump-config
-```
-
-```
-profile :tui rows=14 patches=1
-:extensions           kmet.app.extensions/plugin       inject={} provide=[] config={}
-:events               kmet.app.events/plugin           inject={} provide=[:events] config={}
-…
-:agent-loop           kmet.app.loop.driver/plugin      inject={:agents nil, :projections nil, …}
-:mode-tui             kmet.ui.tui/plugin               inject={:system-prompt nil, :tools nil} …
 ```
 
 Each line names the row id, the namespace that provides it, what the row

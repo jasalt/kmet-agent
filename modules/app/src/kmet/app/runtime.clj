@@ -195,6 +195,15 @@
                   :declarations (mapv (fn [[_ plugin spec]] {:plugin plugin :spec spec}) decls)})))
        vec))
 
+(defn- named-reason
+  "`<row id> (<error message>)` for an inactive row, or the bare id when it
+   failed without a message. The row's own error is the actionable half — a
+   boot message that only named the row left the reason in a log line the
+   operator has to find."
+  [{:keys [id error]}]
+  (let [msg (when (instance? Exception error) (ex-message error))]
+    (if msg (str (pr-str id) " (" msg ")") (pr-str id))))
+
 (defn- check-mounts!
   "Throw when any of ROWS is not `:active` in FIBERS, or when two of
    ALL-FIBERS (the boot's plus the just-mounted) declare one event differently —
@@ -207,7 +216,8 @@
     (when (and (seq failed) (not diagnose?))
       (doseq [f failed]
         (srce/log! ctx :error "plugin did not mount" f))
-      (throw (ex-info (str "kmet2 boot failed: " (str/join ", " (map (comp pr-str :id) failed))
+      (throw (ex-info (str "kmet2 boot failed: "
+                           (str/join ", " (map named-reason failed))
                            " not active")
                       {:type :kmet.app/boot-failed :fibers failed})))
     (let [conflicts (declaration-conflicts all-fibers)]

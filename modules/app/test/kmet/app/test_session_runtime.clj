@@ -8,7 +8,7 @@
             [kmet.app.config :as cfg]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions.core :as extensions]
-            [kmet.app.compaction.stage :as agent-compact]
+            [kmet.app.compaction :as agent-compact]
             [kmet.app.loop :as agent]
             [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]

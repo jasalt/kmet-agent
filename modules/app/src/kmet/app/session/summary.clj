@@ -6,7 +6,7 @@
    the call, and this namespace is the name a front end may require — the layer
    guard forbids a mode reaching the stage directly, and the driver that used to
    be the only caller goes with kmet1's entry at retirement."
-  (:require [kmet.app.compaction.stage :as agent-compact]
+  (:require [kmet.app.compaction :as agent-compact]
             [kmet.app.session.runtime :as runtime]))
 
 (defn generate-branch-summary

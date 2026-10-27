@@ -114,6 +114,21 @@ in the `run_code` surface). `:default-tools` is the runtime selection on top of
 that: it selects among the mounted built-in tools; extension tools stay enabled
 either way.
 
+A tool row's `:config` changes what the model **reads**, never what the tool
+does. Four keys are accepted — `:label`, `:description`, `:prompt-snippet` and
+`:prompt-guidelines` — and merge over the tool's own text, so a deployment can
+restate a tool for its context without replacing it:
+
+```clojure
+{:id :tool/bash
+ :config {:description "Run a shell command on this host's bash 5."}}
+```
+
+The tool's behavior stays the plugin's: its `:name` (the row id and the model's
+spelling of the tool), its parameters and its execution are not configurable. An
+unknown key or a wrongly shaped value fails the mount by name rather than
+leaving the default in place as if the override had applied.
+
 ```clojure
 :default-tools ["read" "bash"]   ; plain names: only these built-ins
 :default-tools ["-bash"]         ; +name/-name modify the built-in set

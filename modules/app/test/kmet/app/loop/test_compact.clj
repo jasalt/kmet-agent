@@ -9,7 +9,7 @@
             [kmet.ai.usage :as usage]
             [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
-            [kmet.app.compaction.stage :as compact]
+            [kmet.app.compaction :as compact]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]

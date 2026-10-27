@@ -475,7 +475,7 @@ rewrite.
 
 | Service | Contents | Today |
 |---|---|---|
-| `:llm` `:models` | provider call, model registry, auth status | `kmet.ai.*` |
+| `:llm` `:models` | provider call, model registry, auth status | `:llm` **landed** (`kmet.app.llm`: one `send-message` operation the loop and the compaction summarizer resolve through the agent's ctx, the `:llm` row providing `kmet.ai.llm`); `:models`/`:config`/`:auth` stay libraries — the catalog is files, a provider is `register-model-provider!`, and both are read before a ctx exists |
 | `:tools` `:commands` `:prompts` `:skills` | registries: name → value, per-context | `kmet.app.registry` + one row per registry (`kmet.app.tools`, `kmet.app.registries`); modes are rows, not a registry |
 | `:agents` | live handles: `create!` / `resume!` / `dispose!` / `get` / `list` / `roots`, plus the control surface a front end drives — `send!` / `followup!` / `steer!` / `inject!` / `cancel!` / `when-idle` / `status` / `inbox` (the handle's queued messages, read through `:projections`). A handle owns one agent, its session and its child context, and it is the **capability** that may tear it down; `get` returns the bare agent. The catalog is the seam, not the whole surface: the rest of a front end's ops (`set-model!`, the session lifecycle, compaction, steering modes, `clear-queues!`) are measured from the TUI's own call sites and land at landing 8 (§ "The remaining plan") | **landed** (`kmet.app.agents`, 4c-iii-b): the registry, the child ctx lifetime and the factory seam — what an agent *is* stays the factory's, and no factory mounts until 7a (`kmet.app.loop`'s `Engine` becomes the handle), and the front end's ops until 8 |
 | `:agentLoop` | the driver: run a turn, abort, teardown ordering; it also registers the creation factory on `:agents` (dsh's `setFactory`), so `:agents` has no `create!` until a loop is mounted | the loop driver plugin (`kmet.app.loop`) |
@@ -651,12 +651,12 @@ its own development, not a landing here.
   starts serving only when that profile boots. `--mode <name>` is the kmet1
   compatibility alias (`--mode rpc` → `--profile rpc`) for one release; it is
   not a `require` in `kmet.agent.cli` (which hard-requires all three today).
-- Third-party modes ship as extensions: the loader already isolates them and
-  the contract already exists, but a profile row resolving their `:ext/…`
-  source **did not ship** (§ Reconciliation — boot refuses the keyword). There
-  is no `:modes` listing registry either; the profile row is the only selector.
-  A third-party mode today is a plugin a profile row names by var, or an
-  extension that contributes commands and tools.
+- Third-party modes ship as extensions: the loader already isolates them, the
+  contract exists, and a profile row resolves their `:ext/…` source (landed
+  with the composition rows; § Reconciliation). There is no `:modes` listing
+  registry either; the profile row is the only selector. A third-party mode is
+  a plugin a profile row names by var, or an extension that contributes
+  commands and tools.
 - `mode-tui` = interactive, `mode-print` = one-shot, `mode-rpc` = stdio,
   `mode-server` = socket — all four drive the same `:agents` service; they
   already share `bootstrap`.
@@ -946,9 +946,19 @@ where Node uses package names:
   preset) runs without bash. The id is the model's own spelling of the tool
   (`(port-name "run_code")` → `:tool/run_code`), so a row in `--dump-config`, a
   label in `--dump-state` and the name the model calls are one word — and
-  `builtin-tool-names`, the static list the settings layer edits, is that same
-  list (held to it by `kmet.app.tools.test-tool-tables`). `:default-tools` stays
+  `builtin-tool-names` is read back off those row ids
+  (`registry/bundle-tool-names`), so a tool row added to the bundle is in the
+  settings layer's list without a second list to edit. `:default-tools` stays
   the *runtime* selection over the mounted tools.
+
+  A tool row's `:config` says what the model **reads**: `:label`,
+  `:description`, `:prompt-snippet` and `:prompt-guidelines` merge over the
+  definition (`mount-tool!` → `kmet.app.tools.tool/configure`, the dsh shape
+  where a deployment overrides a tool package's model-facing text without
+  replacing the package). The tool's behavior — its `:execute`, its
+  `:parameters`, its `:name` — stays the plugin's, and an unknown key or a
+  wrongly shaped value is a mount error rather than a default that silently
+  stayed put.
 - A **bundle** is a reusable row list + patches — the analog of dsh's
   `dsh.bundle`; a profile stacks bundles in order, then its own rows and
   patches. Presets (Standard / Minimal / PTC) are bundles.
@@ -1057,7 +1067,7 @@ Each is independently shippable and gated.
 | 5l | **landed** — the TUI library is `ui`'s: the driver and the builtin command table (5l-i, namespaces kept), the process world's body, the rank-2 root publisher, the load at the entry and one registry publisher (5l-ii), and the interactive cluster, the mode row and the config command (5l-iii) — so a TUI run is kmet2's own front end, with the terminal `:ui` provider and the approval seam a terminal needs; § "The remaining plan" | pty capture parity on `--app new` **met** (same header, resources, extensions, footer); `modules/agent/src/kmet/agent/modes` holds only kmet1's three; an extension's command registered under `--app new` is in the ctx's `:commands`; a TUI profile's ctx provides `:ui` (`:kind :terminal`) and `:approvals` |
 | 5n | **landed** — the invocation surface is kmet1's: the run flags (`-t`/`--thinking`, `--system-prompt`, `--append-system-prompt`, `--models`, `--session-dir`) parsed by the entry and resolved before a run, `@file` read at parse time, the maintenance flags (`-d`/`--debug` before the first load, `--generate-models` before the world, `--list-models [filter]` after it — one implementation in `kmet.app.maintenance` for both entries), extension `--flag` values in kmet1's three forms, the skill/prompt expansion chain in print and rpc, and the session-lifecycle flags (`-c`/`--continue`, `-r`/`--resume`, `--session <id>`) handed to the TUI row and refused by name where no factory opens a session (10a's); § "The remaining plan" | `-p @tasks.md` sends the file, `/skill:`-style expansion reaches the agent in print and rpc, `--list-models` is byte-identical to `--app old` bare and filtered, `--session-dir` places the session, `--app new -c` continues the last session, and `--model`/`--thinking` reach a TUI run — met |
 | 8 | **done** — the handle is the value a front end reads: its settings/compaction surface (`479eb19d`), per-agent listeners and rpc's model/compaction setters (`c6723127`), a run binding the extension surface to its agent (`2ce32596`), the session lifecycle below both drivers with its ops on the handle (`5a314785`), the TUI's agent as a handle presented from loop events (`6e3b6ce6`), the TUI's session commands and the per-agent front-end surface/sinks plus the builtins' handle path (`8f712922`, `5e9bbc98`), and the gate tests (`44044636` 8g: the agent in the tree, per-agent settings, per-ctx settlement, the image path) | a TUI run's agent is in `:agents` (`:agent/created`), `/model` writes to that agent's ctx, and two print runs in one process settle their own promises (**the last is met at the listener level**: print and rpc subscribe on the agent's ctx, and `kmet.app.test-front-end-gates` settles two agents' promises in one booted composition; no test mounts two print rows in one composition) |
-| 9 | **landed** — the execution seams: 9a made `:shell` a per-agent value, 9b made `read`'s skill resolver a binding (and the key-hint theme derived), 9c added the `:sandbox` realm value, 9d the two worlds and the process ledger; `:workspace`/`:fs` needed no service (`kmet.libs.path` resolves against `(:cwd ctx)`), and `:llm`/`:models`/`:config`/`:auth` stayed libraries rather than ctx services — a run's ctx carries `:models`/`:model`, and extension providers register through `models-register-provider!` | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) — all **met** |
+| 9 | **landed** — the execution seams: 9a made `:shell` a per-agent value, 9b made `read`'s skill resolver a binding (and the key-hint theme derived), 9c added the `:sandbox` realm value, 9d the two worlds and the process ledger; `:workspace`/`:fs` needed no service (`kmet.libs.path` resolves against `(:cwd ctx)`), and `:llm`/`:models`/`:config`/`:auth` stayed libraries rather than ctx services — a run's ctx carries `:models`/`:model`, and extension providers register through `models-register-provider!` (later: § Everything is a plugin landing 2 made `:llm` a row; `:models`/`:config`/`:auth` remain libraries) | two agents run shell in two cwds with two shells (`kmet.app.test-isolation`); a script's inner call resolves no host service (`kmet.app.test-sandbox`); the process cells are a ledger (`kmet.app.test-process-state`) — all **met** |
 | 10 | **landed** — 10a (the whole wire table), 10b (the boundary drain at `:agent-settled`, one boundary at a time per root, `kmet.app.test-submit-guard` holding the call sites to the owner's), resume-by-id (the registry's `:resume!` resolves the id over the session dir and binds a new agent to the stored session), remembering (an approver's scoped answer kept in the agent's memory, one workspace set per composition), and 10c (the bearer token, the unix socket, `--max-sessions`, the per-wire bounded queue with `:lag`/`:stream-gap`, idle reaping, and the config a connection brings); § "Landing 10c settled" | an agent disposed, resumed by id and answered (**met**, `kmet.app.loop.test-driver`); a tool thread's mount lands at the next turn (**met**, `kmet.app.test-composition-run`); two sessions isolated by cwd, shell and model (**met**, `kmet.app.modes.test-server`); a connection authenticates before it gets an agent, and a client that stops reading gets a `:stream-gap` and resyncs (**met**, the same suite) |
 | 11 | **landed** (`5ff5d34d`) — retirement: the `s/kmet\.agent\./kmet.app./` pass, kmet1's files deleted, `--app` flipped to the default and the flag dropped, the `agent` module row removed | the full gate set plus pi-alignment green with no `kmet.agent.*` in the tree except `kmet.agent.ui.tui.tool-renderers`, which `test/kmet/test_retirement.clj` holds as the ABI exception |
 
@@ -3007,7 +3017,9 @@ handle as a parameter they would have had to resolve one. So `built-in-tools`
 is a function of the registry, `builtin-tool-names` is derived from the static
 half plus `run_code`, and the sandbox resolves against the handle its own
 agent was built with — the property 4c-iii-c needs, obtained one landing early
-because the alternative was a global.
+because the alternative was a global. (The static half is gone at HEAD: the
+built-in tools became composition rows, and `builtin-tool-names` is now read
+back off `:bundle/minimal`'s `:tool/…` rows — `registry/bundle-tool-names`.)
 
 **`tools/util`'s test had been left behind.** `util` lifted with the four leaf
 dependencies at 4b-ii-a; its test namespace stayed in `agent` on the same
@@ -3681,8 +3693,9 @@ own, not a tweak.
 
 **Closed.** The ledger above ends at 7b-ii; landings 5a–5n, 6, 8, T, 9 and 11
 landed after it, and the last table row (`scripts/bench/`) is marked done. This
-section is kept as the measurement record. The only item from the whole note
-still open is `:ext/…` composition rows (§ Reconciliation).
+section is kept as the measurement record, and nothing in the ledger is still
+open: `:ext/…` composition rows, the last one that was, shipped in the
+reconciliation pass (§ Reconciliation).
 
 ### What is left, measured
 
@@ -3690,7 +3703,9 @@ Everything kmet1 carried is gone, and 9's execution seams are in: `:shell` and
 `:sandbox` are per-agent services, `:workspace`/`:fs` needed no service
 (`kmet.libs.path` resolves against `(:cwd ctx)`), and `:llm`/`:models` and
 `:config`/`:auth` stayed libraries (a run's ctx carries `:models`/`:model`;
-extension providers register through `models-register-provider!`). `:modes`
+extension providers register through `models-register-provider!`; landing 2 of
+§ Everything is a plugin later made `:llm` a service — `:models`/`:config`/
+`:auth` remain libraries). `:modes`
 is not a service at all — the modes are rows and the profile is the selector.
 `kmet.app.test-process-state` is the ledger of the process cells that remain,
 each with a written reason. 10c closed the server's
@@ -4914,6 +4929,172 @@ sections above record how), and the two statuses below say so explicitly.
   (`kmet.app.loop.test-driver` observes the binding from inside the model call;
   `kmet.app.tools.test-read` holds the not-a-file answer outside a run), and 9d's
   process-state test can hold the cell's absence.
+
+## Everything is a plugin: the five remaining landings
+
+The composition can already replace the loop, tools, sessions, model access, the
+four modes, the UI, the permission policy, approvals, the prompt builder, the
+event bus and the extension host — every one of them a row, and the generated
+list is [`docs/composition.md`](docs/composition.md). § Service catalog above is
+the target table; what follows audits what is **not** a row at HEAD — now only
+that catalog's `:models`, `:config` and `:auth` rows, which stay libraries on
+purpose (the model catalog is files, credentials are read before a ctx exists).
+
+| # | Landing | State | Decides |
+|---|---|---|---|
+| 1 | `:compaction`, `:world`, loop stages | **landed**, except `:world` | whether `:world` becomes a deferred row at all — it is boot work today, as dsh's `packages/boot` is |
+| 2 | `:llm` | **landed** | per-agent vs per-call — decided per call: the selection already rides the call |
+| 3 | extension-contributed `:rows` | **landed** | the extension's rows, not the run's — decided by the kernel's bind-once rule |
+| 4 | `:toolExecutor` | open | native as default, PTC as a bundle; worth doing when a second executor exists |
+| 5 | composition editor + status | catalog guard **landed**; the tool is open | live recomposition or next start |
+
+Landing 4 waits on a second executor to plug in; landing 5's tool waits on the
+live-recomposition decision.
+
+### 1. Rows for the remaining call sites
+
+**Landed: the loop's stages.** `:retry-policy` and `:loop-guard` are rows
+(`kmet.app.loop.stages/retry-policy-row` and `…/loop-guard-row`) in
+`:bundle/minimal`, each providing its stage as a service into the mount site's
+scope, so the loop and every agent ctx read what the composition mounted — a
+profile replaces the guard or the retry policy by naming another plugin under
+the same id, or removes the row. `stages/base` composes the services over the
+builtins (a bare or nil ctx still reads `defaults`); `for-ctx` keeps its
+contract — a run's own `:loop-stages` map wins *whole*, which is the subagent
+override path — and `refresh!` re-seats from the services instead of the
+builtin map. A row's `:config` is its stage's config, so a composition may set
+the guard threshold or the retry budget without a settings file (the stage wins
+where it speaks; a run's cfg fills what it leaves unset). What the same seam
+still owes: `permissions/gate` is a call site in the loop, not a hook a row
+installs.
+
+**Landed: compaction.** `:compaction` is a service and the `:compaction` row
+provides the builtin stage implementation; the four callers — the loop, the
+session's manual compaction, the driver's compact command and the branch
+summary — reach whatever is mounted, and a state outside a composition falls
+back to the builtin, as the stage rows do. The row takes no `:config` (the
+budgets are the `:compact-*` settings keys) and refuses one rather than
+ignoring it. Unlike the stages, the contract is its own namespace
+(`kmet.app.compaction` re-exports the eight operations) instead of a dispatcher
+inside the implementation: that file is 700 lines of compaction logic with four
+callers in three namespaces, so the seam is the namespace that names it.
+
+**Open: the process world, and it is mis-scoped as a row.** `run-mode` calls
+`(world/load! opts (:ctx booted))` to install provider catalogs, `models.edn`,
+themes, keybindings and the CLI flags. That is boot work — dsh keeps it in a
+`packages/boot` package for the same reason — and two facts make it more than a
+row: it must not run on the paths that only inspect (`--dump-config` never
+boots; `--dump-state` boots a composition and asserts a quiet stderr), and it
+needs the invocation, which a row is not given. A `:world` row therefore has to
+be deferred like the mode row (the boot's `{:defer …}` plus `mount-deferred!`,
+with the invocation reachable as ctx meta), and `boot-and-report` has to decide
+whether a profile with no mode loads the world at all. Worth doing only with
+that deferred path in the same change.
+
+Gate: `--dump-config` names the new rows (and `test-core`'s row counts move
+with the composition), a stage with no row mounted reads its builtin — the
+patch-out path, held by `test-stages` with nothing provided — and the rest is
+`kmet.app.loop.test-stages`: the defaults, the services-over-builtins merge, a
+sibling row reading the stage from the shared scope, a run's own map still
+winning whole, and a non-map `:config` refused rather than ignored.
+`test-composition-run` adds the end-to-end half: a booted agent's ctx reads the
+stage the row provided.
+
+### 2. `:llm` — model access as a service — landed
+
+`:llm` is a service and the `:llm` row provides it. The contract is
+`kmet.app.llm` (one operation, `send-message`, plus the row); the builtin is
+`kmet.ai.llm/send-message`, and the **two** callers — the loop's completion and
+the compaction summarizer — resolve it through the agent's ctx, so a state
+outside a composition falls back to the library exactly as compaction does. It
+is a small landing because the request was already one function taking one opts
+map: no `stream`/`route` split was needed, and `kmet.ai.models` stays a library
+(the catalog is files; a provider is registered with
+`register-model-provider!`, which is a registry concern, not the request).
+
+The planned decision was resolved by the code: **per call, not per-agent**. The
+provider, model, thinking level and endpoints already ride the call's opts and
+the agent state, so the service carries no selection state and a mounted
+implementation never tracks it — the alternative (a per-agent provider service)
+would have been a scope question the kernel does not allow anyway, since the
+composition provides `:llm` once for the whole tree.
+
+One detail worth keeping: the row's value calls the library **through its var**
+rather than capturing the fn, so a reloaded library (or a test's `with-redefs`)
+reaches the next request — the tests that stub `kmet.ai.llm/send-message` kept
+working unchanged, which is the sign the seam is in the right place.
+
+### 3. Extension-contributed rows — landed, and narrower than planned
+
+An extension **is** a plugin (`:ext/<id>` row) and can validly provide a
+service (`kmet.srce.core` is shared by reference, and `mount-plugin!`'s `assoc`
+carries `:provide` through). It now also mounts **its own** rows: `:rows` in
+the plugin map, one row per entry, mounted as children of the extension's fiber
+right after `:apply` — so `:inject` waiting, `:config`, effects and disposal all
+work, and unloading disposes them in reverse order.
+
+This note originally called them "rows an extension contributes to the run".
+The kernel says otherwise, and the code follows the kernel. A row mounted under
+the extension's ctx provides *into that ctx*: its service is visible to the
+extension's subtree, not to the app, because the app-wide services belong to
+the profile's composition and `provide!` refuses a name already held on the
+chain (`:srce/duplicate-service`). So an extension still cannot add a mode
+(`mode-row` scans composition rows before boot), replace `:ui`, or join the
+run's row list. What it gains is composing **itself** out of rows instead of a
+hand-written `srce/plugin!`.
+
+The load-time half is the contract: an `:ext/…` source (an extension cannot
+compose another installed extension), a `:mode` flag, a non-keyword `:id`, a
+key outside `{:id :plugin :config}`, and a row that never reaches `:active` all
+fail the load with the reason, rather than half-mounting. `presets.clj`'s
+`check-extension-rows!` still refuses an `:ext/…` row in a per-agent preset: the
+extension still mounts app-wide; only its rows are the extension's own.
+
+### 4. `:toolExecutor` — native and PTC as rows
+
+`run_code` is an ordinary tool with a script bridge and the loop always
+executes natively, so the execution strategy is not composable. dsh makes it
+two packages and reserves the name: `run_code` there is not a tool but the PTC
+mode's presentation transport.
+
+The landing: a `:toolExecutor` service whose contract is the one
+`tools/invoke` already implements (`prepare` → `execute` → `finish`), with
+today's parallel batches as `:bundle/native` (the default) and a `:bundle/ptc`
+row that mounts `run_code` as the only model-facing transport and bridges the
+rest. `select-tools` stays the selection seam for both, so nothing about
+tool tables, rows or `:default-tools` changes; the reserved-name rule arrives
+with PTC.
+
+### 5. The composition editor, and the vocabulary to report it
+
+Composition is edited by humans — the `kmet config` process and the patch files
+— and has no model-facing surface. dsh's `plugin_manager` edits the same kind
+of profile and reports `applied` or `restart-required` with a reason and a
+`nextStep` sentence; live application is HMR's, not the tool's.
+
+**Landed: the catalog guard.** `docs/composition.md` is generated by
+`kmet.app.composition-gen` — bundles and profiles from the built-in table
+described through `kmet.app.catalog`, the tool section from a real minimal boot,
+so a tool's model-facing text is read rather than copied — and
+`bb generate-catalog` / `bb check-catalog` write and verify it (`bb test-changed`
+runs the same check, so a stale page cannot pass). It replaced three
+hand-maintained copies of the same fact: `docs/profiles.md`'s row snippet
+(`rows=14` for a 22-row composition), `test-profile`'s row-by-row literal (now
+an invariant derived from the bundle), and the settings layer's built-in tool
+names, which `registry/bundle-tool-names` had already made derived.
+
+**Open: the composition tool.** A `:tool/kmet_manage`-shaped row over the writers
+  that already exist (`kmet.app.extensions.layers`, `kmet.app.tools.config`,
+  `kmet.app.packages-cli`), returning `:applied`/`:restart-required` with the
+  reason, permission-classed like `plugin_manager` (danger-full-access or an
+  approval for the call).
+
+The decision it inherits: **live recomposition**. Diffing the new row list
+against mounted fibers and mounting/disposing the delta is dsh's HMR path, not
+a flag — kernel-shaped, and worth scoping first to leaf rows (`:ext/*`,
+`:tool/*`) whose disposal no dependent re-resolves. Without it the tool answers
+`:restart-required` on every enable, which is dsh's no-HMR behavior and an
+honest place to stop.
 
 ## Gates
 

@@ -48,6 +48,30 @@ same var in `extension.edn` (see
 The full contract (ownership, name conflicts, lifecycle guarantees) is in the
 [contract reference](../modules/app/src/kmet/extension.md#the-contract).
 
+## Rows an extension mounts
+
+An extension that grows past one body can structure itself as rows: `:rows` in
+the plugin map lists composition-shaped rows, and the loader mounts them inside
+the extension's own ctx right after `:apply`:
+
+```clojure
+(srce/defplugin plugin
+  {:name  :ext/review
+   :apply (fn [_ctx api] (ext/register-command! api review-command))
+   :rows  [{:id :review/store :plugin 'my.review.store/plugin
+            :config {:dir "reviews"}}]})
+```
+
+Each row gets what a composition row gets — `:inject` waiting, `:config`,
+effects, disposal — and the rows die with the extension (unloading disposes
+them in reverse order). `:plugin` names one of the extension's **own** plugin
+vars (resolved through its loader) or one on the host classpath. They are
+**its** rows, not the run's: a service one provides is visible to the
+extension's subtree, while the app-wide services stay the profile's (the kernel
+refuses a second provider of a name already on the chain). Rows naming an
+`:ext/…` source, carrying `:mode`, missing a keyword `:id`, or using a key
+outside `{:id :plugin :config}` are refused at load.
+
 ## Where extensions live and what loads them
 
 Extensions are plugins. A run loads exactly the ones its **composition**

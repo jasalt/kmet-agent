@@ -1,5 +1,7 @@
 (ns kmet.app.compaction.stage
-  "Proactive and reactive conversation compaction.
+  "Proactive and reactive conversation compaction — the builtin implementation
+   behind the `:compaction` contract (`kmet.app.compaction`), which is what the
+   loop and the session handle call.
 
    The compaction stage of the agent loop (owner: kmet.app.compaction.core
    is what compaction is — algorithms, cut point, prompts; this namespace is
@@ -14,7 +16,7 @@
    session's thinking level; a failure surfaces its cause behind pi's reason
    prefix (kmet.app.compaction.core/compaction-failure-message)."
   (:require [clojure.string :as str]
-            [kmet.ai.llm :as llm]
+            [kmet.app.llm :as llm]
             [kmet.app.compaction.core :as core]
             [kmet.app.debug :as debug]
             [kmet.app.retry :as retry]
@@ -119,26 +121,26 @@
         ;; never starts).
         (partial :aborted)
         (do
-          (llm/send-message
-           (cond-> {:provider @(:provider agent)
-                    :api-type (:api-type ep)
-                    :model @(:model agent)
-                    :api-key (completion/resolve-api-key agent)
-                    :base-url (:base-url ep)
-                    :messages messages
-                    :signal signal
-                    :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
-                    :total-timeout-ms deadline
-                    :session-id (some-> (:session agent) :id)
-                    :cache-retention :none
-                    :hooks (extensions/provider-hooks)
-                    :max-tokens max-tokens
-                    :on-text (fn [t] (swap! text-buf str t))
-                    :on-tool-call (fn [tc] (swap! tc-buf conj tc))
-                    :on-usage (fn [u] (reset! usage-buf u))
-                    :on-done (fn [reason] (deliver! (partial (or reason :stop))))
-                    :on-error (fn [msg] (deliver! (partial :error msg)))}
-             thinking (assoc :thinking thinking)))
+          (llm/send-message agent
+                            (cond-> {:provider @(:provider agent)
+                                     :api-type (:api-type ep)
+                                     :model @(:model agent)
+                                     :api-key (completion/resolve-api-key agent)
+                                     :base-url (:base-url ep)
+                                     :messages messages
+                                     :signal signal
+                                     :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
+                                     :total-timeout-ms deadline
+                                     :session-id (some-> (:session agent) :id)
+                                     :cache-retention :none
+                                     :hooks (extensions/provider-hooks)
+                                     :max-tokens max-tokens
+                                     :on-text (fn [t] (swap! text-buf str t))
+                                     :on-tool-call (fn [tc] (swap! tc-buf conj tc))
+                                     :on-usage (fn [u] (reset! usage-buf u))
+                                     :on-done (fn [reason] (deliver! (partial (or reason :stop))))
+                                     :on-error (fn [msg] (deliver! (partial :error msg)))}
+                              thinking (assoc :thinking thinking)))
           (when @signal (deliver! (partial :aborted)))
           (let [result (if (pos? deadline) (deref done deadline :timeout) @done)]
             (if (map? result)

@@ -6,7 +6,7 @@
    hook (pi: config.getApiKey) over the provider key."
   (:require [clojure.string :as str]
             [kmet.libs.json :as json]
-            [kmet.ai.llm :as llm]
+            [kmet.app.llm :as llm]
             [kmet.app.loop-guard :as loop-guard]
             [kmet.app.retry :as retry]
             [kmet.libs.concurrent :as concurrent]
@@ -135,49 +135,49 @@
     ;; Assistant message lifecycle: streaming begins
     (state/emit agent {:type :message-start
                        :message {:role :assistant :content []}})
-    (llm/send-message
-     {:provider provider
-      :api-type (:api-type ep)
-      :model @(:model agent)
-      :api-key api-key
-      :base-url (:base-url ep)
-      :messages messages
-      :tools request-tools
-      :signal call-signal
+    (llm/send-message agent
+                      {:provider provider
+                       :api-type (:api-type ep)
+                       :model @(:model agent)
+                       :api-key api-key
+                       :base-url (:base-url ep)
+                       :messages messages
+                       :tools request-tools
+                       :signal call-signal
       ;; Provider-event bridges (pi: context / before_provider_request / …):
       ;; read once for this attempt, so a handler installed mid-run reaches
       ;; the next request and this one keeps the hooks it started with.
-      :hooks (extensions/provider-hooks)
-      :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
+                       :hooks (extensions/provider-hooks)
+                       :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
       ;; Whole-request deadline enforced by the transport (HttpRequest.timeout
       ;; / curl --max-time); the idle timeout above is separate and resets
       ;; on every received byte.
-      :total-timeout-ms (retry/llm-total-timeout-ms @(:cfg agent))
-      :thinking @(:thinking agent)
-      :session-id (some-> (:session agent) :id)
-      :on-text (fn [t]
+                       :total-timeout-ms (retry/llm-total-timeout-ms @(:cfg agent))
+                       :thinking @(:thinking agent)
+                       :session-id (some-> (:session agent) :id)
+                       :on-text (fn [t]
                  ;; Suppress stragglers after the promise resolved (e.g. the
                  ;; thinking-loop guard already settled the call — the stream
                  ;; aborts on the next line, but same-chunk remainders still
                  ;; dispatch). Without this they would append into a fresh
                  ;; streaming bubble after on-done finalized the turn.
-                 (when-not (realized? done-promise)
-                   (swap! text-buf str t)
-                   (when on-text (on-text t))
-                   (state/emit agent {:type :message-update
-                                      :message {:role :assistant
-                                                :content [{:type :text :text @text-buf}]}
-                                      :delta {:type :text :content t}})))
-      :on-thinking (fn [t]
+                                  (when-not (realized? done-promise)
+                                    (swap! text-buf str t)
+                                    (when on-text (on-text t))
+                                    (state/emit agent {:type :message-update
+                                                       :message {:role :assistant
+                                                                 :content [{:type :text :text @text-buf}]}
+                                                       :delta {:type :text :content t}})))
+                       :on-thinking (fn [t]
                      ;; Same straggler suppression as :on-text (see above).
-                     (when-not (realized? done-promise)
-                       (swap! thinking-buf str t)
-                       (when on-thinking (on-thinking t))
-                       (state/emit agent {:type :message-update
-                                          :message {:role :assistant
-                                                    :content []
-                                                    :thinking @thinking-buf}
-                                          :delta {:type :thinking :content t}}))
+                                      (when-not (realized? done-promise)
+                                        (swap! thinking-buf str t)
+                                        (when on-thinking (on-thinking t))
+                                        (state/emit agent {:type :message-update
+                                                           :message {:role :assistant
+                                                                     :content []
+                                                                     :thinking @thinking-buf}
+                                                           :delta {:type :thinking :content t}}))
                      ;; Thinking-loop guard: a repeated reasoning segment
                      ;; (>= 3× within the recent buffer) means the model is
                      ;; stuck in a degenerate reasoning loop — cut the stream
@@ -185,58 +185,58 @@
                      ;; the HTTP/SSE read on the next line; the guard delivers
                      ;; as an error so the loop's retry classifier sees it; it
                      ;; must NOT be retryable (terminal-error! path).
-                     (when (and (:thinking-loop-guard-enabled @(:cfg agent))
-                                (not (realized? done-promise))
-                                (loop-guard/thinking-loop? @thinking-buf))
-                       (reset! guard-trip true)
-                       (deliver done-promise
-                                {:error loop-guard/thinking-loop-error
-                                 :text @text-buf
-                                 :thinking (str/trim @thinking-buf)
-                                 :tool-calls (tc-flush)
-                                 :usage @usage-buf
-                                 :thinking-signature @sig-buf})))
+                                      (when (and (:thinking-loop-guard-enabled @(:cfg agent))
+                                                 (not (realized? done-promise))
+                                                 (loop-guard/thinking-loop? @thinking-buf))
+                                        (reset! guard-trip true)
+                                        (deliver done-promise
+                                                 {:error loop-guard/thinking-loop-error
+                                                  :text @text-buf
+                                                  :thinking (str/trim @thinking-buf)
+                                                  :tool-calls (tc-flush)
+                                                  :usage @usage-buf
+                                                  :thinking-signature @sig-buf})))
       ;; signatures arrive as whole blobs (possibly repeated across deltas) —
       ;; last-wins, never concatenated
-      :on-signature (fn [sig]
-                      (when (and sig (not (realized? done-promise)))
-                        (reset! sig-buf sig)))
-      :on-tool-call (fn [tc]
-                      (when-not (realized? done-promise)
-                        (tc-add tc)
-                        (state/emit agent {:type :message-update
-                                           :message {:role :assistant :content []}
-                                           :delta (assoc (select-keys tc [:id :name :arguments :index])
-                                                         :type :tool-call)})))
-      :on-usage (fn [usage]
+                       :on-signature (fn [sig]
+                                       (when (and sig (not (realized? done-promise)))
+                                         (reset! sig-buf sig)))
+                       :on-tool-call (fn [tc]
+                                       (when-not (realized? done-promise)
+                                         (tc-add tc)
+                                         (state/emit agent {:type :message-update
+                                                            :message {:role :assistant :content []}
+                                                            :delta (assoc (select-keys tc [:id :name :arguments :index])
+                                                                          :type :tool-call)})))
+                       :on-usage (fn [usage]
                   ;; Provider-native usage map — stored on the assistant
                   ;; message for session persistence (pi: message.usage).
-                  (when-not (realized? done-promise)
-                    (reset! usage-buf usage)))
-      :on-done (fn [reason]
-                 (let [tool-calls (tc-flush)]
-                   (deliver done-promise
-                            {:text @text-buf
-                             :thinking (str/trim @thinking-buf)
-                             :tool-calls tool-calls
-                             :usage @usage-buf
-                             :thinking-signature @sig-buf
-                             :stop-reason reason})))
-      :on-error (fn [e]
+                                   (when-not (realized? done-promise)
+                                     (reset! usage-buf usage)))
+                       :on-done (fn [reason]
+                                  (let [tool-calls (tc-flush)]
+                                    (deliver done-promise
+                                             {:text @text-buf
+                                              :thinking (str/trim @thinking-buf)
+                                              :tool-calls tool-calls
+                                              :usage @usage-buf
+                                              :thinking-signature @sig-buf
+                                              :stop-reason reason})))
+                       :on-error (fn [e]
                   ;; Guard against double delivery: on the curl path the
                   ;; stream error and close!'s transport-failure report can
                   ;; both fire for one failure (e.g. abort! on idle timeout)
-                  (when-not (realized? done-promise)
-                    (deliver done-promise
-                             {:error e
+                                   (when-not (realized? done-promise)
+                                     (deliver done-promise
+                                              {:error e
                               ;; Partials captured before the failure — recorded
                               ;; on the errored attempt (pi: the failed stream's
                               ;; partial becomes the final message)
-                              :text @text-buf
-                              :thinking (str/trim @thinking-buf)
-                              :tool-calls (tc-flush)
-                              :usage @usage-buf
-                              :thinking-signature @sig-buf})))})
+                                               :text @text-buf
+                                               :thinking (str/trim @thinking-buf)
+                                               :tool-calls (tc-flush)
+                                               :usage @usage-buf
+                                               :thinking-signature @sig-buf})))})
     ;; Snapshot closure — evaluated by cancel-turn at abort time
     {:promise done-promise
      :partials (fn []

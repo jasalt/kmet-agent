@@ -32,7 +32,13 @@
 
    Package and top-level groups are both listed (pi parity). The screen
    re-reads the settings and composition files after every toggle, so what it
-   shows always matches what the loaders will do on the next start/reload.
+   shows matches what the next process loads. Nothing it writes is live, and
+   nothing needs restarting: `kmet config` is its own process
+   (`kmet.ui.tui.config-command/run-config!`, which the CLI runs and which
+   exits before the next `kmet` start), so a toggle applies to the run the
+   user starts next. A session that is already running is the only case where
+   timing shows up — `/reload` re-reads the settings-backed resources there,
+   never a composition change (extensions are rows; docs/profiles.md).
    Extension rows take their checkbox from the composition; the remaining
    resources keep the settings-backed behaviour.
 

@@ -242,9 +242,14 @@
   (first ((:of-type conn) :ready)))
 
 (defn- answered?
-  "Has CONN received the response for request ID?"
-  [conn id]
-  (support/wait-until #(some? (first (filter (fn [r] (= id (:id r))) ((:records conn)))))))
+  "Has CONN received the response for request ID, within TIMEOUT-MS? The
+   default is the shared 5s; a test that first waits out a long run passes its
+   own ceiling instead."
+  ([conn id] (answered? conn id 5000))
+  ([conn id timeout-ms]
+   (support/wait-until #(some? (first (filter (fn [r] (= id (:id r)))
+                                              ((:records conn)))))
+                       timeout-ms)))
 
 (defn- verdict
   "Wait until CONN has been answered `:ready` or refused with `:error`, then say
@@ -622,7 +627,9 @@
             (is (pos? (:dropped gap)) "the gap counts what it lost")
             (is (= ((:agent-id c)) (:agent-id gap)) "and belongs to its agent"))
           ((:send! c) {:type :get-state :id "resync"})
-          (is (answered? c "resync")
+          ;; the flood's tail and the run's settle can take as long as the
+          ;; run itself, so this wait matches the test's other ceilings
+          (is (answered? c "resync" 60000)
               "and the client resyncs with get-state"))))))
 
 (deftest a-connection-brings-its-own-world

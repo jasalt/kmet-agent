@@ -46,8 +46,9 @@
    (each extension runs in its own isolated context, so different
    extensions may pin different versions of the same library).
 
-   Lifecycle: loaded at startup (and via /reload), reloadable and unloadable
-   at runtime. Unload calls shutdown (if defined), then disposes everything
+   Lifecycle: loaded when a composition row mounts it (`:ext/<id>`), reloaded
+   by /reload with the row's config, and unloadable at runtime. Unload calls
+   shutdown (if defined), then disposes everything
    the extension registered: what it installed in the app tree is owned by
    `[:app :extensions <name>]` and goes with one LIFO dispose, and what lives
    outside the tree (event subscriptions, aliases, shortcuts, model

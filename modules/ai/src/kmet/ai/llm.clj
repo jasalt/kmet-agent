@@ -76,6 +76,10 @@
 (defn send-message
   "Send messages to LLM and receive streaming events via callbacks.
 
+   This is the builtin behind the app's `:llm` service (`kmet.app.llm`): a run
+   makes its requests through that row, and this function is what the row
+   provides unless a composition replaces it.
+
    opts:
      :provider    — provider keyword (:opencode-go, :opencode, :deepseek,
                     :github-copilot, :openai, :xai, :openai-codex,

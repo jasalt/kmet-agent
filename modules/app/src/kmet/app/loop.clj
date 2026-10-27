@@ -24,7 +24,9 @@
    suppressions) stops the run with a :loop-guard event and a plain
    explanation. Read-only tools (read) never trip it. Tunable via
    settings.edn :loop-guard {:enabled bool :threshold n} and
-   :thinking-loop-guard-enabled.
+   :thinking-loop-guard-enabled — or by the `:loop-guard`/`:retry-policy` rows'
+   `:config` (`kmet.app.loop.stages`); a run's own `:loop-stages` map still wins
+   whole.
 
    Tool hooks and execution mode (pi: beforeToolCall / afterToolCall,
    toolExecution) live in kmet.app.loop.tool-exec.
@@ -37,9 +39,12 @@
    :transform-context rewrites the conversation before each LLM call. The
    :system-prompt-override atom holds a per-run system prompt override.
 
-   Compaction (pi: auto-compaction) lives in kmet.app.compaction.stage.
+   Compaction (pi: auto-compaction) is the `:compaction` service
+   (`kmet.app.compaction`; the builtin is `kmet.app.compaction.stage`).
 
-   Model management lives in kmet.app.loop.state (set-scoped-models!,
+   Model requests go through the `:llm` service (kmet.app.llm), the `:llm` row
+   providing kmet.ai.llm/send-message; model management lives in
+   kmet.app.loop.state (set-scoped-models!,
    cycle-model!, the thinking-level setters).
 
    Input hooks (pi: input extension event): applied at the interactive input
@@ -61,7 +66,7 @@
    :block-images lives in kmet.app.loop.message."
   (:require [kmet.app.permissions :as permissions]
             [kmet.app.projections :as projections]
-            [kmet.app.compaction.stage :as compact]
+            [kmet.app.compaction :as compact]
             [kmet.app.loop.completion :as completion]
             [kmet.app.loop.tool-exec :as tool-exec]
             [kmet.app.loop.state :as state]

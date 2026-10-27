@@ -187,25 +187,24 @@
              :config {:policy :ask-all}}]
            (:rows (profile/bundle table :bundle/gated)))
         "the gate is a bundle, so a profile may stack it and a preset may mount it")
-    (is (= [{:id :extensions :plugin 'kmet.app.extensions/plugin}
-            {:id :events :plugin 'kmet.app.events/plugin}
-            {:id :tools :plugin 'kmet.app.tools/plugin}
-            {:id :commands :plugin 'kmet.app.registries/commands}
-            {:id :prompts :plugin 'kmet.app.registries/prompts}
-            {:id :skills :plugin 'kmet.app.registries/skills}
-            {:id :system-prompt :plugin 'kmet.app.system-prompt/plugin}
-            {:id :session-persistence :plugin 'kmet.app.session.backend/plugin}
-            {:id :sessions :plugin 'kmet.app.sessions/plugin}
-            {:id :projections :plugin 'kmet.app.projections/plugin}
-            {:id :agents :plugin 'kmet.app.agents/plugin}
-            {:id :agent-loop :plugin 'kmet.app.loop.driver/plugin}
-            {:id :ui :plugin 'kmet.ui.tui/provider-plugin}
-            {:id :mode-tui :plugin 'kmet.ui.tui/plugin :mode true
-             :session-lifecycle true}]
-           (:rows (profile/compose (profile/layers table :tui))))
-        (str "the bundle carries the rows the landed plugins add, the terminal "
-             "provider replaces the minimal approvals row, and the TUI is the "
-             "default profile's mode row — the one that opens its own session"))
+    (testing "the TUI stack is the minimal bundle, minus the seam it replaces"
+      ;; Derived from the bundle, not a row-by-row literal: the point is the
+      ;; relationship (every minimal row survives, in order, except the one the
+      ;; terminal provider replaces), and the generated docs/composition.md is
+      ;; where the full list lives.
+      (let [minimal (:rows (profile/bundle table :bundle/minimal))
+            rows (:rows (profile/compose (profile/layers table :tui)))]
+        (is (= (conj (into [] (remove #{:approvals}) (map :id minimal))
+                     :ui :mode-tui)
+               (mapv :id rows))
+            (str "every minimal row keeps its place; the terminal provider "
+                 "replaces the approvals seam and the TUI is the mode row"))
+        (is (= {:id :mode-tui :plugin 'kmet.ui.tui/plugin :mode true
+                :session-lifecycle true}
+               (last rows))
+            "the mode row opens its own session")
+        (is (not-any? #{:approvals} (map :id rows))
+            "the approvals row the terminal provider shadows is gone")))
     (is (= {:id :mode-rpc :plugin 'kmet.app.modes.rpc/plugin :mode true}
            (last (:rows (profile/compose (profile/layers table :rpc)))))
         "and a profile with a mode row carries it last, marked :mode")))

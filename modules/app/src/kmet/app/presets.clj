@@ -10,9 +10,12 @@
    What a preset is *for*: per-agent composition (`new-app.md` § Multi-session
    server mode). The agent's child ctx inherits root services through the
    chain, so the difference a preset makes is a row the child provides itself —
-   a `:permissions` policy for one agent, a shadowed `:tools`, a listener.
-   Mounting on the child ctx is also what keeps the row's lifetime the agent's:
-   the fiber is under the child, so disposing the agent disposes it.
+   a `:permissions` policy for one agent, a service nothing above it provides, a
+   listener. A child cannot shadow a service an ancestor provides: the kernel
+   refuses a second provider on the chain, so a preset that wants a different
+   `:tools` has to be the composition's choice, not a per-agent one. Mounting on
+   the child ctx is also what keeps the row's lifetime the agent's: the fiber is
+   under the child, so disposing the agent disposes it.
 
    The rows must be **active** after the mount settles. A preset that composes
    but does not mount (a name nothing provides, an `apply` that threw) is a

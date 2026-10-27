@@ -33,7 +33,7 @@
      reaches them; the settle path runs in the loop's `finally`."
   (:require
    [babashka.fs :as fs]
-   [kmet.app.compaction.stage :as agent-compact]
+   [kmet.app.compaction :as agent-compact]
    [kmet.app.config :as cfg]
    [kmet.app.debug :as debug]
    [kmet.app.extensions.core :as extensions]

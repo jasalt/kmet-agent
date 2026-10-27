@@ -13,11 +13,13 @@ design. Its **functionality** follows pi (the maintained gap list is
 `~/src/cvstree/deepseek-harness/`) — one context tree, services found by key,
 dependencies declared with `inject`, effects that unwind, declared event
 modes, and **everything is a plugin**: the loop, tools, sessions, model access
-and modes are replaceable rows, and an extension mounts beside them instead of
-patching a privileged core. The comparison, the module map and the one
-composition promise still open (`:ext/…` rows) are in
-[`new-app.md`](new-app.md); the kernel's deliberate differences from Cordis
-are in [`srce.md`](modules/srce/src/kmet/srce/srce.md) §5/§10. The architectural
+and modes are replaceable rows — model access is the `:llm` service
+(`kmet.app.llm`, with the request as `kmet.ai.llm` behind the row) — and an
+extension mounts beside them instead of patching a privileged core. The module
+map, the open seams (a composition edit still has no `applied` /
+`restart-required` vocabulary) and the landings that closed the rest are in
+[`new-app.md`](new-app.md) § Everything is a plugin. The kernel's deliberate differences from Cordis are in
+[`srce.md`](modules/srce/src/kmet/srce/srce.md) §5/§10. The architectural
 consequence for changes: new behavior attaches to a documented seam — a plugin
 row, a service, an event, or the extension contract — not to a branch in the
 entry or a new global.
@@ -76,9 +78,10 @@ GUI-independent steps landed.)
   bb format-check-changed       # or bb format-changed
   ```
 
-- `bb check` verifies source namespaces. Do not hand-edit generated provider
-  or image-model catalogs: use `bb generate-models` / `bb check-model-data`
-  and `kmet --generate-models` for the user-level caches.
+- `bb check` verifies source namespaces. Do not hand-edit generated catalogs:
+  the provider/image-model ones (`bb generate-models` / `bb check-model-data`,
+  and `kmet --generate-models` for the user-level caches) or the composition
+  one (`bb generate-catalog` / `bb check-catalog` for `docs/composition.md`).
 - `sh scripts/install_hooks.sh` installs the commit-msg hook, which enforces
   the commit-message rules below. The attribution workflow enforces the same
   rules over a pushed or PR range — it is the repository's only CI check.

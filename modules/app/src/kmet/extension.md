@@ -56,6 +56,41 @@ a nil-invoke. `kmet.app.extensions.test-api-contract` reads every such path
 out of this file, loads a real extension and asserts the host carries them all
 — so adding a wrapper means adding the capability, in one change.
 
+### Rows the extension mounts
+
+An extension's plugin map may declare `:rows` — composition-shaped rows it
+mounts **inside its own ctx**, after `:apply` returns:
+
+```clojure
+(srce/defplugin plugin
+  {:name  :ext/review
+   :apply (fn [ctx api]
+            (ext/register-command! api {:name "review" :description "…"
+                                        :handler (fn [_ _] nil)}))
+   :rows  [{:id :review/store :plugin 'my.review.store/plugin
+            :config {:dir "reviews"}}]})
+```
+
+This is the extension as a small composition of its own: each row gets the
+kernel's `:inject` waiting, its `:config`, effects and disposal, instead of a
+hand-written `srce/plugin!` in `:apply`. The rows are **children of the
+extension's fiber** — unloading or reloading the extension disposes them in
+reverse order — and a service a row provides is visible to the extension's
+subtree, not to the app. The app-wide services belong to the profile's
+composition, and the kernel refuses a second provider of a name already on the
+chain, so an extension row cannot replace the tool registry or the UI.
+
+The `:plugin` is a **quoted symbol** naming a plugin var — one of the
+extension's **own** namespaces (resolved through its loader, which is how an
+extension structures itself out of rows) or a namespace on the host classpath.
+A var value works too. Refused at load, naming the reason: an `:ext/…` source
+(an extension cannot compose another installed extension), a `:mode` flag (the
+profile picks the run's mode), a row without a keyword `:id`, and any key
+outside `{:id :plugin :config}`. A row that does not reach `:active` — an
+`:inject` nothing provides, a typo — fails the load instead of leaving half an
+extension mounted; the list is validated before the body runs, so a bad
+declaration registers nothing.
+
 ## Allowed namespaces and isolation
 
 Every extension runs in its own isolated context, forked from one shared base:

@@ -48,4 +48,4 @@
 (srce/defplugin plugin
   {:name :tool/write
    :inject [:tools]
-   :apply (fn [ctx _config] (registry/mount-tool! ctx definition))})
+   :apply (fn [ctx config] (registry/mount-tool! ctx definition config))})

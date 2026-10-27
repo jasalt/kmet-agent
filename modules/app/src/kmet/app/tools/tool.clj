@@ -71,3 +71,71 @@
     :title title
     :status status}))
 
+;; ─── Row config ───────────────────────────────────────────────────────────
+
+(def row-config-keys
+  "The definition fields a tool row's `:config` may set — the record's
+   model-facing presentation, which is what a composition can honestly change
+   without becoming the tool.
+
+   `:name` is deliberately absent. A row's id is the model's own spelling of
+   the tool (`(port-name name)` → `:tool/read`), and `tool-row-name` reads it
+   back for the config screen's toggles and for `:default-tools`; a renamed
+   tool would leave the row, the setting and the toggle naming three different
+   tools. `:execute`, `:parameters` and the rest are the tool's behavior, which
+   belongs to the plugin that wrote it."
+  #{:label :description :prompt-snippet :prompt-guidelines})
+
+(def ^:private row-config-checks
+  "How each overridable field is checked before it replaces the default, and
+   what the error says it should have been. A wrong type would reach the
+   model's system prompt or tool schema, where nothing reports it — so it fails
+   at the mount that read it instead."
+  {:label [string? "a string"]
+   :description [string? "a string"]
+   :prompt-snippet [string? "a string"]
+   :prompt-guidelines [#(and (sequential? %) (every? string? %))
+                       "a vector of strings"]})
+
+(defn- bad-config [msg data]
+  (ex-info msg (assoc data :type :kmet.app/bad-tool-config)))
+
+(defn configure
+  "DEFINITION with a tool row's CONFIG applied — the presentation overrides
+   the row names merged over the tool's own defaults, so a composition says
+   what the model reads without replacing the tool.
+
+   A nil or empty CONFIG returns DEFINITION untouched (the common case: most
+   rows carry none). A key outside `row-config-keys`, or a value of the wrong
+   shape, throws `:kmet.app/bad-tool-config` — a config nobody reads is a
+   composition bug, and the alternative is worse than an error: a typo would
+   leave the default in place and read exactly like an applied override."
+  [definition config]
+  (cond
+    (nil? config) definition
+
+    (not (map? config))
+    (throw (bad-config (str "a tool row's :config must be a map, got "
+                            (pr-str config))
+                       {:config config}))
+
+    (empty? config) definition
+
+    :else
+    (let [allowed (vec (sort row-config-keys))
+          unknown (->> (keys config) (remove row-config-keys) sort vec)]
+      (when (seq unknown)
+        (throw (bad-config (str "a tool row's :config may set " (pr-str allowed)
+                                ", not " (pr-str unknown)
+                                " — " (pr-str (:name definition))
+                                " owns its behavior, a row its presentation")
+                           {:config config :unknown unknown :allowed allowed})))
+      (doseq [[k v] config
+              :let [[ok? shape] (row-config-checks k)]
+              :when (not (ok? v))]
+        (throw (bad-config (str "a tool row's :config " k " must be " shape
+                                ", got " (pr-str v)
+                                " for " (pr-str (:name definition)))
+                           {:config config :key k :value v})))
+      (merge definition config))))
+
