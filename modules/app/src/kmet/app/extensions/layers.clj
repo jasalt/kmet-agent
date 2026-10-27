@@ -9,20 +9,27 @@
    `kmet config` toggle needs.
 
    Reading is data-only: a layer is an EDN map with `:rows` and `:patch`
-   vectors, and nothing here loads an extension. A malformed file is reported
-   as `:error` on that layer's record and composes as empty, so the config
-   screen still opens (the run itself fails at compose with the usual
+   collections, and nothing here loads an extension. A malformed file is
+   reported as `:error` on that layer's record and composes as empty, so the
+   config screen still opens (the run itself fails at compose with the usual
    `:kmet.app/bad-patch-file`). Writing refuses to touch a malformed file.
 
    The composition mirrors `kmet.app.profile/compose` for extension rows only:
    rows add, a patch with a `:plugin` adds or replaces by id, and a `:remove`
    patch drops the row with that id. Other rows and patches are ignored here;
-   the run's own compose still sees them."
+   the run's own compose still sees them.
+
+   A write re-renders the layer's EDN and keeps the file's leading comments;
+   it runs under the EDN store's file lock, so two editors cannot lose each
+   other's toggle."
   (:require [clojure.edn :as edn]
             [clojure.pprint :as pprint]
+            [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.app.config :as cfg]
-            [kmet.app.extensions.rows :as rows]))
+            [kmet.app.extensions.rows :as rows]
+            [kmet.app.profile :as profile]
+            [kmet.libs.edn-store :as eds]))
 
 (defn- layer-error
   [path message]
@@ -36,12 +43,11 @@
     {:path path :data {}}
     (try
       (let [data (edn/read-string (slurp path))]
-        (if (and (map? data)
-                 (or (nil? (:rows data)) (vector? (:rows data)))
-                 (or (nil? (:patch data)) (vector? (:patch data))))
+        (if (profile/layer? data)
           {:path path :data data}
           {:path path :data {}
-           :error (layer-error path "a composition layer is a map with :rows and :patch vectors")}))
+           :error (layer-error path
+                               "a composition layer is a map with :rows and :patch collections")}))
       (catch Exception e
         {:path path :data {}
          :error (layer-error path (or (ex-message e) (str e)))}))))
@@ -64,6 +70,11 @@
   [row]
   (rows/source? (:plugin row)))
 
+(defn- enables?
+  "True when ENTRY (a row or a patch insert) composes SOURCE."
+  [entry source]
+  (and (ext-row? entry) (= source (:plugin entry))))
+
 (defn- apply-layer
   "Apply one layer's extension rows and patches to STATE
    (`{:rows {id source}}`). Last row with an id wins, as in the run's
@@ -84,16 +95,16 @@
             (:patch layer))))
 
 (defn- source-ids
-  "The row ids STATE composes SOURCE with (a row or a patch insert)."
+  "The row ids STATE composes SOURCE with (a row or a patch insert), as a
+   vector in the state map's own order."
   [state source]
-  (into #{} (keep (fn [[id src]] (when (= src source) id)) (:rows state))))
+  (into [] (keep (fn [[id src]] (when (= src source) id)) (:rows state))))
 
 (defn- enablement-ids
   "The row ids ROWS or patch inserts compose SOURCE with, ignoring remove
    patches (what a toggle-on must clear)."
   [rows patches source]
-  (into #{} (keep #(when (and (ext-row? %) (= source (:plugin %)))
-                     (row-id %)))
+  (into #{} (comp (filter #(enables? % source)) (map row-id))
         (concat rows patches)))
 
 (defn composition
@@ -110,26 +121,23 @@
   [state]
   (set (vals (:rows state))))
 
-(defn- source-id
-  "The row id a state composes SOURCE with, or nil."
-  [state source]
-  (some (fn [[id src]] (when (= src source) id)) (:rows state)))
-
 (defn item-state
   "The composition state of SOURCE in SCOPE (`:global` or `:project`):
-   `{:enabled bool :override-state :inherit|:load|:unload}`. The project
-   state is the difference from the global state, matching the tri-state
-   rows the config screen already renders."
+   `{:enabled bool :override-state :inherit|:load|:unload
+   :inherited-enabled bool}`. `:inherited-enabled` is the global layer's
+   state — what a project override inherits — and the project override state
+   is the difference from it. The config screen renders both."
   [{:keys [global project]} source scope]
   (let [global? (contains? (sources-of global) source)
         project? (contains? (sources-of project) source)]
-    (if (= scope :global)
-      {:enabled global? :override-state :inherit}
-      {:enabled project?
-       :override-state (cond
+    {:inherited-enabled global?
+     :enabled (if (= scope :global) global? project?)
+     :override-state (if (= scope :global)
+                       :inherit
+                       (cond
                          (and project? (not global?)) :load
                          (and global? (not project?)) :unload
-                         :else :inherit)})))
+                         :else :inherit))}))
 
 ;; ─── Writing ─────────────────────────────────────────────────────────────
 
@@ -143,35 +151,56 @@
                       (assoc error :type :kmet.app/bad-patch-file))))
     data))
 
+(defn- comment-header
+  "TEXT's leading comment and blank lines, newline-terminated: the header a
+   hand-written layer carries. Nil when the file starts with the EDN form."
+  [text]
+  (let [lines (take-while #(or (str/blank? %) (str/starts-with? (str/triml %) ";"))
+                          (str/split-lines text))]
+    (when (seq lines)
+      (str (str/join \newline lines) \newline))))
+
 (defn- write-layer!
+  "Write DATA to PATH, keeping the file's leading comments."
   [path data]
-  (when-let [dir (fs/parent path)]
-    (fs/create-dirs dir))
-  (spit path (with-out-str (pprint/pprint data))))
+  (let [header (when (fs/exists? path) (comment-header (slurp path)))]
+    (spit path (str header (with-out-str (pprint/pprint data))))))
 
 (defn- update-layer!
-  "Read PATH, apply F to the layer map and write it back when it changed.
-   Returns true when the file changed."
+  "Read PATH, apply F to its `[rows patch]` and write the result back when
+   either changed, keeping the layer's other keys and its leading comments.
+   The read-modify-write runs under the EDN store's file lock. Returns true
+   when the file changed."
   [path f]
-  (let [data (read-data! path)
-        next (f data)]
-    (when (not= data next)
-      (write-layer! path next))
-    (not= data next)))
+  (when-let [dir (fs/parent path)]
+    (fs/create-dirs dir))
+  (eds/with-file-lock (str path ".lock")
+    (fn []
+      (let [data (read-data! path)
+            rows (vec (or (:rows data) []))
+            patch (vec (or (:patch data) []))
+            [next-rows next-patch] (f rows patch)
+            next (if (and (= rows next-rows) (= patch next-patch))
+                   data
+                   (assoc data :rows next-rows :patch next-patch))]
+        (if (= data next)
+          false
+          (do (write-layer! path next)
+              true))))))
 
 (defn- without-source
-  "ROWS/patches with every extension row for SOURCE and every patch that
-   enables it removed. A config-only patch on a row that is not removed
-   stays: it changes what the row mounts, not whether it mounts."
-  [rows patches source]
-  (let [removed (filterv #(and (ext-row? %) (= source (:plugin %))) rows)
-        ids (set (map row-id removed))]
-    {:rows (into [] (remove #(contains? ids (row-id %))) rows)
-     :patch (into []
-                  (remove (fn [patch]
-                            (or (contains? ids (:id patch))
-                                (and (ext-row? patch) (= source (:plugin patch))))))
-                  patches)}))
+  "ROWS/PATCHES with this layer's own enablement of SOURCE removed, as
+   `[rows patch]`: the extension rows and insert patches that compose it, and
+   the patches on the ids they contributed — unless the global layer still
+   composes that id (GLOBAL-ID-SET), where a config patch stays and applies
+   to the global row instead."
+  [rows patches source global-id-set]
+  (let [enabling? #(enables? % source)
+        enabled-ids (into #{} (comp (filter enabling?) (map row-id))
+                          (concat rows patches))
+        doomed (into #{} (remove #(contains? global-id-set %)) enabled-ids)]
+    [(into [] (remove enabling?) rows)
+     (into [] (remove #(or (enabling? %) (contains? doomed (:id %)))) patches)]))
 
 (defn enable-global!
   "Compose SOURCE in the global layer: append its row unless the layer already
@@ -181,19 +210,13 @@
   [source]
   (update-layer!
    (cfg/global-patch-path)
-   (fn [data]
-     (let [rows (vec (or (:rows data) []))
-           patches (vec (or (:patch data) []))
-           ids (enablement-ids rows patches source)
-           patch (into [] (remove #(and (:remove %)
-                                        (or (= (:id %) source)
-                                            (contains? ids (:id %)))))
-                       patches)
-           rows (if (seq ids) rows (conj rows {:id source :plugin source}))]
-       (if (and (= rows (vec (or (:rows data) [])))
-                (= patch patches))
-         data
-         (assoc data :rows rows :patch patch))))))
+   (fn [rows patches]
+     (let [ids (enablement-ids rows patches source)]
+       [(if (seq ids) rows (conj rows {:id source :plugin source}))
+        (into [] (remove #(and (:remove %)
+                               (or (= (:id %) source)
+                                   (contains? ids (:id %)))))
+              patches)]))))
 
 (defn disable-global!
   "Disable SOURCE in the global layer without losing its row: a `:remove`
@@ -202,48 +225,48 @@
   [source]
   (update-layer!
    (cfg/global-patch-path)
-   (fn [data]
-     (let [rows (vec (or (:rows data) []))
-           patches (vec (or (:patch data) []))
-           ids (source-ids (apply-layer {} {:rows rows :patch patches}) source)
-           removed? #(and (:remove %) (contains? ids (:id %)))
-           already? (every? (fn [id] (some #(and (:remove %) (= (:id %) id)) patches))
-                            ids)]
-       (if (or (empty? ids) already?)
-         data
-         (assoc data :patch (into [] (concat (remove removed? patches)
-                                             (map (fn [id] {:id id :remove true}) ids)))))))))
+   (fn [rows patches]
+     (let [ids (source-ids (apply-layer {} {:rows rows :patch patches}) source)
+           id-set (set ids)
+           removing? (fn [patch] (and (:remove patch) (contains? id-set (:id patch))))
+           disabled? (fn [id] (some #(and (:remove %) (= (:id %) id)) patches))]
+       (if (or (empty? ids) (every? disabled? ids))
+         [rows patches]
+         [rows (into [] (concat (remove removing? patches)
+                                (map (fn [id] {:id id :remove true}) ids)))])))))
 
 (defn apply-project-state!
   "Set SOURCE's project state (`:load`, `:unload` or `:inherit`) in the
    project layer. `:load` composes a row when the global layer does not
-   already; `:unload` composes a remove patch for the global row; `:inherit`
-   drops the enablement entry (a config-only patch on the row stays). Returns
-   true when the file changed."
+   already; `:unload` composes a remove patch for every global row of the
+   source; `:inherit` drops the enablement entry (a config-only patch on an id
+   the global layer still composes stays). Returns true when the file changed;
+   anything but the three states is `:kmet.app/bad-project-state`."
   [source state]
-  (let [{:keys [global]} (composition (layers))
-        global? (contains? (sources-of global) source)
-        global-ids (into #{} (keep (fn [[id src]] (when (= src source) id))
-                                   (:rows global)))]
-    (update-layer!
-     (cfg/project-patch-path)
-     (fn [data]
-       (let [rows (vec (or (:rows data) []))
-             patches (vec (or (:patch data) []))
-             {:keys [rows patch]} (without-source rows patches source)
-             ;; a remove patch for a composed global row is this scope's
-             ;; disable state; a :config patch on that row is not, so it stays
-             patch (into [] (remove (fn [p]
-                                      (and (:remove p)
-                                           (contains? global-ids (:id p))))
-                                    patch))
-             patch (case state
-                     :load (if global?
-                             patch
-                             (conj patch {:id source :plugin source}))
-                     :unload (if (and global? (seq global-ids))
-                               (conj patch {:id (source-id global source)
-                                            :remove true})
-                               patch)
-                     patch)]
-         (assoc data :rows rows :patch patch))))))
+  (when-not (#{:inherit :load :unload} state)
+    (throw (ex-info (str "unknown project state " (pr-str state))
+                    {:type :kmet.app/bad-project-state :state state})))
+  (update-layer!
+   (cfg/project-patch-path)
+   (fn [rows patches]
+     ;; the global layer is read inside the lock, so the ids a disable
+     ;; targets are the ones a run would compose now
+     (let [{:keys [global]} (composition (layers))
+           global? (contains? (sources-of global) source)
+           global-ids (source-ids global source)
+           global-id-set (set global-ids)
+           [rows patch] (without-source rows patches source global-id-set)
+           ;; a remove patch for a composed global row is this scope's
+           ;; disable state; a :config patch on that row is not, so it stays
+           patch (into [] (remove (fn [p]
+                                    (and (:remove p)
+                                         (contains? global-id-set (:id p))))
+                                  patch))]
+       [rows (case state
+               :load (if global?
+                       patch
+                       (conj patch {:id source :plugin source}))
+               :unload (if (and global? (seq global-ids))
+                         (into patch (map (fn [id] {:id id :remove true}) global-ids))
+                         patch)
+               :inherit patch)]))))

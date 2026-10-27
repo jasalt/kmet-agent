@@ -4,6 +4,7 @@
    screen shows, and the writes its toggles make."
   (:require [babashka.fs :as fs]
             [clojure.edn :as edn]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.app.config :as cfg]
             [kmet.app.extensions.layers :as layers]
@@ -46,17 +47,18 @@
             "a later row replaces an earlier one by id, and a remove patch drops it")
         (is (= #{:ext/b :ext/c} project-sources)
             "the project layer composes on top of the global one")
-        (is (= {:enabled true :override-state :inherit}
+        (is (= {:enabled true :override-state :inherit :inherited-enabled true}
                (layers/item-state composed :ext/a :global)))
-        (is (= {:enabled false :override-state :unload}
+        (is (= {:enabled false :override-state :unload :inherited-enabled true}
                (layers/item-state composed :ext/a :project)))
-        (is (= {:enabled false :override-state :inherit}
+        (is (= {:enabled false :override-state :inherit :inherited-enabled false}
                (layers/item-state composed :ext/b :global)))
-        (is (= {:enabled true :override-state :load}
-               (layers/item-state composed :ext/c :project)))
-        (is (= {:enabled true :override-state :load}
+        (is (= {:enabled true :override-state :load :inherited-enabled false}
+               (layers/item-state composed :ext/c :project))
+            "a project-only source inherits 'off', so its first toggle loads it")
+        (is (= {:enabled true :override-state :load :inherited-enabled false}
                (layers/item-state composed :ext/b :project)))
-        (is (= {:enabled false :override-state :inherit}
+        (is (= {:enabled false :override-state :inherit :inherited-enabled false}
                (layers/item-state composed :ext/missing :project)))))))
 
 (deftest global-writers-compose-and-drop-a-row
@@ -102,7 +104,15 @@
                  (read-layer global)))
           (is (= #{:ext/a}
                  (layers/sources-of
-                  (:global (layers/composition (layers/layers)))))))))))
+                  (:global (layers/composition (layers/layers)))))))
+        (testing "disable covers every row of the source, in composition order"
+          (fs/delete global)
+          (write-layer! global {:rows [{:id :first :plugin :ext/a}
+                                       {:id :second :plugin :ext/a}]
+                                :patch []})
+          (is (true? (layers/disable-global! :ext/a)))
+          (is (= [{:id :first :remove true} {:id :second :remove true}]
+                 (:patch (read-layer global)))))))))
 
 (deftest project-writers-compose-a-row-inherit-or-unload
   (with-layers
@@ -173,6 +183,96 @@
                                          (:data (:project parsed))])]
           (is (= [:ext/a] (mapv :plugin (:rows composed)))))))))
 
+(deftest a-project-inserts-config-patch-goes-with-it
+  (with-layers
+    (fn [{:keys [global project]}]
+      (testing "the insert and its config patch leave together"
+        (write-layer! project {:patch [{:id :ext/x :plugin :ext/x}
+                                       {:id :ext/x :config {:a 1}}]})
+        (is (true? (layers/apply-project-state! :ext/x :inherit)))
+        (is (= [] (:patch (read-layer project))))
+        (let [parsed (layers/layers)]
+          (is (= {:rows [] :patches 0}
+                 (profile/compose [(:data (:global parsed))
+                                   (:data (:project parsed))])))))
+      (testing "a config patch on an id the global layer still composes stays"
+        (write-layer! global {:rows [{:id :ext/x :plugin :ext/x}] :patch []})
+        (write-layer! project {:patch [{:id :ext/x :plugin :ext/x}
+                                       {:id :ext/x :config {:a 1}}]})
+        (is (true? (layers/apply-project-state! :ext/x :inherit)))
+        (is (= [{:id :ext/x :config {:a 1}}] (:patch (read-layer project)))
+            "it now configures the global row")
+        (let [parsed (layers/layers)]
+          (is (= [{:id :ext/x :plugin :ext/x :config {:a 1}}]
+                 (:rows (profile/compose [(:data (:global parsed))
+                                          (:data (:project parsed))]))))))
+      (testing "a project row's config patch follows the same rule"
+        (write-layer! project {:rows [{:id :ext/x :plugin :ext/x}]
+                               :patch [{:id :ext/x :config {:a 1}}]})
+        (is (true? (layers/apply-project-state! :ext/x :inherit)))
+        (is (= [] (:rows (read-layer project))) "the row is the project's enablement")
+        (is (= [{:id :ext/x :config {:a 1}}] (:patch (read-layer project)))
+            "the global row still composes that id, so its config survives")))))
+
+(deftest a-project-row-without-a-global-target-takes-its-config-patch
+  (with-layers
+    (fn [{:keys [project]}]
+      (write-layer! project {:rows [{:id :ext/x :plugin :ext/x}]
+                             :patch [{:id :ext/x :config {:a 1}}]})
+      (is (true? (layers/apply-project-state! :ext/x :inherit)))
+      (is (= {:rows [] :patch []} (read-layer project))
+          "the row and the config patch that only targeted it are gone")
+      (let [parsed (layers/layers)]
+        (is (= {:rows [] :patches 0}
+               (profile/compose [(:data (:global parsed))
+                                 (:data (:project parsed))])))))))
+
+(deftest an-unknown-project-state-is-refused
+  (with-layers
+    (fn [{:keys [project]}]
+      (let [error (try (layers/apply-project-state! :ext/a :loaded) nil
+                       (catch Exception e e))]
+        (is (= :kmet.app/bad-project-state (:type (ex-data error))))
+        (is (nil? (read-layer project)) "nothing was written")))))
+
+(deftest unload-removes-every-global-row-of-the-source
+  (with-layers
+    (fn [{:keys [global project]}]
+      (write-layer! global {:rows [{:id :mine :plugin :ext/a}
+                                   {:id :other :plugin :ext/a}] :patch []})
+      (is (true? (layers/apply-project-state! :ext/a :unload)))
+      (is (= [{:id :mine :remove true} {:id :other :remove true}]
+             (:patch (read-layer project))))
+      (is (= #{}
+             (layers/sources-of (:project (layers/composition (layers/layers)))))))))
+
+(deftest writes-keep-the-files-leading-comments
+  (with-layers
+    (fn [{:keys [global]}]
+      (spit global ";; my global layer\n;; second line\n{:rows [] :patch []}\n")
+      (is (true? (layers/enable-global! :ext/a)))
+      (let [text (slurp global)]
+        (is (str/starts-with? text ";; my global layer\n;; second line\n{:rows")
+            "the header a hand-written layer carries survives the rewrite")
+        (is (= [:ext/a] (mapv :plugin (:rows (read-layer global)))))))))
+
+(deftest a-layer-the-run-refuses-is-not-editable-here-either
+  (with-layers
+    (fn [{:keys [global]}]
+      (testing "an extra top-level key is a bad layer"
+        (spit global "{:schema 1 :rows [] :patch []}\n")
+        (is (some? (get-in (layers/layers) [:global :error])))
+        (is (thrown? clojure.lang.ExceptionInfo (layers/enable-global! :ext/a))))
+      (testing "a sequential (non-vector) rows value is a layer"
+        (spit global "{:rows ({:id :ext/a :plugin :ext/a}) :patch []}\n")
+        (is (nil? (get-in (layers/layers) [:global :error])))
+        (is (= #{:ext/a}
+               (layers/sources-of (:global (layers/composition (layers/layers))))))
+        (is (true? (layers/disable-global! :ext/a)))
+        (is (= {:rows [{:id :ext/a :plugin :ext/a}]
+                :patch [{:id :ext/a :remove true}]}
+               (read-layer global)))))))
+
 (deftest a-malformed-layer-is-reported-and-never-overwritten
   (with-layers
     (fn [{:keys [global]}]
@@ -186,13 +286,3 @@
         (is (thrown? clojure.lang.ExceptionInfo
                      (layers/enable-global! :ext/a)))
         (is (= before (slurp global)) "the write refuses to clobber it")))))
-
-(deftest writes-preserve-other-layer-keys
-  (with-layers
-    (fn [{:keys [global project]}]
-      (write-layer! global {:rows [] :patch [] :note "keep me"})
-      (layers/enable-global! :ext/a)
-      (is (= "keep me" (:note (read-layer global))))
-      (write-layer! project {:rows [] :patch [] :note "also keep me"})
-      (layers/apply-project-state! :ext/a :load)
-      (is (= "also keep me" (:note (read-layer project)))))))

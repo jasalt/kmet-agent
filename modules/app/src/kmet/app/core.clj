@@ -300,7 +300,7 @@
                 (catch Exception e
                   (throw (ex-info (str "cannot read patch file " path ": " (ex-message e))
                                   {:type :kmet.app/bad-patch-file :path path} e))))]
-    (if (and (map? layer) (every? #{:rows :patch} (keys layer)))
+    (if (profile/layer? layer)
       layer
       (throw (ex-info (str "a patch file holds {:rows […] :patch […]}: " path)
                       {:type :kmet.app/bad-patch-file :path path :content layer})))))
