@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-20T08:42:39Z"
+ :generated-at "2026-10-27T10:40:46Z"
  :provider {:id :mistral
             :name "Mistral"
             :env-vars ["MISTRAL_API_KEY"]
@@ -50,17 +50,6 @@
     :cost {:input 0.4 :output 2 :cache-read 0.04 :cache-write 0}
     :context-window 262144
     :max-tokens 262144}
-   "devstral-medium-2507"
-   {:id "devstral-medium-2507"
-    :name "Devstral Medium"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text]
-    :cost {:input 0.4 :output 2 :cache-read 0.04 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
    "devstral-medium-latest"
    {:id "devstral-medium-latest"
     :name "Devstral 2 (latest)"
@@ -72,28 +61,6 @@
     :cost {:input 0.4 :output 2 :cache-read 0.04 :cache-write 0}
     :context-window 262144
     :max-tokens 262144}
-   "devstral-small-2505"
-   {:id "devstral-small-2505"
-    :name "Devstral Small 2505"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text]
-    :cost {:input 0.1 :output 0.3 :cache-read 0.01 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
-   "devstral-small-2507"
-   {:id "devstral-small-2507"
-    :name "Devstral Small"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text]
-    :cost {:input 0.1 :output 0.3 :cache-read 0.01 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
    "glm-5-2"
    {:id "glm-5-2"
     :name "GLM-5.2"
@@ -193,17 +160,6 @@
     :cost {:input 0.15 :output 0.15 :cache-read 0.015 :cache-write 0}
     :context-window 262144
     :max-tokens 128000}
-   "mistral-large-2411"
-   {:id "mistral-large-2411"
-    :name "Mistral Large 2.1"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text]
-    :cost {:input 2 :output 6 :cache-read 0.2 :cache-write 0}
-    :context-window 131072
-    :max-tokens 16384}
    "mistral-large-2512"
    {:id "mistral-large-2512"
     :name "Mistral Large 3"
@@ -223,7 +179,7 @@
     :base-url "https://api.mistral.ai"
     :reasoning true
     :input [:text :image]
-    :cost {:input 0.68 :output 2.09 :cache-read 0.07 :cache-write 0}
+    :cost {:input 1.36 :output 4.18 :cache-read 0.14 :cache-write 0}
     :context-window 1048576
     :max-tokens 262144}
    "mistral-large-latest"
@@ -292,17 +248,6 @@
     :cost {:input 1.5 :output 7.5 :cache-read 0.15 :cache-write 0}
     :context-window 262144
     :max-tokens 262144}
-   "mistral-nemo"
-   {:id "mistral-nemo"
-    :name "Mistral Nemo"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text]
-    :cost {:input 0.15 :output 0.15 :cache-read 0.015 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
    "mistral-small-2506"
    {:id "mistral-small-2506"
     :name "Mistral Small 3.2"
@@ -358,17 +303,6 @@
     :cost {:input 0.15 :output 0.15 :cache-read 0.015 :cache-write 0}
     :context-window 128000
     :max-tokens 128000}
-   "pixtral-large-latest"
-   {:id "pixtral-large-latest"
-    :name "Pixtral Large (latest)"
-    :provider :mistral
-    :api :mistral-conversations
-    :base-url "https://api.mistral.ai"
-    :reasoning false
-    :input [:text :image]
-    :cost {:input 2 :output 6 :cache-read 0.2 :cache-write 0}
-    :context-window 128000
-    :max-tokens 128000}
    "voxtral-small-2507"
    {:id "voxtral-small-2507"
     :name "Voxtral Small"
@@ -411,5 +345,16 @@
     :reasoning true
     :input [:text]
     :cost {:input 1.4 :output 4.4 :cache-read 0.14 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072}
+   "zai-glm-5-3-flash"
+   {:id "zai-glm-5-3-flash"
+    :name "GLM-5.3-Flash"
+    :provider :mistral
+    :api :mistral-conversations
+    :base-url "https://api.mistral.ai"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0.15 :output 0.5 :cache-read 0.03 :cache-write 0}
     :context-window 1048576
     :max-tokens 131072}}}}

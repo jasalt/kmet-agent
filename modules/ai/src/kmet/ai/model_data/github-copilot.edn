@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-21T10:11:51Z"
+ :generated-at "2026-10-27T10:40:46Z"
  :provider {:id :github-copilot
             :name "GitHub Copilot"
             :env-vars ["COPILOT_GITHUB_TOKEN"]
@@ -516,6 +516,33 @@
            :output 10
            :cache-read 0.1
            :cache-write 2.5}
+    :context-window 1050000
+    :max-tokens 128000
+    :headers {"Copilot-Integration-Id" "vscode-chat"
+              "Editor-Plugin-Version" "copilot-chat/0.35.0"
+              "Editor-Version" "vscode/1.107.0"
+              "User-Agent" "GitHubCopilotChat/0.35.0"}
+    :compat {:supports-openai-grammar-tools true}}
+   "gpt-6.1-terra"
+   {:id "gpt-6.1-terra"
+    :name "GPT-6.1 Terra"
+    :provider :github-copilot
+    :api :openai-responses
+    :base-url "https://api.individual.githubcopilot.com"
+    :reasoning true
+    :thinking-level-map {:high "high"
+                         :low "low"
+                         :max "max"
+                         :medium "medium"
+                         :minimal nil
+                         :off "none"
+                         :xhigh "xhigh"}
+    :input [:text :image]
+    :cost {:input 1
+           :tiers [{:input 2 :input-tokens-above 272000 :output 7.5 :cache-read 0.1 :cache-write 2.5}]
+           :output 5
+           :cache-read 0.05
+           :cache-write 1.25}
     :context-window 1050000
     :max-tokens 128000
     :headers {"Copilot-Integration-Id" "vscode-chat"

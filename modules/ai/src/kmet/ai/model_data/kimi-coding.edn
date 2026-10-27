@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-09-14T19:46:27Z"
+ :generated-at "2026-10-27T10:40:46Z"
  :provider {:id :kimi-coding
             :name "Kimi For Coding"
             :env-vars ["KIMI_API_KEY"]
@@ -29,6 +29,32 @@
     :input [:text :image]
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 262144
+    :max-tokens 131072
+    :headers {"User-Agent" "KimiCLI/1.5"}
+    :compat {:force-adaptive-thinking true}}
+   "k3.1-pro"
+   {:id "k3.1-pro"
+    :name "Kimi K3.1 Pro"
+    :provider :kimi-coding
+    :api :anthropic-messages
+    :base-url "https://api.kimi.com/coding"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
+    :max-tokens 131072
+    :headers {"User-Agent" "KimiCLI/1.5"}
+    :compat {:force-adaptive-thinking true}}
+   "k3.1-pro-highspeed"
+   {:id "k3.1-pro-highspeed"
+    :name "Kimi K3.1 Pro Highspeed"
+    :provider :kimi-coding
+    :api :anthropic-messages
+    :base-url "https://api.kimi.com/coding"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 1048576
     :max-tokens 131072
     :headers {"User-Agent" "KimiCLI/1.5"}
     :compat {:force-adaptive-thinking true}}

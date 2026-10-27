@@ -1087,8 +1087,12 @@
                                       :output (cost "output")
                                       :cache-read (cost "input_cache_read")
                                       :cache-write (cost "input_cache_write"))
-                     :context-window (or (get model "context_window") 4096)
-                     :max-tokens (or (get model "max_tokens") 4096)))))))
+                     :context-window (or (when (pos? (get model "context_window"))
+                                           (get model "context_window"))
+                                         4096)
+                     :max-tokens (or (when (pos? (get model "max_tokens"))
+                                       (get model "max_tokens"))
+                                     4096)))))))
 
 (defn- process-vercel-ai-gateway
   "pi fetchAiGatewayModels + the kimi-k3 max-tokens override."

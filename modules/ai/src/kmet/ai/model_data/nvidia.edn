@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-21T20:44:09Z"
+ :generated-at "2026-10-27T10:40:46Z"
  :provider {:id :nvidia
             :name "NVIDIA NIM"
             :env-vars ["NVIDIA_API_KEY"]
@@ -132,6 +132,24 @@
     :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
     :context-window 131072
     :max-tokens 131072
+    :headers {"NVCF-POLL-SECONDS" "3600"}
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort false
+             :max-tokens-field :max-tokens
+             :supports-long-cache-retention false
+             :supports-strict-mode false}}
+   "minimaxai/minimax-m3.1-flash"
+   {:id "minimaxai/minimax-m3.1-flash"
+    :name "MiniMax-M3.1-Flash"
+    :provider :nvidia
+    :api :openai-completions
+    :base-url "https://integrate.api.nvidia.com/v1"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 0 :output 0 :cache-read 0 :cache-write 0}
+    :context-window 262144
+    :max-tokens 262144
     :headers {"NVCF-POLL-SECONDS" "3600"}
     :compat {:supports-store false
              :supports-developer-role false

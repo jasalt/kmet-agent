@@ -1,5 +1,5 @@
 {:schema-version 1
- :generated-at "2026-10-20T08:42:39Z"
+ :generated-at "2026-10-27T10:40:46Z"
  :provider {:id :moonshotai-cn
             :name "Moonshot AI (CN)"
             :env-vars ["MOONSHOT_API_KEY"]
@@ -84,4 +84,38 @@
              :thinking-format :openai
              :max-tokens-field :max-tokens
              :supports-strict-mode false
-             :deferred-tools-mode :kimi}}}}}
+             :deferred-tools-mode :kimi}}
+   "kimi-k3.1-pro"
+   {:id "kimi-k3.1-pro"
+    :name "Kimi K3.1 Pro"
+    :provider :moonshotai-cn
+    :api :openai-completions
+    :base-url "https://api.moonshot.cn/v1"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 1.9437 :output 10.1671 :cache-read 0.1944 :cache-write 1.9437}
+    :context-window 1048576
+    :max-tokens 1048576
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort false
+             :thinking-format :deepseek
+             :max-tokens-field :max-tokens
+             :supports-strict-mode false}}
+   "kimi-k3.1-pro-highspeed"
+   {:id "kimi-k3.1-pro-highspeed"
+    :name "Kimi K3.1 Pro Highspeed"
+    :provider :moonshotai-cn
+    :api :openai-completions
+    :base-url "https://api.moonshot.cn/v1"
+    :reasoning true
+    :input [:text :image]
+    :cost {:input 3.8874 :output 20.3342 :cache-read 0.1944 :cache-write 3.8874}
+    :context-window 1048576
+    :max-tokens 1048576
+    :compat {:supports-store false
+             :supports-developer-role false
+             :supports-reasoning-effort false
+             :thinking-format :deepseek
+             :max-tokens-field :max-tokens
+             :supports-strict-mode false}}}}}
