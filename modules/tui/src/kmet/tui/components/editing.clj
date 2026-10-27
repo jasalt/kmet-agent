@@ -429,6 +429,21 @@
                            old-text)]
             (recur (rest markers) (str out (subs line cursor start) new-text) end)))))))
 
+(defn expand-paste-markers-in-line
+  "Replace each paste marker in line whose id has content in store with that
+   content, literally and in one pass: a marker's id must match exactly
+   (#1 never claims #10), and inserted content is never rescanned, so marker
+   text inside a paste stays as pasted. Other markers are left unchanged."
+  [line store]
+  (loop [markers (find-paste-markers-in-line line), out "", cursor 0]
+    (if (empty? markers)
+      (str out (subs line cursor))
+      (let [{:keys [id start end]} (first markers)
+            content (get store id)]
+        (recur (rest markers)
+               (str out (subs line cursor start) (or content (subs line start end)))
+               end)))))
+
 (defn decode-csi-u
   "Decode CSI-u encoded control bytes (ESC [ <codepoint> ; 5 u) back to
    literal control characters. Lowercase a-z → ctrl+letter, uppercase A-Z →

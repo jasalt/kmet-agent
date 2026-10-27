@@ -1736,14 +1736,9 @@
   "Get the editor text with paste markers expanded to their stored content
    (pi: Editor.getExpandedText — used by submission and external editing)."
   [editor]
-  (reduce-kv (fn [result id content]
-               (if content
-                 (clojure.string/replace result
-                                         (re-pattern (str "\\[paste #" id "[^\\]]*\\]"))
-                                         (constantly content))
-                 result))
-             (editor-get-text editor)
-             @(:paste-store editor)))
+  (let [store @(:paste-store editor)]
+    (clojure.string/join "\n" (map #(edit/expand-paste-markers-in-line % store)
+                                   (:lines @(:state-atom editor))))))
 
 (defn editor-autocomplete-active?
   "True when the autocomplete dropdown is currently showing."

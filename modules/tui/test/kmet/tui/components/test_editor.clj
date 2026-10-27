@@ -1112,6 +1112,24 @@
     (t/is (= (str big1 big2) (editor/editor-get-expanded-text e))
           "all paste markers expanded to their stored content")))
 
+(t/deftest test-editor-get-expanded-text-matches-ids-exactly
+  (let [e (editor/make-editor)
+        pastes (mapv #(clojure.string/join "\n" (repeat 15 (str "P" %))) (range 1 12))]
+    (doseq [p pastes]
+      (core/handle-input e (str "\u001b[200~" p "\u001b[201~")))
+    (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #10"))
+    (t/is (= (apply str pastes) (editor/editor-get-expanded-text e))
+          "#1 does not claim the #10/#11 markers")))
+
+(t/deftest test-editor-get-expanded-text-does-not-rescan-content
+  (let [e (editor/make-editor)
+        big1 (clojure.string/join "\n" (repeat 15 "see [paste #2 +15 lines]"))
+        big2 (clojure.string/join "\n" (repeat 15 "two"))]
+    (core/handle-input e (str "\u001b[200~" big1 "\u001b[201~"))
+    (core/handle-input e (str "\u001b[200~" big2 "\u001b[201~"))
+    (t/is (= (str big1 big2) (editor/editor-get-expanded-text e))
+          "marker text inside pasted content stays literal")))
+
 (t/deftest test-editor-get-expanded-text-no-markers
   (let [e (editor/make-editor)]
     (doseq [c "hello"] (core/handle-input e (str c)))
