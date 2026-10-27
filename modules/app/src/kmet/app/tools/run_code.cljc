@@ -267,8 +267,8 @@
   [on-update abort capture-limit]
   (let [dir (str (temp-root) "/kmet-run-code-" (System/nanoTime))
         _ (fs/create-dirs dir)
-        out-file (str dir "/out.log")
-        err-file (str dir "/err.log")
+        out-file (str dir "/kmet-out.log")
+        err-file (str dir "/kmet-err.log")
         out-w (java.io.OutputStreamWriter. (java.io.FileOutputStream. out-file) "UTF-8")
         err-w (java.io.OutputStreamWriter. (java.io.FileOutputStream. err-file) "UTF-8")
         closed? (atom false)

@@ -38,10 +38,10 @@
       env)))
 
 (def ^:private write-log-path
-  (capture-log-path (System/getenv "KMET_TUI_WRITE_LOG") "tui"))
+  (capture-log-path (System/getenv "KMET_TUI_WRITE_LOG") "kmet-tui"))
 
 (def ^:private input-log-path
-  (capture-log-path (System/getenv "KMET_TUI_INPUT_LOG") "tui-input"))
+  (capture-log-path (System/getenv "KMET_TUI_INPUT_LOG") "kmet-tui-input"))
 
 (defn write-log!
   "Append raw output to the write-log path, ignoring errors (pi: write())."

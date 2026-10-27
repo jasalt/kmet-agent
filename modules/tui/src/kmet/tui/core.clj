@@ -1074,7 +1074,7 @@
                                 (System/getProperty "java.io.tmpdir"))
                             "tui"))]
       (.mkdirs (io/file dir))
-      (let [path (str (io/file dir (str "render-" (System/nanoTime) "-"
+      (let [path (str (io/file dir (str "kmet-render-" (System/nanoTime) "-"
                                         (rand-int 0x7fffffff) ".log")))]
         (spit path (str "viewportTop: " viewport-top "\n"
                         "hardwareCursorRow: " hardware-cursor-row "\n"
@@ -3128,7 +3128,7 @@
                                       ;; so the caller unwinds and -main reports
                                       ;; the error (pi: the render loop never
                                       ;; crashes silently).
-                                      (try (with-open [w (java.io.FileWriter. "render-crash.log" true)]
+                                      (try (with-open [w (java.io.FileWriter. "kmet-render-crash.log" true)]
                                              (.write w (str t "\n" (clojure.string/join "\n" (.getStackTrace t)) "\n")))
                                            (catch Exception _))
                                       (tui-stop tui)))))

@@ -32,7 +32,7 @@
             :tokens (reduce + 0 (map :tokens (vals grouped)))})))
 
 (defn tool-usage-report
-  "Per-tool token summary, highest first, with a TOTAL line — for debug.log
+  "Per-tool token summary, highest first, with a TOTAL line — for kmet-debug.log
    and inspection (/session formats the same numbers via tool-usage)."
   [session]
   (let [{:keys [total] :as usage} (tool-usage session)]

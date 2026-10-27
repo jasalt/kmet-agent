@@ -176,7 +176,7 @@
    dock, tui-hide-overlay by identity for the overlay stack — and a hit is
    a lifecycle bug: the caller skipped that surface's leave, so dispose!
    removes it (the visible failure cannot happen), records the violation in
-   kmet.error.log, and with --debug throws so development trips on it
+   kmet-error.log, and with --debug throws so development trips on it
    instead of shipping another stranded panel. Handles nil."
   [cs component]
   (when (some? component)

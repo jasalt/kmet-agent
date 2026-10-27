@@ -1,7 +1,7 @@
 (ns kmet.app.debug
-  "Minimal debug logging to debug.log and error logging to kmet.error.log.
-   Enable debug.log with --debug flag at startup.
-   kmet.error.log is always written on unhandled errors.
+  "Minimal debug logging to kmet-debug.log and error logging to kmet-error.log.
+   Enable kmet-debug.log with --debug flag at startup.
+   kmet-error.log is always written on unhandled errors.
 
    The switch means *all* diagnostics, not just the log file: it also turns on
    the session loader's wrong-shape reporting (`kmet.app.session.store`),
@@ -9,8 +9,8 @@
    rather than every `--debug` consumer remembering to flip its own."
   (:require [kmet.app.session.store :as session-store]))
 
-(defonce ^:private log-path "debug.log")
-(defonce ^:private error-path "kmet.error.log")
+(defonce ^:private log-path "kmet-debug.log")
+(defonce ^:private error-path "kmet-error.log")
 (defonce ^:private debug-enabled (atom false))
 
 (defn- timestamp []
@@ -33,7 +33,7 @@
     (str (.getName (class e)) ": " (ex-message e) "\n" (.toString sw))))
 
 (defn log
-  "Write a timestamped line to debug.log if logging is enabled.
+  "Write a timestamped line to kmet-debug.log if logging is enabled.
    If the last argument is an Exception, formats it with full stack trace."
   [& parts]
   (when @debug-enabled
@@ -43,7 +43,7 @@
       (write-line log-path (str "[" (timestamp) "] " parts-str "\n")))))
 
 (defn log-error
-  "Write a timestamped error to kmet.error.log. Always writes, regardless of debug mode.
+  "Write a timestamped error to kmet-error.log. Always writes, regardless of debug mode.
    If the last argument is an Exception, formats it with full stack trace."
   [& parts]
   (let [parts-str (apply str
@@ -51,7 +51,7 @@
                               parts))
         line (str "[" (timestamp) "] ERROR: " parts-str "\n")]
     (write-line error-path line)
-    ;; Also log to debug.log if enabled
+    ;; Also log to kmet-debug.log if enabled
     (when @debug-enabled
       (write-line log-path line))))
 

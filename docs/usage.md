@@ -23,7 +23,7 @@ bb start @tasks.md "summarize the tasks"
 ```
   --profile <name>      Composition profile: tui (default), print, rpc, server
                         (see profiles.md)
-  -d, --debug           Log to debug.log
+  -d, --debug           Log to kmet-debug.log
   --list-models [search] List available models (optional fuzzy search)
   --generate-models     Fetch current provider + image model catalogs
                         (models.dev + live sources) into ~/.kmet/agent/ and exit

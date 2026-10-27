@@ -46,7 +46,7 @@
 
 (t/deftest test-the-debug-switch-owns-the-strict-pass
   ;; One place decides "diagnostics on"; a typo there would mean the strict
-  ;; pass never runs. `log` is stubbed so the assertion writes no debug.log.
+  ;; pass never runs. `log` is stubbed so the assertion writes no kmet-debug.log.
   (try
     (with-redefs [debug/log (fn [& _] nil)]
       (debug/enable!)

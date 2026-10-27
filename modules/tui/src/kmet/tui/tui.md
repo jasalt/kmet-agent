@@ -467,7 +467,7 @@ An idle UI runs zero bodies.
   standalone frame that must repaint cleanly rather than diff watches the
   ref and forces a render (`kmet.ui.tui.resource-config`).
 - **Error contract**: a throwing component fn crashes the render loop
-  (Throwable → render-crash.log → tui-stop) — loud beats silently wrong.
+  (Throwable → kmet-render-crash.log → tui-stop) — loud beats silently wrong.
 
 **The three forms** (Reagent's taxonomy):
 
@@ -1012,7 +1012,7 @@ any future surface stack should too.
   unwind. The close order is contractual: leave first, then dispose. A
   `dispose!` that finds the component still mounted removes it first (the
   UI can never render a corpse), records the violation in
-  `kmet.error.log`, and throws under `--debug`. Never call
+  `kmet-error.log`, and throws under `--debug`. Never call
   `protocols/dispose` (or `dispose-tree!`) directly on a stacked surface.
 - **Focus follows the stack.** A watch on the stack — not each close
   path — restores input when the focused component leaves: to the new
@@ -1554,7 +1554,7 @@ per run.
 
 - `KMET_TUI_DEBUG=1 bb start` — every frame dumps `newLines` vs
   `previousLines`, viewportTop, hardwareCursorRow and size into
-  `$TMPDIR/tui/render-*.log` (or `java.io.tmpdir/tui/` when `TMPDIR` is
+  `$TMPDIR/tui/kmet-render-*.log` (or `java.io.tmpdir/tui/` when `TMPDIR` is
   unset — this babashka hardcodes java.io.tmpdir to `/tmp`; pi: PI_TUI_DEBUG).
 - `KMET_DEBUG_REDRAW=1 bb start` — appends one line per FULL redraw with its
   trigger reason to `kmet-debug-render.log` (cwd); a steady stream during
@@ -1567,17 +1567,17 @@ per run.
 | file | written when |
 |---|---|
 | `kmet-crash.log` | a rendered line exceeds the terminal width — dumps all rendered lines with visible widths + the offending index; the frame truncates the line and keeps running |
-| `render-crash.log` | a render body threw — full stack trace, then the TUI stops (loud-crash contract, §2.5) |
-| `debug.log` | opt-in via `--debug`: lifecycle events (submit, cancel, agent turns) and the exit survivor report (live components/reactions/armed timers, §5.1) |
-| `kmet.error.log` | unhandled top-level exceptions |
+| `kmet-render-crash.log` | a render body threw — full stack trace, then the TUI stops (loud-crash contract, §2.5) |
+| `kmet-debug.log` | opt-in via `--debug`: lifecycle events (submit, cancel, agent turns) and the exit survivor report (live components/reactions/armed timers, §5.1) |
+| `kmet-error.log` | unhandled top-level exceptions |
 
 ### Output + input traces (env flags)
 
 - `KMET_TUI_WRITE_LOG=<dir|file> bb start` — every byte written to the
-  terminal is appended (a directory gets `tui-<ts>-<pid>.log`, a file is
+  terminal is appended (a directory gets `kmet-tui-<ts>-<pid>.log`, a file is
   appended in place); the raw counterpart of the term_dump workflow below.
 - `KMET_TUI_INPUT_LOG=<dir|file> bb start` — the input path is appended
-  (`tui-input-<ts>-<pid>.log` in a directory, or the given file). One line
+  (`kmet-tui-input-<ts>-<pid>.log` in a directory, or the given file). One line
   per **batch** (every byte the tty had queued: how input chunks under
   stalls), per **unit** (the raw bytes `\uXXXX`-escaped, the parsed key,
   the Kitty release/repeat flags, the paste state, `recent=` burst window

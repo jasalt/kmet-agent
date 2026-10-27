@@ -377,7 +377,7 @@
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server
                      (see docs/profiles.md)")
-  (println "  -d, --debug        Log to debug.log")
+  (println "  -d, --debug        Log to kmet-debug.log")
   (println "  --list-models [search]  List available models (optional fuzzy search)")
   (println "  --generate-models  Fetch provider and image-model catalogs into ~/.kmet/agent/ and exit")
   (println "  -p, --print        Run one prompt and exit (--mode text)")
@@ -590,7 +590,7 @@
   (str/starts-with? (str (:type (ex-data e))) ":kmet."))
 
 (defn- enable-debug!
-  "Turn on debug.log before any load of any kind, so the catalog trail is in
+  "Turn on kmet-debug.log before any load of any kind, so the catalog trail is in
    the log too (kmet1's order: help, version and the cache pipeline answer
    without it)."
   [opts]

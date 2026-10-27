@@ -604,7 +604,7 @@ exec \"$LD\" --library-path \"$PREFIX/glibc/lib\" \"$BIN\" \"$@\"
               (if (zero? (:exit res))
                 (do
                   (println "smoke test passed:" (count (str/split-lines (:out res))) "models listed")
-                  (let [log-file (str (fs/path dir "debug.log"))
+                  (let [log-file (str (fs/path dir "kmet-debug.log"))
                         log-text (if (fs/regular-file? log-file) (slurp log-file) "")
                         missing-native-logs (remove #(str/includes? log-text %)
                                                     bundled-native-log-lines)]

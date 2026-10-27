@@ -176,7 +176,7 @@ before any new engine; T1 must capture the rest.
 1. **`/session`** — the **Tool Results** section: per-tool call count and
    estimated result tokens, highest first, with a total. The **Tokens**
    section above it is the billed truth.
-2. **`debug.log`** — run `kmet --debug`; each run appends a per-tool token
+2. **`kmet-debug.log`** — run `kmet --debug`; each run appends a per-tool token
    report (highest first, with TOTAL).
 3. **Session files** — each tool entry has `:result-tokens` and `:tool-name`.
    Here the analysis also estimated unstamped entries from content. `.ednl` is

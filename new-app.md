@@ -4154,7 +4154,7 @@ model and level where the settings' was `deepseek/deepseek-v4.1-flash • max`,
 and `/settings` reads the same config). `--list-models` diffs clean against
 `--app old`'s table. `--my-ext-flag x`, `--my-ext-flag=x` and a bare
 `--my-ext-flag` all answer through `(get-flag …)` — the three forms kmet1
-collects. `--debug` writes `debug.log` before the first load;
+collects. `--debug` writes `kmet-debug.log` before the first load;
 `--generate-models` writes both caches and exits 0; `--session-dir` moves the
 run's session file; and `kmet --app new config` loads no rank-4 namespace
 (asserted the way the two-direction load test is).
