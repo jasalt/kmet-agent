@@ -50,12 +50,13 @@ A copyable starting point with the current keys is available in
 ## Provider catalogs
 
 `kmet` reads its provider catalog from `modules/ai/src/kmet/ai/model_data/*.edn`
-(40 providers: opencode-go, deepseek, anthropic, google, groq, cerebras,
+(41 providers: opencode-go, deepseek, anthropic, google, groq, cerebras,
 openrouter, nvidia, moonshotai, qwen-token-plan, minimax, fireworks,
-vercel-ai-gateway, zai, together, baseten, kimi-coding, cloudflare, mistral,
-google-vertex, amazon-bedrock, ...; generated from models.dev + live
-catalogs — `bb generate-models`). A user-level cache can be refreshed
-without touching the repo: `kmet --generate-models` runs the same generators
+vercel-ai-gateway, open-design, zai, together, baseten, kimi-coding,
+cloudflare, mistral, google-vertex, amazon-bedrock, ...; generated from
+models.dev + live catalogs — `bb generate-models`).
+A user-level cache can be refreshed without touching the repo:
+`kmet --generate-models` runs the same generators
 into `~/.kmet/agent/models-cache/` for the provider catalogs (one
 `<provider>.edn` per provider + `manifest.edn`, same layout as the
 built-ins) and `~/.kmet/agent/image-models-cache/` for the image catalog,

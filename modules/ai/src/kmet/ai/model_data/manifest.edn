@@ -1,6 +1,6 @@
 {:schema-version 1
- :generated-at "2026-10-27T10:40:46Z"
- :structure-hash "4341e8b74c3074bc59d9d03cd4de9f8c45765f026d0677cf570252c5b25674ef"
+ :generated-at "2026-10-27T13:20:10Z"
+ :structure-hash "81816ba51a4ae471719790341201d55bb0bbcbb7612fb046518a9a2fef3e4a25"
  :files {"amazon-bedrock.edn" "7591836eb226d5df501b8350b784c12c3f78af6b0cb7eac2ba5dd327f5cdaf0d"
          "ant-ling.edn" "7bc966a01f888c13d2bf6adc673e94f6ff15ee6f63d0781468eb9e95054b230f"
          "anthropic.edn" "68afe478c24da56476d6b1d9a8c6a6cb936cd0f454c484656cd9b586fba7ad87"
@@ -24,6 +24,7 @@
          "moonshotai-cn.edn" "fcd373af347cf54a6f27d8c82594ca681dd0d25aa64ec4b28f6dd52e0ee3cfca"
          "moonshotai.edn" "cd473cd24e9de69d11e4d12b538e4b173cd1b163bc234663575350cab5989469"
          "nvidia.edn" "bbdec36f59be745fcaa7d17138562954eb35a82e998407cefaa2fb25edff3010"
+         "open-design.edn" "fd5297f11a5a729cc887d5e3b1dba8a22e36bf226754c6d3c60c8734d715355c"
          "openai-codex.edn" "3360ff2e4fa4d3276fbf7d2fd6ee36f8f3a59ae9266a6c87c56235a324f0cdaa"
          "openai.edn" "839164d5419c918d45fb2e1f8c0949aa4607f2a0e2b10b323c9e3572b9c9cc13"
          "opencode-go.edn" "7dddb63614cf7c00ffeef875fbef29118716b5a97d12c06f8b0a59afaad78d3b"

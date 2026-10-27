@@ -42,7 +42,8 @@ are:
   `TOGETHER_API_KEY`; `BASETEN_API_KEY`; `KIMI_API_KEY`;
   `CMD_API_KEY`; and `ANT_LING_API_KEY`.
 - `FIREWORKS_API_KEY` (fireworks), `AI_GATEWAY_API_KEY`
-  (vercel-ai-gateway), and `CLOUDFLARE_API_KEY` with
+  (vercel-ai-gateway), `OPEN_DESIGN_API_KEY` (open-design), and
+  `CLOUDFLARE_API_KEY` with
   `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_GATEWAY_ID` for Cloudflare Workers AI
   or AI Gateway.
 - `GOOGLE_CLOUD_API_KEY` (google-vertex), or Application Default Credentials
@@ -67,6 +68,17 @@ flows include:
 
 If a provider offers no OAuth flow, use its API-key environment variable or
 `/login` credential entry.
+
+## OpenDesign Cloud
+
+`open-design` is a subscription gateway (Go/Plus/Pro/Max — the free plan has
+no API access) that fronts other vendors' models. kmet uses its
+OpenAI-compatible surface at `https://amr-link.open-design.ai/v1`; the same
+key and host also serve an Anthropic Messages surface (`/v1/messages`) and
+an OpenAI Responses surface (`/v1/responses`), selectable per model with an
+`api` entry in `models.edn`. Catalog costs are the gateway's standard
+per-model list rates: plans bill in credits with per-model multipliers, so
+the displayed cost is API list price, not credit burn.
 
 ## Custom providers and models
 

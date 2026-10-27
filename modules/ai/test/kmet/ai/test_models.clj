@@ -104,7 +104,7 @@
                :xiaomi-token-plan-cn :xiaomi-token-plan-ams :xiaomi-token-plan-sgp
                :qwen-token-plan :qwen-token-plan-cn :qwen-token-plan-individual
                :minimax :minimax-cn :nvidia :openrouter :fireworks
-               :vercel-ai-gateway :zai :zai-coding-cn :together :baseten
+               :vercel-ai-gateway :open-design :zai :zai-coding-cn :together :baseten
                :ant-ling :kimi-coding :cloudflare-workers-ai :cloudflare-ai-gateway
                :mistral :google-vertex :amazon-bedrock :commandcode}
              (set (keys providers))))
@@ -435,7 +435,7 @@
           (m/load-models-config! agent-dir)))
       (t/testing "parse failure → error surfaced, built-ins kept"
         (t/is (some? (m/get-model-config-error)))
-        (t/is (= 40 (count (m/get-providers)))))
+        (t/is (= 41 (count (m/get-providers)))))
       (t/testing "composition failure falls back to the builtin provider"
         (spit path "{:providers {:broken {:models [{:id \"x\"}]}}}\n")
         (fs/copy path (str tmp "/agent/models.edn") {:replace-existing true})
@@ -476,7 +476,7 @@
           (m/load-models-config! (str tmp "/agent")))
         (t/is (nil? (m/get-provider :temp-provider)) "removed provider disappears on reload")
         (t/is (= 888 (:context-window (m/get-model :deepseek "deepseek-v4-pro"))) "override replaces the old value")
-        (t/is (= 40 (count (m/get-providers))) "registry back to builtin count"))
+        (t/is (= 41 (count (m/get-providers))) "registry back to builtin count"))
       (finally
         (fs/delete-tree tmp)
         (m/load-catalogs!)))))
@@ -598,7 +598,7 @@
        (m/map->Provider {:id :ext-b :name "B" :api-types #{:openai-completions}
                          :models [(ext-model "b1")] :env-vars [] :default-model nil}))
       (t/is (= [:ext-a :ext-b] (m/get-registered-provider-ids)))
-      (t/is (= 42 (count (m/get-providers))) "builtins + 2 extension providers"))
+      (t/is (= 43 (count (m/get-providers))) "builtins + 2 extension providers"))
     (finally
       (m/clear-extension-providers!)
       (m/load-catalogs!))))

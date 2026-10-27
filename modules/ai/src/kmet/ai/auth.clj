@@ -59,6 +59,7 @@
    :openrouter ["OPENROUTER_API_KEY"]
    :fireworks ["FIREWORKS_API_KEY"]
    :vercel-ai-gateway ["AI_GATEWAY_API_KEY"]
+   :open-design ["OPEN_DESIGN_API_KEY"]
    :zai ["ZAI_API_KEY"]
    :zai-coding-cn ["ZAI_CODING_CN_API_KEY"]
    :together ["TOGETHER_API_KEY"]

@@ -8,6 +8,7 @@
    drift (uncommitted regenerations, hand-edits) is caught in CI without
    network."
   (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [kmet.libs.json :as json]
             [clojure.string :as str]
             [clojure.test :as t]
@@ -186,6 +187,62 @@
     (t/is (= :deepseek (:thinking-format (:compat out)))
           "model-bound compat keys must transfer")
     (t/is (= "deepseek/deepseek-v4-flash" (:id out)))))
+
+(t/deftest test-open-design-refs-transfer-capabilities
+  "Every open-design ref resolves against the committed canonical catalogs
+   (a ref that drifts out of the catalog set is a generation-time error), the
+   vendor limits transfer through it, the gateway list price wins over the
+   ref's cost, and a :thinking-format is taken only from a vendor ref — a
+   proxy ref's format is endpoint-bound and must not leak."
+  (let [catalogs (#'mg/read-catalogs mg/data-dir)
+        canonical (apply concat (vals (#'mg/flatten-catalogs catalogs)))
+        grouped (#'mg/provider-model-index canonical)
+        by-id (into {} (map (juxt :id identity)) (#'mg/process-open-design grouped))
+        claude (get by-id "claude-opus-5.5")
+        glm-flash (get by-id "glm-5.2")]
+    (t/is (= :openai-completions (:api claude))
+          "every model is catalogued on the Chat Completions wire")
+    (t/is (= "https://amr-link.open-design.ai/v1" (:base-url claude)))
+    (t/is (= 1000000 (:context-window claude)) "canonical limits transfer")
+    (t/is (= 128000 (:max-tokens claude)))
+    (t/is (= [:text :image] (:input claude)))
+    (t/is (= {:force-adaptive-thinking true} (:compat claude))
+          "a vendor ref contributes only the model-bound compat keys")
+    (t/is (nil? (:compat (get by-id "glm-5.3-flashx")))
+          "a proxy ref contributes no endpoint-bound compat")
+    (t/is (= {:input 1.4 :output 4.4 :cache-read 0.26 :cache-write 0}
+             (:cost glm-flash))
+          "the gateway list price wins over the ref's (zai bills 0)")
+    (t/is (= "GLM-5.3 Flash-X" (:name (get by-id "glm-5.3-flashx")))
+          "an explicit name wins over the ref's")
+    (t/is (thrown? clojure.lang.ExceptionInfo
+                   (doall (#'mg/process-open-design
+                           (#'mg/provider-model-index []))))
+          "an unresolvable ref throws instead of degrading silently")))
+
+(t/deftest test-open-design-committed-catalog
+  "The committed open-design catalog is one Chat Completions group on the
+   amr-link base; the Hunyuan entry (the only model without a canonical ref)
+   keeps the literal family limits, and every model carries usable limits."
+  (let [data (edn/read-string (slurp (str mg/data-dir "/open-design.edn")))
+        groups (:models data)
+        models (mapcat vals (vals groups))
+        by-id (into {} (map (juxt :id identity)) models)
+        hunyuan (get by-id "hy4-preview")]
+    (t/is (= #{:openai-completions} (set (keys groups))))
+    (t/is (= 34 (count models)))
+    (t/is (= #{"https://amr-link.open-design.ai/v1"} (set (map :base-url models))))
+    (t/is (every? (fn [m] (and (boolean? (:reasoning m))
+                               (pos? (:context-window m))
+                               (pos? (:max-tokens m))
+                               (every? #(number? (get-in m [:cost %]))
+                                       [:input :output :cache-read :cache-write])))
+                  models))
+    (t/is (= {:input 0.834 :output 2.501 :cache-read 0.042 :cache-write 0}
+             (:cost hunyuan)))
+    (t/is (= [131072 16384]
+             [(:context-window hunyuan) (:max-tokens hunyuan)]))
+    (t/is (= "deepseek-v4.1-flash" (get-in data [:provider :default-model])))))
 
 (t/deftest ^:slow test-commandcode-prices-timeout-proceeds
   "A stalled CommandCode price fetch must not block generation: the bounded

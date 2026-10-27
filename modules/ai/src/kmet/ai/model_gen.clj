@@ -1,5 +1,5 @@
 ;; Provider catalog generator (pi: packages/ai/scripts/generate-models.ts,
-;; ported to kmet's 40 providers) — fetches models.dev + the live provider
+;; ported to kmet's 41 providers) — fetches models.dev + the live provider
 ;; catalogs and writes the per-provider EDN files + manifest. The pipeline is
 ;; target-agnostic: `bb generate-models` (via kmet.tasks.generate-models,
 ;; which drives this namespace plus kmet.ai.image-model-gen) regenerates the
@@ -116,6 +116,9 @@
    :vercel-ai-gateway {:name "Vercel AI Gateway"
                        :env-vars ["AI_GATEWAY_API_KEY"]
                        :default-model "zai/glm-5.1"}
+   :open-design {:name "OpenDesign Cloud"
+                 :env-vars ["OPEN_DESIGN_API_KEY"]
+                 :default-model "deepseek-v4.1-flash"}
    :zai {:name "Z.AI"
          :env-vars ["ZAI_API_KEY"]
          :default-model "glm-5.2"}
@@ -2251,6 +2254,133 @@
         (:thinking-level-map cap) (assoc :thinking-level-map (:thinking-level-map cap))
         (:compat cap) (assoc :compat (:compat cap))))))
 
+;; ─── open-design (OpenDesign Cloud model API — amr-link.open-design.ai) ────
+;;     A subscription gateway (Go/Plus/Pro/Max) that fronts other vendors'
+;;     models behind three native surfaces: OpenAI Chat Completions, OpenAI
+;;     Responses and Anthropic Messages. Every model is catalogued on the Chat
+;;     Completions wire, so one base URL serves the whole provider; the other
+;;     two surfaces stay available to models.edn model-level overrides.
+;;
+;;     Model ids are the vendor ids the gateway publishes on its public catalog
+;;     pages, and :cost is that page's per-token list price (the gateway bills
+;;     standard per-model rates; its credit multipliers are a subscription
+;;     concern, not a token rate). Capabilities are not restated: reasoning,
+;;     modalities, thinking map, context window and max tokens transfer from
+;;     the canonical [provider id] ref. A ref into the model's own vendor also
+;;     carries that vendor's model-bound compat keys (the thinking format and
+;;     Claude's forced adaptive thinking); a ref into a proxy provider
+;;     (opencode, qwen-token-plan, openrouter, huggingface) does not, because a
+;;     proxy's thinking format is endpoint-bound, not model-bound (the same
+;;     rule commandcode-no-compat-refs encodes).
+;;
+;;     Nothing here is fetched: the public catalog pages are the source of the
+;;     id list, so an upstream addition is a generator change, like the
+;;     hardcoded deepseek catalog.
+
+(def ^:private open-design-base-url
+  "OpenAI Chat Completions (…/chat/completions) and Responses (…/responses)
+   base. The Anthropic Messages surface (…/v1/messages) hangs off the same
+   host without the /v1 segment and is deliberately not catalogued."
+  "https://amr-link.open-design.ai/v1")
+
+(def ^:private open-design-vendor-providers
+  "Ref providers whose compat keys describe the model itself rather than a
+   proxy endpoint's wire."
+  #{:anthropic :openai :google :deepseek :moonshotai :xai :zai :xiaomi})
+
+(defn- open-design-cost
+  "List price map ($/M tokens). CACHE-WRITE is 0 for the models the gateway
+   reports without a cache-write rate."
+  [input output cache-read cache-write]
+  (array-map :input input :output output :cache-read cache-read
+             :cache-write (or cache-write 0)))
+
+(def ^:private open-design-catalog
+  "id → list price → canonical ref. A missing :cost means the ref's cost is
+   the list price (muse-spark-1.3 publishes no page price); the literal
+   :name/:reasoning/:input/:context-window/:max-tokens fields exist for the one
+   model with no canonical ref — hy4-preview, using the Hunyuan family limits
+   models.dev reports for tencent-coding-plan and no reasoning assumption."
+  [;; Anthropic
+   {:id "claude-fable-5" :ref [:anthropic "claude-fable-5"] :cost (open-design-cost 10 50 1 12.5)}
+   {:id "claude-fable-5.1" :ref [:anthropic "claude-fable-5-1"] :cost (open-design-cost 10 50 0.25 12.5)}
+   {:id "claude-haiku-5.5" :ref [:anthropic "claude-haiku-5-5"] :cost (open-design-cost 0.1 0.5 0.01 0.125)}
+   {:id "claude-opus-4.8" :ref [:anthropic "claude-opus-4-8"] :cost (open-design-cost 5 25 0.5 6.25)}
+   {:id "claude-opus-5" :ref [:anthropic "claude-opus-5"] :cost (open-design-cost 5 25 0.5 6.25)}
+   {:id "claude-opus-5.5" :ref [:anthropic "claude-opus-5-5"] :cost (open-design-cost 4 20 0.2 5)}
+   {:id "claude-sonnet-5" :ref [:anthropic "claude-sonnet-5"] :cost (open-design-cost 2 10 0.2 2.5)}
+   {:id "claude-sonnet-5.5" :ref [:anthropic "claude-sonnet-5-5"] :cost (open-design-cost 2 10 0.2 2.5)}
+   ;; DeepSeek
+   {:id "deepseek-v4.1-flash" :ref [:deepseek "deepseek-flash"] :cost (open-design-cost 0.3 1.2 0.006 0)}
+   {:id "deepseek-v4-flash" :ref [:qwen-token-plan "deepseek-v4-flash"] :cost (open-design-cost 0.44 1.32 0.014 0)}
+   {:id "deepseek-v4-flash-vision-exp" :ref [:huggingface "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp"] :cost (open-design-cost 0.44 1.32 0.014 0)}
+   {:id "deepseek-v4-pro" :ref [:deepseek "deepseek-v4-pro"] :cost (open-design-cost 1.32 3.96 0.044 0)}
+   ;; Google
+   {:id "gemini-3.7-flash" :ref [:google "gemini-3.7-flash"] :cost (open-design-cost 0.75 3.75 0.075 0)}
+   {:id "gemini-3.8-flash" :ref [:google "gemini-3.8-flash"] :cost (open-design-cost 0.75 3.75 0.075 0.08333)}
+   ;; Z.AI
+   {:id "glm-5.2" :ref [:zai "glm-5.2"] :cost (open-design-cost 1.4 4.4 0.26 0)}
+   {:id "glm-5.3-flash" :ref [:zai "glm-5.3-flash"] :cost (open-design-cost 0.075 0.25 0.015 0)}
+   {:id "glm-5.3-flashx" :name "GLM-5.3 Flash-X" :ref [:openrouter "z-ai/glm-5.3-flashx"] :cost (open-design-cost 0.37 1.25 0.075 0)}
+   ;; OpenAI
+   {:id "gpt-5.6-luna" :ref [:openai "gpt-5.6-luna"] :cost (open-design-cost 0.2 1.2 0.02 0.25)}
+   {:id "gpt-5.6-sol" :ref [:openai "gpt-5.6-sol"] :cost (open-design-cost 4 20 0.4 5)}
+   {:id "gpt-5.6-terra" :ref [:openai "gpt-5.6-terra"] :cost (open-design-cost 2 12 0.2 2.5)}
+   {:id "gpt-6.1-sol" :ref [:openai "gpt-6.1-sol"] :cost (open-design-cost 2 10 0.1 2.5)}
+   {:id "gpt-6-astra" :ref [:openai "gpt-6-astra"] :cost (open-design-cost 10 50 1 12.5)}
+   {:id "gpt-6-luna" :ref [:openai "gpt-6-luna"] :cost (open-design-cost 0.1 0.5 0.01 0.125)}
+   {:id "gpt-6-sol" :ref [:openai "gpt-6-sol"] :cost (open-design-cost 2 10 0.2 2.5)}
+   ;; xAI
+   {:id "grok-4.5" :ref [:xai "grok-4.5"] :cost (open-design-cost 2 6 0.5 0)}
+   {:id "grok-4.6" :ref [:xai "grok-4.6"] :cost (open-design-cost 2 6 0.5 0)}
+   {:id "grok-4.7" :ref [:xai "grok-4.7"] :cost (open-design-cost 2 6 0.5 0)}
+   ;; Tencent (no canonical ref)
+   {:id "hy4-preview" :name "Hunyuan H4 Preview"
+    :reasoning false :input [:text]
+    :cost (open-design-cost 0.834 2.501 0.042 0)
+    :context-window 131072 :max-tokens 16384}
+   ;; Moonshot AI
+   {:id "kimi-k2.7-code" :ref [:moonshotai "kimi-k2.7-code"] :cost (open-design-cost 0.95 4 0.19 0)}
+   {:id "kimi-k3" :ref [:moonshotai "kimi-k3"] :cost (open-design-cost 3 15 0.3 0)}
+   ;; Xiaomi
+   {:id "mimo-v2.6-flash" :ref [:xiaomi "mimo-v2.6-flash"] :cost (open-design-cost 0.14 0.28 0.0028 0)}
+   {:id "mimo-v2.6-pro" :ref [:xiaomi "mimo-v2.6-pro"] :cost (open-design-cost 0.435 0.87 0.0036 0)}
+   ;; Meta
+   {:id "muse-spark-1.3" :ref [:opencode "muse-spark-1.3"]}
+   ;; Alibaba
+   {:id "qwen3.7-max" :ref [:qwen-token-plan "qwen3.7-max"] :cost (open-design-cost 2.5 7.5 0.5 3.125)}])
+
+(defn- process-open-design
+  "Canonical groups → OpenDesign Cloud model maps. A ref that no longer
+   resolves throws: shipping the model with conservative defaults instead of
+   the vendor's limits would silently misplace its context window."
+  [grouped]
+  (for [{:keys [id ref cost] :as entry} open-design-catalog
+        :let [ref-model (when ref (get-in grouped ref))]]
+    (do
+      (when (and ref (nil? ref-model))
+        (throw (ex-info (str "open-design catalog entry " id " refs " (pr-str ref)
+                             ", which this run's canonical catalogs do not carry")
+                        {:type :catalog-invalid :model id :ref ref})))
+      (let [compat (when (contains? open-design-vendor-providers (:provider ref-model))
+                     (select-keys (:compat ref-model)
+                                  [:thinking-format :force-adaptive-thinking]))
+            tlm (:thinking-level-map ref-model)]
+        (cond-> (array-map
+                 :id id
+                 :name (or (:name entry) (:name ref-model) id)
+                 :provider :open-design
+                 :api :openai-completions
+                 :base-url open-design-base-url
+                 :reasoning (boolean (if ref (:reasoning ref-model) (:reasoning entry)))
+                 :input (or (:input ref-model) (:input entry) [:text])
+                 :cost (or cost (:cost ref-model))
+                 :context-window (long (or (:context-window ref-model)
+                                           (:context-window entry)))
+                 :max-tokens (long (or (:max-tokens ref-model) (:max-tokens entry))))
+          (seq tlm) (assoc :thinking-level-map tlm)
+          (seq compat) (assoc :compat compat))))))
+
 (defn- fetch-models-dev
   []
   (let [resp (http/get "https://models.dev/api.json"
@@ -2365,6 +2495,9 @@
         grouped (assoc base-grouped :commandcode
                        (->> (process-commandcode commandcode-fetched ref-groups
                                                  commandcode-prices)
+                            normalize-deepseek-v4)
+                       :open-design
+                       (->> (process-open-design ref-groups)
                             normalize-deepseek-v4))]
     (into (array-map)
           (for [[pid _] providers]
