@@ -181,6 +181,27 @@
               "messages combined with current editor text")
         (t/is (empty? (runtime/compaction-queued (:engine cs))) "compaction queue cleared")))))
 
+(deftest test-restore-queued-preserves-literal-paste-markers
+  (let [cs (support/compaction-cs)
+        ed @(:current-editor-atom cs)
+        pasted (str/join "\n" (cons "literal [paste #1 +15 lines]" (repeat 14 "payload")))
+        expected (str "queued\n\n" pasted)
+        submitted (atom nil)]
+    (tui/handle-input ed (str "\u001b[200~" pasted "\u001b[201~"))
+    (let [collapsed (tui/editor-get-text ed)]
+      (loop-state/steer! (runtime/agent-state (:engine cs)) "queued")
+      (t/is (= 1 (turn/restore-queued-messages! cs)))
+      (t/is (= expected (tui/editor-get-text ed)))
+      (t/is (= expected (tui/editor-get-expanded-text ed)))
+      (tui/editor-set-on-submit! ed #(reset! submitted %))
+      (tui/handle-input ed "\r")
+      (t/is (= expected @submitted))
+      (tui/handle-input ed (str (char 31)))
+      (t/is (= collapsed (tui/editor-get-text ed)) "undo restores the collapsed draft")
+      (t/is (= pasted (tui/editor-get-expanded-text ed)) "undo restores its paste store")
+      (tui/handle-input ed (str (char 26)))
+      (t/is (= expected (tui/editor-get-expanded-text ed)) "redo keeps restored text literal"))))
+
 (deftest test-compaction-end-handler-flushes
   (testing "the :compaction-end event handler flushes the queue"
     (let [cs (support/compaction-cs)

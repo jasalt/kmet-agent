@@ -551,7 +551,7 @@
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
         (runtime/clear-queues! (:engine cs))
         ((:clear-compaction-queue! (:engine cs)))
-        (tui/editor-set-text! ed combined)
+        (tui/editor-set-expanded-text! ed combined)
         (status/update-pending-messages! cs)))
     (count all)))
 

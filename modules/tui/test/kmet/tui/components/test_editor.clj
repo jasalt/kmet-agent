@@ -1193,6 +1193,30 @@
     (core/handle-input e (ctrl 31))
     (t/is (= "msg" (editor/editor-get-text e)) "cleared text restored by undo")))
 
+(t/deftest test-editor-set-expanded-text-preserves-undo
+  (doseq [same-text? [false true]]
+    (let [e (editor/make-editor)
+          pasted (clojure.string/join "\n" (repeat 15 "literal [paste #1]"))]
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (let [collapsed (core/editor-get-text e)
+            replacement (if same-text? collapsed pasted)]
+        (core/editor-set-expanded-text! e replacement)
+        (t/is (= replacement (core/editor-get-expanded-text e)))
+        (t/is (empty? @(:paste-store e)))
+        (t/is (zero? @(:paste-counter e)))
+        (core/handle-input e (ctrl 31))
+        (t/is (= collapsed (core/editor-get-text e)))
+        (t/is (= pasted (core/editor-get-expanded-text e)))
+        (t/is (= 1 @(:paste-counter e)))
+        (core/handle-input e (ctrl 26))
+        (t/is (= replacement (core/editor-get-expanded-text e)))
+        (t/is (zero? @(:paste-counter e)))
+        (core/handle-input e (ctrl 31))
+        (let [next-paste (apply str (repeat 1001 "x"))]
+          (core/handle-input e (str "\u001b[200~" next-paste "\u001b[201~"))
+          (t/is (= (str pasted next-paste) (core/editor-get-expanded-text e))
+                "a paste after undo must not overwrite the restored store entry"))))))
+
 ;; ─── IEditorComponent protocol ───────────────────────────────────────────────
 
 (t/deftest test-editor-implements-ieditorcomponent
@@ -1270,7 +1294,16 @@
     (core/editor-set-text! custom "hello")
     (t/is (= "hello" (core/editor-get-text custom)))
     (core/editor-insert-text-at-cursor! custom "!")
-    (t/is (= "hello!" (core/editor-get-text custom)))))
+    (t/is (= "hello!" (core/editor-get-text custom)))
+    (core/editor-set-expanded-text! custom "literal [paste #1]")
+    (t/is (= "literal [paste #1]" (core/editor-get-expanded-text custom)))))
+
+(t/deftest test-custom-expanded-text-editor-dispatch
+  (let [received (atom nil)
+        custom (reify core/IExpandedTextEditor
+                 (editor-set-expanded-text! [_ text] (reset! received text)))]
+    (core/editor-set-expanded-text! custom "literal [paste #1]")
+    (t/is (= "literal [paste #1]" @received))))
 
 (t/deftest test-ieditorcomponent-insert-undoable
   ;; insert-text-at-cursor! pushes an undo snapshot and clears redo

@@ -1370,6 +1370,13 @@ IComponent verbs (`handle-input`, `invalidate`, `focused`, `set-focused!`),
 besides the one-frame `render` / `render-and-dispose` entries. App and mode
 code calls those — an editor accessor of its own is a duplicate.
 
+`IExpandedTextEditor` is an optional companion protocol for editors with collapsed
+paste storage. Its `editor-set-expanded-text!` method replaces already-expanded
+text literally, retiring old paste associations while retaining them in the undo
+snapshot. The core dispatcher uses this capability when available and otherwise
+falls back to a custom editor's ordinary `editor-set-text!`; existing custom
+editors need not implement a new method.
+
 The package has one more protocol, outside the component model:
 `kmet.tui.terminal/ITerminal` — the lean platform seam every terminal
 backend implements (`start!`/`stop!`/`started?`/`write-output`/
@@ -1471,6 +1478,9 @@ Editor submit callbacks receive expanded paste content, not the collapsed displa
 markers (including command-name autocomplete submission). App follow-up submission
 and queue restoration likewise read `editor-get-expanded-text` before replacing or
 clearing the editor; `editor-get-text` remains the raw display-text accessor.
+Queue restoration writes through `editor-set-expanded-text!` so literal marker
+text in the materialized payload cannot reuse the draft's paste store on submit;
+undo restores the collapsed draft and its store, and redo restores literal text.
 Paste expansion preserves stored content literally, matches each marker id
 exactly (`#1` never claims `#10`), and runs in one pass, so marker-like text
 inside pasted content is never expanded. Marker IDs must start immediately after

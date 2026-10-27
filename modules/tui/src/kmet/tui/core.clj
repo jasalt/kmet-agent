@@ -29,6 +29,8 @@
 (def IFocusable protocols/IFocusable)
 (def IEditorComponent protocols/IEditorComponent)
 
+(def IExpandedTextEditor protocols/IExpandedTextEditor)
+
 (defn- follow-protocol!
   "Keep re-export ALIAS naming PROTOCOL's current value. Clojure has no var
   aliasing: `(def Alias Protocol)` is a VALUE snapshot, and every `extend`/
@@ -47,6 +49,8 @@
 (follow-protocol! #'IComponent #'protocols/IComponent)
 (follow-protocol! #'IFocusable #'protocols/IFocusable)
 (follow-protocol! #'IEditorComponent #'protocols/IEditorComponent)
+
+(follow-protocol! #'IExpandedTextEditor #'protocols/IExpandedTextEditor)
 (defn render
   "One headless frame: drain the reaction batch queue, then render C at
    WIDTH. Mirrors the live loop (flush! runs on the loop's wake, before the
@@ -3202,6 +3206,20 @@
   (if (satisfies? protocols/IEditorComponent ed)
     (protocols/editor-set-text! ed text)
     (editor/editor-set-text! ed text)))
+
+(defn editor-set-expanded-text!
+  "Replace already-expanded text, retiring old paste associations when supported.
+   Custom editors without this optional capability use their ordinary setter."
+  [ed text]
+  (cond
+    (satisfies? protocols/IExpandedTextEditor ed)
+    (protocols/editor-set-expanded-text! ed text)
+
+    (satisfies? protocols/IEditorComponent ed)
+    (protocols/editor-set-text! ed text)
+
+    :else
+    (editor/editor-set-expanded-text! ed text)))
 (defn editor-get-text [ed]
   (if (satisfies? protocols/IEditorComponent ed)
     (protocols/editor-get-text ed)

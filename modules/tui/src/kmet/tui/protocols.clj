@@ -72,3 +72,8 @@
   (editor-set-padding-x! [this n] "Set horizontal padding")
   (editor-set-on-submit! [this f] "Set the submit callback")
   (editor-set-on-change! [this f] "Set the change callback"))
+
+(defprotocol IExpandedTextEditor
+  "Optional editor capability for replacing text that has already been expanded."
+  (editor-set-expanded-text! [this text]
+    "Replace text literally, retiring paste associations while preserving undo."))

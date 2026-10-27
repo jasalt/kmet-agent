@@ -197,7 +197,8 @@
   [editor]
   (let [s @(:state-atom editor)]
     {:lines (:lines s) :cursor-line (:cursor-line s) :cursor-col (:cursor-col s)
-     :paste-store @(:paste-store editor)}))
+     :paste-store @(:paste-store editor)
+     :paste-counter @(:paste-counter editor)}))
 
 (defn- undo-push [stack-atom snapshot]
   (swap! stack-atom conj snapshot))
@@ -220,6 +221,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -232,6 +234,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -1641,6 +1644,16 @@
     ;; Reconcile the paste store with the new text (e.g. cleared after submit)
     (sync-paste-store! editor (:lines @(:state-atom editor)))))
 
+(defn editor-set-expanded-text!
+  "Replace already-expanded text without reusing the old paste store.
+   Keep the old store in the undo snapshot, even if display text is unchanged."
+  [editor text]
+  (when (and (= text (editor-get-text editor)) (seq @(:paste-store editor)))
+    (push-undo-state editor))
+  (editor-set-text! editor text)
+  (reset! (:paste-store editor) {})
+  (reset! (:paste-counter editor) 0))
+
 (defn editor-set-on-submit! [editor f]
   (reset! (:on-submit editor) f))
 
@@ -1767,6 +1780,10 @@
 
 (defn editor-get-text-length [editor]
   (count (editor-get-text editor)))
+
+(extend-type Editor
+  protocols/IExpandedTextEditor
+  (editor-set-expanded-text! [this text] (editor-set-expanded-text! this text)))
 
 ;; ─── IEditorComponent ───────────────────────────────────────────────────────
 
