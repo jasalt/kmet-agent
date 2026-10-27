@@ -351,7 +351,7 @@
   (loop [offset 0, found []]
     (if-let [idx (clojure.string/index-of line paste-marker-prefix offset)]
       (if-let [end-idx (clojure.string/index-of line "]" (+ idx 1))]
-        (let [id-str (re-find #"\d+" (subs line (+ idx (count paste-marker-prefix))))]
+        (let [id-str (re-find #"^\d+" (subs line (+ idx (count paste-marker-prefix)) end-idx))]
           (if id-str
             (recur (inc end-idx)
                    (conj found {:id (parse-long id-str) :start idx :end (inc end-idx)}))

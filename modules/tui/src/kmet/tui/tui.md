@@ -1473,7 +1473,9 @@ and queue restoration likewise read `editor-get-expanded-text` before replacing 
 clearing the editor; `editor-get-text` remains the raw display-text accessor.
 Paste expansion preserves stored content literally, matches each marker id
 exactly (`#1` never claims `#10`), and runs in one pass, so marker-like text
-inside pasted content is never expanded.
+inside pasted content is never expanded. Marker IDs must start immediately after
+`[paste #` and remain within the closing bracket; malformed markers without an
+ID stay literal rather than borrowing digits from later text.
 
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the

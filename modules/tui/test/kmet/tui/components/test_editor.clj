@@ -1121,6 +1121,19 @@
     (t/is (= (apply str pastes) (editor/editor-get-expanded-text e))
           "#1 does not claim the #10/#11 markers")))
 
+(t/deftest test-editor-get-expanded-text-preserves-markers-without-ids
+  (doseq [literal ["[paste #]" "[paste #oops1]" "[paste #] 1"]]
+    (let [e (editor/make-editor)
+          pasted (clojure.string/join "\n" (repeat 15 "payload"))
+          prefix (str "literal " literal " followed by ")
+          submitted (atom nil)]
+      (editor/editor-set-text! e prefix)
+      (core/editor-set-on-submit! e #(reset! submitted %))
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (t/is (= (str prefix pasted) (editor/editor-get-expanded-text e)))
+      (core/handle-input e K-ENTER)
+      (t/is (= (str prefix pasted) @submitted)))))
+
 (t/deftest test-editor-get-expanded-text-does-not-rescan-content
   (let [e (editor/make-editor)
         big1 (clojure.string/join "\n" (repeat 15 "see [paste #2 +15 lines]"))
