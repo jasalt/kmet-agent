@@ -61,6 +61,18 @@
   #{:id :plugin :config :remove :after :before
     :name :inject :provide})
 
+(defn layer?
+  "True when X is a composition layer: a map whose only keys are `:rows` and
+   `:patch`, each a sequential collection of entries (either key may be
+   absent). `kmet.app.core` reads a `--patch` file with this predicate and
+   `kmet.app.extensions.layers` the ambient ones, so a run and the config
+   screen agree on what a readable layer is."
+  [x]
+  (and (map? x)
+       (every? #{:rows :patch} (keys x))
+       (or (nil? (:rows x)) (sequential? (:rows x)))
+       (or (nil? (:patch x)) (sequential? (:patch x)))))
+
 (defn builtin
   "The built-in composition table: `{:bundles {name bundle} :profiles {name
    profile}}`. A missing resource is a packaging bug, not an empty table."

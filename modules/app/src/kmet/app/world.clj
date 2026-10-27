@@ -8,9 +8,9 @@
    catalogs kmet1's `-main` gives every mode. The order inside is
    load-bearing: the provider catalogs and models.edn come first, so the model
    patterns the run resolves afterwards see both the built-ins and the user's
-   providers; extensions load before the themes (the packages resolve the theme
-   paths); and the CLI flags are last, because their registrations are the ones
-   the parse collected."
+   providers; the themes follow (a composition's `:ext/…` rows loaded their
+   extensions earlier, when the composition mounted); and the CLI flags are
+   last, because their registrations are the ones the parse collected."
   (:require [kmet.app.config :as cfg]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.packages :as packages]

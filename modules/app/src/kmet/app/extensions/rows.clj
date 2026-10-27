@@ -145,31 +145,47 @@
     (swap! mounted assoc id {:entry entry :config config :record record})
     record))
 
+(defn- registered?
+  "True when RECORD is still in the extension registry. A wholesale
+   `clear-extensions!` unloads records the row still has an entry for, so
+   the entry's record can be stale."
+  [record]
+  (some #(identical? record %) (extensions/registered-extensions)))
+
 (defn- unmount!
-  "Forget ID's row extension and unload its current record."
+  "Forget ID's row extension and unload its current record (unless a
+   wholesale reset already unloaded it)."
   [id]
   (let [old (get @mounted id)]
     (swap! mounted dissoc id)
     (when-let [record (:record old)]
-      (extensions/unload-extension! record))))
+      (when (registered? record)
+        (extensions/unload-extension! record)))))
+
+(defn- reload-one!
+  "Unmount ID's current record and mount its ENTRY again with the same
+   CONFIG; the result map `/reload` reports for it. A failure is reported on
+   stderr and answers with the row id, since there is no loaded record to
+   name."
+  [id {:keys [entry config]}]
+  (unmount! id)
+  (try
+    (let [record (mount! id entry config)]
+      {:extension (:name record) :error nil})
+    (catch Exception e
+      (let [message (or (ex-message e) (str e))]
+        (binding [*out* *err*]
+          (println "Warning: Failed to reload extension" id ":" message))
+        {:extension id :error message}))))
 
 (defn reload-all!
   "Unload and load again every extension a mounted composition row owns,
    keeping the row's config. Returns the per-extension result maps `/reload`
-   reports (`{:extension id :error nil}` or `:error MSG`); the rows themselves
-   stay mounted and dispose the reloaded record."
+   reports (`{:extension name :error nil}` on success, `{:extension id
+   :error MSG}` when the load fails); the rows themselves stay mounted and
+   dispose the reloaded record."
   []
-  (vec (for [[id {:keys [entry config]}] @mounted]
-         (do
-           (unmount! id)
-           (try
-             (let [record (mount! id entry config)]
-               {:extension (:name record) :error nil})
-             (catch Exception e
-               (let [message (or (ex-message e) (str e))]
-                 (binding [*out* *err*]
-                   (println "Warning: Failed to reload extension" id ":" message))
-                 {:extension id :error message})))))))
+  (mapv (fn [[id row]] (reload-one! id row)) @mounted))
 
 (defn plugin
   "The composition plugin for an `:ext/<id>` row: load the extension when the
