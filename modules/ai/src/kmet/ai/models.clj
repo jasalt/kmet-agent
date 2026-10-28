@@ -321,6 +321,8 @@
     (oauth/make-anthropic-oauth)
     :openrouter
     (oauth/make-open-router-oauth)
+    :commandcode
+    (oauth/make-commandcode-oauth)
     nil))
 
 (defn- catalog-files
