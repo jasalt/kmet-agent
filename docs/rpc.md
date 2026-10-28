@@ -51,7 +51,7 @@ that landing lands. `--model`, `--provider`, `--session-dir`,
 {:type :agent-settled :outcome :completed}
 ```
 
-Events are the print-mode wire projection (`kmet.app.event-bus/wire-event`):
+Events are the print-mode wire projection (`kmet.app.wire/wire-event`):
 the same `{:type ...}` vocabulary as the session stream, with the cumulative
 `:message-update` snapshot dropped and error payloads stringified. Streaming
 consumers watch `:message-update` deltas and stop at `:agent-settled`, whose

@@ -270,12 +270,13 @@ front end:
   `kmet.test-layer-guard` enforces that boundary.
 - The event stream is the API. `subscribe!` delivers plain EDN events on the
   emitting thread (fast, non-blocking) and the vocabulary — `event-types` /
-  `app-event-types` / `loop-event-types`, declared as `:events` in
-  `kmet.app.events/plugin` and read from that declaration,
-  re-exported by `kmet.app.event-bus` — is the shared contract; there is one
-  listener table (the ctx tree), one registration (`events/on!`) and one
-  mode-driven dispatcher (`events/emit!`), and the extension ABI registers on
-  the host's ctx like any other listener. `:agent-settled` carries the
+  `app-event-types` / `loop-event-types`, declared as `:events` on a plugin and
+  registered into the `:events` service (a vocabulary registry, like
+  `:commands`), so a plugin's own events dispatch by their declaration — is the
+  shared contract; there is one listener table (the ctx tree), one registration
+  (`events/on!`) and one mode-driven dispatcher (`events/emit!`), and the
+  extension ABI registers on the host's ctx like any other listener. The wire
+  projection is `kmet.app.wire`. `:agent-settled` carries the
   run's `:outcome` (`:completed` / `:error` / `:aborted`). A front end that
   needs data not on the stream extends the event, not the reader.
 - Extension UI splits into runtime capabilities (installed by `bootstrap`,

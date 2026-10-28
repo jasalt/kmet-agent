@@ -37,20 +37,40 @@
       (is (= 1 (count fibers)))
       (is (= :active (:state @(first fibers))))
       (is (= #{:events} (:provides @(first fibers))))
-      (testing "the service is shared with the row's siblings, the app scope"
-        (let [service (srce/get ctx :events)]
-          (is (some? service) "provided into the root's scope, not just the row's subtree")
+      (testing "the vocabulary registry is shared with the row's siblings, the app scope"
+        (let [handle (srce/get ctx :events)]
+          (is (some? handle) "provided into the root's scope, not just the row's subtree")
           (is (some? (srce/get (:ctx @(first fibers)) :events))
               "a child ctx (the row's own mount) sees it too")
+          (is (= :boundary (:mode (events/declaration ctx :turn-end)))
+              "the row's own declaration is registered at the app scope")
           (let [heard (atom [])]
             (events/on! ctx :turn-start (fn [e] (swap! heard conj (:n e))))
-            ((:emit! service) :turn-start {:type :turn-start :n 1})
-            (is (= [1] @heard) "the service emits into the app scope"))))
+            (events/emit! ctx {:type :turn-start :n 1})
+            (is (= [1] @heard) "emit reaches the app scope's listener"))))
       (finally (runtime/shutdown! {:ctx ctx})))
     ;; count=, not empty?: a failing assertion pr-strs its arguments, and a ctx
     ;; is cyclic (it holds the kernel, the runtimes and their fibers).
     (is (= 0 (count (srce/children ctx))) "a shutdown leaves no fiber behind")
     (is (= 0 (count (srce/services ctx))))))
+
+(deftest a-plugins-declaration-drives-its-dispatch
+  ;; The vocabulary is a registry: a plugin's own `:events` map is declared at
+  ;; mount, so `emit!` honours its mode instead of falling back to :emit.
+  (let [declarer {:name :declarer
+                  :events {:my/thing {:mode :collect-last :domain :app
+                                      :doc "a plugin's own event"}}
+                  :apply (fn [_ _] nil)}
+        {:keys [ctx]} (runtime/boot {:rows [events-row
+                                            {:id :declarer :plugin declarer}]})]
+    (try
+      (is (= :collect-last (:mode (events/declaration ctx :my/thing))))
+      (let [seen (atom [])]
+        (events/on! ctx :my/thing (fn [_] (swap! seen conj :heard) {:ok true}))
+        (is (= {:ok true} (events/emit! ctx {:type :my/thing}))
+            "the declared fold runs, so the listener's answer is returned")
+        (is (= [:heard] @seen)))
+      (finally (runtime/shutdown! {:ctx ctx})))))
 
 (deftest boot-refuses-two-plugins-declaring-one-event-differently
   (let [declaring (fn [name mode doc]

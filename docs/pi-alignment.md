@@ -68,7 +68,7 @@ decision**.
 | `packages/chord` | Typed host runtime for hot-reloadable plugins: objects with addresses and principals, TypeBox contracts, replicated JSON state (snapshot + deltas), hot reload, and RPC over JSON links (memory / IPC / WebSocket), plus child host processes, a transactional delta tracker, and bounded output streams | None. `kmet.reakt` is an in-process reactive store and `kmet.hikap` a component runtime; the extension runtime + event bus cover the single-process part | open |
 | `packages/durable` (experimental) | Commit-before-visible harness: conversations, entries, tasks, submissions, and documents are committed atomically before anything is observable; interrupted attempts and tool calls recover on reopen; per-conversation agents, code mode, subagents / child tasks, a task graph, and an `ExecutionEnv` boundary; storage adapters (memory, SQLite) | `kmet.app.session.runtime` + `session.core`: one in-memory authoritative engine, EDNL entries appended as they are created, no open-attempt status or recovery, a single run per engine, no tasks/subagents | open |
 | `packages/env` | Remote execution: a Rust daemon over a framed stdin/stdout protocol plus `RemoteExecutionEnv` next to `NodeExecutionEnv`; SSH with host-key verification, sha-pinned daemon deployment; Linux/macOS/Termux/Windows | `kmet.app.tools.bash-executor` and the tools' direct `babashka.fs`/`babashka.process` use — local only | open |
-| `packages/codemode` | QuickJS sandbox where the only capability is tool calls; scripts get `tools`, `text`, `image`, `exit`, `store`, `load`, `models.classify()`, `models.generateImages()`. coding-agent 1.3 ships it as the built-in `codemode` extension with `tool_search`, `codemode.mode`, and `codemode.inlineBudget` | builtin `run_code`: SCI sandbox, full babashka/jolt surface, `emit`-only output, extension-contributed tool sources (design + measurements in `run_code.md`). Missing: persistent `store`/`load`, the `models` facade, separate output items, a `tool_search` equivalent | open |
+| `packages/codemode` | QuickJS sandbox where the only capability is tool calls; scripts get `tools`, `text`, `image`, `exit`, `store`, `load`, `models.classify()`, `models.generateImages()`. coding-agent 1.3 ships it as the built-in `codemode` extension with `tool_search`, `codemode.mode`, and `codemode.inlineBudget` | builtin `run_code`: SCI sandbox, full babashka/jolt surface, `emit`-only text plus `emit-image`, submission-order inner calls, extension-contributed tool sources (design + measurements in `run_code.md`). Missing: persistent `store`/`load`, the `models` facade, a `tool_search` equivalent | open |
 | `packages/mcp` | Standalone MCP client (stdio + Streamable HTTP). coding-agent 1.3 ships built-in MCP support: exposure control (`direct` / `model-only` / `codemode` / `deferred` / `hidden`), resource tools, OAuth, `/mcp`, `--no-mcp`, and the `registerMcpServer` / `getMcpServers` extension API | `kmet.libs.mcp` + the `mcp-adapter` extension: one lazy `mcp` proxy tool, EDN config, stdio + Streamable HTTP/SSE, OAuth, `/mcp`. The exposure model and the extension registration API have no kmet equivalent | open |
 | `packages/telemetry` | Vendor-neutral telemetry contracts: callback-based context/span, NOOP and in-memory reference adapters, conformance tests, typed schemas; no global state or exporter | `kmet.app.debug` logging plus the measured notes in `perf.md`; no spans or contracts | open |
 | `packages/evals` | Behavioral evals (`vitest-evals`): documentation-lift and host evals, docker arms, lift reporting | `clojure.test` suites (fast / `^:slow`) and `scripts/repro_*`; no behavioral eval harness | open |
@@ -378,7 +378,7 @@ deadline never leaves a stalled response start (or the turn's spinner) hung.
 
 ### 5. Extension API
 
-Aligned (`kmet.agent.extensions` + `kmet.app.event-bus`): input + before-agent-start hooks,
+Aligned (`kmet.agent.extensions` + `kmet.app.events`): input + before-agent-start hooks,
 provider registration (incl. OAuth), `ctx.models.*` facades, the front-end
 binding (`extensions/install-front-end!`, over the raw `bind-extensions!`
 swap — pi `bindExtensions` +
@@ -467,6 +467,13 @@ Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap
   read/write/edit/bash + `run_code` built in and ships the search tools as
   opt-in extensions. MCP is built-in in pi 1.3 and an extension in kmet.
   Feature-aligned, different packaging.
+- **Per-path file-mutation queue** — pi's `write`/`edit` serialize mutations of
+  the same file through `withFileMutationQueue` (different files still run in
+  parallel), so two same-file writes cannot interleave in a parallel batch.
+  kmet has no counterpart: `write`/`edit` declare no `:execution-mode`, so two
+  same-file mutations in one parallel batch (loop or `run_code`) race. Not
+  ported; the `run_code` admission lane only orders tools that declare
+  `:sequential`.
 - **Changelog / update surface** — pi has per-package CHANGELOGs, `/changelog`,
   and `collapseChangelog`; kmet has none.
 - **`packages/agent` (`@earendil-works/pi-agent-core`)** — general-purpose agent library
@@ -533,7 +540,7 @@ thrown auth error while also covering an oauth-bearer credential.
 
 ## Appendix: Event type vocabulary
 
-pi events (`core/extensions/types.ts`) → kmet status (`kmet.app.event-bus` `event-types`).
+pi events (`core/extensions/types.ts`) → kmet status (`kmet.app.events` `event-types`).
 
 | pi event | kmet | notes |
 |---|---|---|
@@ -557,7 +564,7 @@ pi events (`core/extensions/types.ts`) → kmet status (`kmet.app.event-bus` `ev
 | `thinking_level_select` | ✅ `:thinking-level-select` | emitted by `set-thinking-level!` on actual change |
 | `user_bash` | ✅ `:user-bash` | |
 | `input` | ✅ | input hooks (transform/handled) |
-| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.app.event-bus` and bridged to the per-call provider hooks (`kmet.agent.extensions.core/provider-hooks` → `kmet.ai.llm/send-message` opts) — the runtime reads them once per attempt: `events/emit!` at the request's ctx → hook apply → last non-nil result |
+| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.app.events` and bridged to the per-call provider hooks (`kmet.agent.extensions.core/provider-hooks` → `kmet.ai.llm/send-message` opts) — the runtime reads them once per attempt: `events/emit!` at the request's ctx → hook apply → last non-nil result |
 | `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into the skills/prompts/themes registries, each under the owner that contributed it (re-discovery replaces in place, unload takes them with the extension) |
 | `mcp_servers_change` | ❌ | pi 1.3 emits it when an extension registers/unregisters an MCP server; kmet has no extension MCP registration (see §5) |
 | `provider_stream_event` | ❌ | kmet's per-call provider hooks stop at `:on-context` / `:on-payload` / `:on-headers` / `:on-response` (`kmet.ai.llm/send-message`); per-stream events are not bridged |

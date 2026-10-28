@@ -11,7 +11,7 @@
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.loop.test-support :as support]))
 
 (t/use-fixtures :each support/with-host)
@@ -341,7 +341,7 @@
         @(loop/run-agent-turn agent {:message "run" :on-error (fn [_])}))
       (t/is (seq @events) "the scenario emitted events")
       (doseq [ev @events]
-        (t/is (contains? event-bus/loop-event-types (:type ev))
+        (t/is (contains? events/loop-event-types (:type ev))
               (str "event type outside the loop vocabulary: " (:type ev)))
         (t/is (= ev (edn/read-string (pr-str ev)))
               (str "event did not round-trip through EDN: " (:type ev)))))))

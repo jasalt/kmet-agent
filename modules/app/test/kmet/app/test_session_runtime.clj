@@ -22,6 +22,7 @@
             [kmet.app.registries :as registries]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]
+            [kmet.app.events :as events]
             [kmet.app.test-support :as support]))
 ;; The extension host and the registries a bootstrapped engine reads are the
 ;; composition's, so the namespace boots one for its duration.
@@ -564,9 +565,9 @@
   (let [fired (atom 0)
         dereg (support/on-event :message-start (fn [_] (swap! fired inc)))]
     (try
-      (with-engine (fn [_ _] (support/emit-event! {:type :message-start})))
+      (with-engine (fn [_ _] (events/emit! (support/composition-ctx) {:type :message-start})))
       (is (= 1 @fired) "the subscription registered before the engine fires")
-      (with-engine (fn [_ _] (support/emit-event! {:type :message-start})))
+      (with-engine (fn [_ _] (events/emit! (support/composition-ctx) {:type :message-start})))
       (is (= 2 @fired) "and it survives the first engine's disposal")
       (finally (dereg)))))
 

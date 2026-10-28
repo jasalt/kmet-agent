@@ -11,6 +11,7 @@
             [kmet.app.extensions.context :as ext-context]
             [kmet.app.commands :as commands]
             [kmet.app.registry :as registry]
+            [kmet.app.events :as events]
             [kmet.app.test-support :as support]
             [kmet.test-utils :refer [spit-plugin]]
             [kmet.app.skills :as skills]
@@ -585,8 +586,8 @@
       (spit-plugin (str dir "/ext.clj") content)
       (let [result (extensions/load-extension! (str dir "/ext.clj"))]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (support/emit-event! {:type :session-start})
-        (support/emit-event! {:type :session-tree :new-leaf-id "x"})
+        (events/emit! (support/composition-ctx) {:type :session-start})
+        (events/emit! (support/composition-ctx) {:type :session-tree :new-leaf-id "x"})
         (let [[[_ probe-a] [_ mode-b]] @probes]
           (t/is (= :session-start (:from probe-a))
                 "arity-2 handler received the event")

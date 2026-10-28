@@ -17,7 +17,11 @@
 
    Registration is never bound to a ctx by the service: `on!` always takes the
    registrant's own ctx, because that is the listener's lifetime and its scope.
-   The `:events` service binds the *emitting* half to the scope it serves.
+   The `:events` service is the **vocabulary registry** (like `:commands`): each
+   plugin that declares `:events` registers its map there under its owner, and
+   `emit!` reads the declaration for a name from that aggregate — so a plugin's
+   own events (`kmet.app.agents`' `:agent/created`) dispatch by their
+   declaration, not only the built-in ones.
 
    The kernel's own three names (`:srce/status`, `:srce/service`,
    `:srce/failure`) are documented in `srce.md` §5 and cannot appear here —
@@ -25,8 +29,9 @@
 
    The **wire projections** (`wire-event`, `wire-error`) are not here: they are
    transport, so they live with the transport that serializes
-   (`kmet.app.event-bus`), not with the bus."
-  (:require [kmet.srce.core :as srce]))
+   (`kmet.app.wire`), not with the bus."
+  (:require [kmet.app.registry :as registry]
+            [kmet.srce.core :as srce]))
 ;; ── declarations ─────────────────────────────────────────────────────────
 ;; The vocabulary is declared by the plugin map at the end of this file and read
 ;; from it directly (declared-events): the declaration is the truth, there is no
@@ -76,6 +81,51 @@
   []
   (:events plugin))
 
+(def tag
+  "The registry tag a plugin's `:events` declaration lives under, in the
+   `:events` service handle — what `kmet.app.registries/registry-tags` routes."
+  :kmet/event)
+
+(defn declaration
+  "TYPE's declaration visible from CTX: the mounted vocabulary registry's entry,
+   or this namespace's own when no registry is mounted (a bare test root) or
+   when that one does not name TYPE."
+  [ctx type]
+  (or (some-> (srce/get ctx :events) (registry/entry tag type))
+      (get (declarations) type)))
+
+(defn visible-declarations
+  "The vocabulary visible from CTX as `{name spec}`: the mounted plugins'
+   declarations (the `:events` registry) over this namespace's own map, so a
+   bare ctx still knows the built-in names."
+  [ctx]
+  (merge (declarations)
+         (when-let [handle (srce/get ctx :events)]
+           (into {} (registry/effective-entries handle tag)))))
+
+(defn declare!
+  "Register EVENTS (`{name spec}`) under OWNER in the vocabulary registry the
+   `:events` service holds at CTX — a plugin's `:events` map, made visible to
+   `emit!` and `on-every`. A ctx with no service (a bare test root) keeps the
+   built-in vocabulary only. Returns nil."
+  [ctx owner events]
+  (when-let [handle (srce/get ctx :events)]
+    (doseq [[name spec] events]
+      (registry/register! handle tag name spec owner)))
+  nil)
+
+(defn declare-mounted!
+  "Declare the `:events` of every active fiber in FIBERS at CTX, under its
+   plugin name. What a mount path calls once the mounts have settled: `boot`,
+   `mount-deferred!` and a preset. A fiber without a declaration is skipped.
+   Returns nil."
+  [ctx fibers]
+  (doseq [fiber fibers
+          :let [{:keys [name events]} (srce/fiber-info fiber)]
+          :when (and (seq events) (some? name))]
+    (declare! ctx [:app name] events))
+  nil)
+
 (defn emit!
   "Dispatch EVENT on CTX by its declared mode — the declaration drives the
    dispatcher, so an event's `:mode` is its contract, not a comment.
@@ -86,14 +136,14 @@
    reported, as an undeclared registration is."
   [ctx event]
   (let [event-type (:type event)
-        declaration (get (declarations) event-type)
-        mode (:mode declaration :emit)]
+        declared (declaration ctx event-type)
+        mode (:mode declared :emit)]
     (when-not (srce/ctx? ctx)
       (throw (ex-info (str "event " (pr-str event-type)
                            " has no emitting ctx — every emission belongs to a scope")
                       {:type :kmet.app/bad-event-ctx
                        :event event-type})))
-    (when-not declaration
+    (when-not declared
       (srce/log! ctx :warn "events: unknown event type" event-type))
     (when-not (contains? srce/dispatch-modes mode)
       (throw (ex-info (str "event " (pr-str event-type) " declares an unknown dispatch mode")
@@ -121,7 +171,7 @@
    it belongs to the fiber's effects."
   ([ctx type f] (on! ctx type nil f))
   ([ctx type {:keys [owner]} f]
-   (when-not (known-event-type? type)
+   (when-not (declaration ctx type)
      (srce/log! ctx :warn "events: unknown event type" type))
    (srce/on ctx type {:data owner} f)))
 
@@ -136,8 +186,9 @@
    `:session-before-*` hooks carry a control object. They are for extensions,
    which subscribe by name; a wire must not carry them."
   [ctx f]
-  (let [disposers (mapv (fn [event] (on! ctx (:name event) f))
-                        (filter :public (declared-events)))]
+  (let [disposers (mapv (fn [[name _spec]] (on! ctx name f))
+                        (filter (fn [[_ spec]] (not (false? (:public spec))))
+                                (visible-declarations ctx)))]
     (fn []
       (doseq [dispose disposers] (dispose))
       nil)))
@@ -160,34 +211,14 @@
 
 ;; ── the service ───────────────────────────────────────────────────────────
 
-(defn service
-  "The `:events` service value for the scope (a ctx) it serves: the dispatch
-   modes bound to that scope, so a holder of the app ctx emits without knowing a
-   narrower one. A caller with a narrower ctx calls the kernel's fns with it
-   instead — the ctx is the scope, and the service is only the app-wide default.
-   The loop is the first such caller and the reason to keep the distinction: a
-   run emits from the agent's own ctx (`loop.state/emit`), so its listeners hear
-   its subtree; emitting through this service would put every run's events at
-   the app's scope and out of reach of the ctx they belong to.
-
-   The binding is a closure, not a `:ctx` entry: a service value must not carry
-   the ctx, or printing it prints the kernel (and every fiber in it)."
-  [ctx]
-  {:emit! (fn [type event] (srce/emit! ctx type event))
-   :bail! (fn [type event] (srce/bail! ctx type event))
-   :waterfall! (fn [type event] (srce/waterfall! ctx type event))
-   :collect-last! (fn [type event] (srce/collect-last! ctx type event))
-   :collect-all! (fn [type event] (srce/collect-all! ctx type event))
-   :boundary! (fn [type event] (srce/boundary! ctx type event))
-   :types (fn [] (srce/event-names ctx))})
-
 (defn- serve
-  "The `:events` row's apply: provide the service into the app **scope** — the
-   mount site's ctx — so the app's other rows see it, while the entry stays this
-   fiber's effect and the service emits from the scope it serves."
+  "The `:events` row's apply: provide the vocabulary registry into the app
+   **scope** — the mount site's ctx — so every row and agent ctx resolves it,
+   while the entry stays this fiber's effect. The row's own `:events` map is
+   declared by the mount path (`declare-mounted!`), like any plugin's."
   [ctx _config]
   (let [scope (:parent ctx)]
-    (srce/provide! ctx :events (service scope) {:in scope})))
+    (srce/provide! ctx :events (registry/atom-registry) {:in scope})))
 
 (srce/defplugin plugin
   {:name :events

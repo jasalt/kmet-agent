@@ -22,6 +22,7 @@
    ctx reaches it by `srce/attr` and nothing holds a pointer back to the
    root."
   (:require [clojure.string :as str]
+            [kmet.app.events :as events]
             [kmet.app.extensions.rows :as extension-rows]
             [kmet.srce.core :as srce]))
 
@@ -269,7 +270,8 @@
          deferred (filterv defer? rows)
          mounted (into [] (remove defer?) rows)
          fibers (mount-rows! ctx mounted)
-         _ (srce/settle! ctx)]
+         _ (srce/settle! ctx)
+         _ (events/declare-mounted! ctx fibers)]
      {:ctx ctx :fibers fibers :rows (count mounted) :deferred deferred
       :failed (check-mounts! ctx mounted fibers fibers diagnose?)})))
 
@@ -293,6 +295,7 @@
             rows (mapv transform chosen)
             mounted (mount-rows! ctx rows)
             _ (srce/settle! ctx)
+            _ (events/declare-mounted! ctx mounted)
             all-fibers (into (vec fibers) mounted)]
         (check-mounts! ctx rows mounted all-fibers false)
         (assoc booted

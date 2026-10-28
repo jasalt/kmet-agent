@@ -498,10 +498,10 @@ follows the event's declared mode — nil for a notification, the last non-nil
 answer for a `:collect-last` event, the accumulated decision map for a
 boundary.
 
-Six events are **extension-only**: `:context` `:context-with-system`
-`:before-provider-request` `:before-provider-headers`
-`:after-provider-response` `:resources-discover`, plus the four
-`:session-before-*` hooks. They exist to let an extension shape a request or
+Ten events are **extension-only**: the six provider/resource bridges
+(`:context` `:context-with-system` `:before-provider-request`
+`:before-provider-headers` `:after-provider-response` `:resources-discover`)
+and the four `:session-before-*` hooks. They exist to let an extension shape a request or
 veto a session move, carry request machinery (a payload, a header map) or a
 control object, and are therefore not on the public stream a front end or the
 wire takes (`kmet.app.events/on-every` skips them) — an extension subscribes

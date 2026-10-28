@@ -88,9 +88,10 @@ plugin's `:apply` is the extension body. A single-file extension defines
 require the plugin var; § The extension host below records the additive form
 this replaced.
 
-**One event table.** `kmet.app.events` declares the vocabulary and its modes
-and owns the owner a registration carries; `kmet.app.event-bus` re-exports the
-names for transport. kmet1's process table and the "two tables" bridge are
+**One event table.** `kmet.app.events` declares the vocabulary and its modes,
+owns the owner a registration carries, and holds the vocabulary registry (a
+plugin's `:events` is declared at mount, like `:commands`); `kmet.app.wire`
+holds the wire projection. kmet1's process table and the "two tables" bridge are
 gone (`6f5b7885`, `62e710d7`, and the kmet1 retirement), so any passage below
 that describes a kmet1 bus alongside the app's is history.
 
@@ -486,7 +487,7 @@ rewrite.
 | `:projections` | incremental derived state over the log — the inbox, the turn boundaries, the token meter — with a cache behind it | **landed** (`kmet.app.projections`, 4c-iii-b): the inbox is the log (an enqueue and a delivery are two `:custom` facts), and the fold extends from the cached prefix |
 | `:systemPrompt` | ordered sections, dynamic contexts, prompt variables and tool schemas, assembled by a waterfall before each request; per-agent composition lands here | **landed at 7a** as `kmet.app.system-prompt` (the app's pure builder over the `:skills` registry), provided as the builder itself; the loop state calls the one it names (`:system-prompt-fn`), an engine resolves caller → ctx row → suite, and `kmet.agent.skills/build-system-prompt` is the last stand-in for a context-free engine |
 | `:extensions` | the extension host's own bindings: the registry its tags live in and the ctx an extension's `:inject` mounts under; a contribution with no bound resource registry is refused by name. The handle is a **tag router**: `:kmet/tool`/`:kmet/tool-source` resolve the composition's `:tools` service per call (the loop's table, `/tools` and run_code read only that), every other host tag — hooks, renderers, flags, the UI port, themes — stays in the row's handle. No service key: the binding is the effect, and the handle becomes a key when a consumer reads it | **landed** as `kmet.app.extensions`, with `kmet.app.registries/host-services` as the one service map (the row binds it, and kmet1's shim uses it as its fallback); `kmet.agent.extensions.services` retired at 5l-ii |
-| `:events` | three event domains (session/agent/capability) + six non-awaiting dispatch modes; hooks are host registrations, not a service | `kmet.app.events`, `kmet.app.event-bus`, `apply-input-hooks` |
+| `:events` | the vocabulary as a registry (a plugin's `:events` is declared at mount, like commands), three event domains (session/agent/capability) + six non-awaiting dispatch modes; hooks are host registrations, not a service | `kmet.app.events`, `kmet.app.wire`, `apply-input-hooks` |
 | `:ui` | capability map: render, input, dialogs, notify, widget set | `extension-binding :ui`, lifted out |
 | `:approvals` | the one delivery seam for `:permissions :ask`: dialog, wire request/response, or headless default | **landed** (`kmet.app.permissions`, 4c-iii-a): the loop's pre-tool waterfall consults it through `permissions/check`; the row mounts the deny-by-default seam, because there is no dialog yet |
 | `:workspace` `:fs` `:shell` `:subprocess` `:sandbox` `:permissions` | cwd/project identity, filesystem, shell, process groups, sandbox policy, approval policy | `:permissions` **landed** (4c-iii-a, `kmet.app.permissions`: a policy value the gate reads per agent; no default policy is mounted — see below); `:shell` **landed** (9a, `kmet.app.tools.shell`: a value per agent) and `:sandbox` at 9c (`kmet.app.sandbox`); `:workspace`/`:fs` needed no service — `kmet.libs.path` already resolves against `(:cwd ctx)` and the run binds `*cwd*`, verified at 9d; `:subprocess` is the tool layer's own spawn (`tools/bash`, `bash-executor` — one spawn per execution, no cell) |
@@ -5121,8 +5122,8 @@ honest place to stop.
 gone; the extension ABI registers on the host's ctx — the app root, already the
 scope an extension's `:inject` mounts under — and every emission dispatches
 through `kmet.app.events/emit!`, which picks the fold from the event's declared
-`:mode`. The vocabulary, the wire projections and `event-bus/wire-*` stay where
-they were.
+`:mode`. The vocabulary moved from re-export to a registry (below) and the wire
+projections are `kmet.app.wire`.
 
 What the split was hiding, and the landing fixed:
 
@@ -5147,8 +5148,15 @@ What the split was hiding, and the landing fixed:
   EDN. `on-every` is the public stream and skips them; `wire-event` also drops
   `:signal` as a belt. The wire gained the app's session lifecycle events,
   which `docs/rpc.md` already promised.
-- Tests name the ctx they subscribe on (`kmet.test-utils/subscribe!`), and the
-  old `clear-event-listeners!` reset is `clear-listeners! ctx`.
+- The vocabulary is a registry, like `:commands`: a plugin's `:events` map is
+  declared at mount (the `:events` service is the handle, `:kmet/event` the
+  tag), so `kmet.app.agents`' `:agent/created` dispatches by its own
+  declaration and an extension's events are swept on unload with its owner.
+  `emit!` reads one declaration from it; `on-every` reads the public subset.
+- The projection namespace is `kmet.app.wire` (`wire-event`/`wire-error`):
+  `kmet.app.event-bus` had stopped being a bus and is gone.
+- Tests name the ctx they subscribe on (`events/on!`), and the old
+  `clear-event-listeners!` reset is `clear-listeners! ctx`.
 
 ## Gates
 

@@ -25,7 +25,8 @@
    releases the child ctx on top of that, which is the belt to this
    suspenders: a caller mounting onto a ctx it keeps is the case only this can
    undo."
-  (:require [kmet.app.extensions.rows :as extension-rows]
+  (:require [kmet.app.events :as events]
+            [kmet.app.extensions.rows :as extension-rows]
             [kmet.app.profile :as profile]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]))
@@ -75,7 +76,8 @@
                          {:type :kmet.app/preset-failed
                           :preset preset-name
                           :fibers failed})))
-       {:preset preset-name :rows (count rows) :fibers fibers}))))
+       (do (events/declare-mounted! ctx fibers)
+           {:preset preset-name :rows (count rows) :fibers fibers})))))
 
 (defn setup
   "The `:setup` a `:agents/create!` opts carries: mount PRESET-NAME under the

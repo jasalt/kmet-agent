@@ -1,7 +1,7 @@
 (ns kmet.app.modes.rpc
   "RPC mode as a row: EDN commands on stdin, protocol records on stdout, and the
    run's events as the wire projection (pi: modes/rpc). It is print mode's
-   sibling — one agent, one stream, the same `event-bus/wire-event` — with the
+   sibling — one agent, one stream, the same `wire/wire-event` — with the
    run driven by commands instead of by a prompt on the command line.
 
    **A record in, a record out.** A command is a map with a `:type` and an
@@ -44,7 +44,7 @@
             [clojure.string :as str]
             [kmet.app.commands :as commands]
             [kmet.app.commands.builtins :as builtins]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.wire :as wire]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]
@@ -795,7 +795,7 @@
                         (reset! listener
                                 (events/on-every (:ctx handle)
                                                  (fn [event]
-                                                   (out/record! out- (event-bus/wire-event event)))))
+                                                   (out/record! out- (wire/wire-event event)))))
                         (serve-commands {:agents agents
                                          :scope scope :handle handle
                                          :command-ui (command-ui port)

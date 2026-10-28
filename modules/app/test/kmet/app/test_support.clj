@@ -162,11 +162,6 @@
   []
   (tu/clear-listeners! (composition-ctx)))
 
-(defn emit-event!
-  "Emit EVENT on the composition's root ctx through the app's dispatcher."
-  [event]
-  (events/emit! (composition-ctx) event))
-
 (defn with-host
   "clojure.test :each fixture: this namespace needs a bound extension host.
 

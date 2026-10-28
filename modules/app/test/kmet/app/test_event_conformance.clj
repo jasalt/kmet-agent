@@ -10,8 +10,8 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [kmet.ai.llm :as llm]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as app-events]
+            [kmet.app.wire :as wire]
             [kmet.app.loop :as loop]
             [kmet.app.loop.test-support :as support]
             [kmet.app.config :as cfg]
@@ -146,30 +146,30 @@
     @events))
 
 (t/deftest test-renderer-covers-the-vocabulary
-  (t/is (= (set (keys event-bus/loop-event-types))
+  (t/is (= (set (keys app-events/loop-event-types))
            (set (keys renderers)))
         "every loop event type needs a renderer decision (render or ignore)"))
 
 (t/deftest test-wire-events-are-edn-round-trippable
-  (doseq [type (keys event-bus/loop-event-types)]
+  (doseq [type (keys app-events/loop-event-types)]
     (let [event {:type type :message {:role :assistant}}]
       (if (= :message-update type)
-        (t/is (not (contains? (event-bus/wire-event event) :message))
+        (t/is (not (contains? (wire/wire-event event) :message))
               "the cumulative assistant snapshot is dropped")
-        (t/is (= event (event-bus/wire-event event))
+        (t/is (= event (wire/wire-event event))
               (str "passes through unchanged: " type)))))
-  (t/is (= "boom" (:message (event-bus/wire-event {:type :error
-                                                   :message (ex-info "boom" {})})))
+  (t/is (= "boom" (:message (wire/wire-event {:type :error
+                                              :message (ex-info "boom" {})})))
         "an exception error payload becomes its message string")
-  (t/is (= "boom" (get (event-bus/wire-event
+  (t/is (= "boom" (get (wire/wire-event
                         {:type :auto-retry-end :final-error (Exception. "boom")})
                        :final-error)))
-  (t/is (= "no auth" (:message (event-bus/wire-event {:type :error :message "no auth"})))
+  (t/is (= "no auth" (:message (wire/wire-event {:type :error :message "no auth"})))
         "a string payload is left alone")
-  (t/is (nil? (get (event-bus/wire-event {:type :error :message nil}) :message))
+  (t/is (nil? (get (wire/wire-event {:type :error :message nil}) :message))
         "a nil payload stays nil")
   (doseq [event (run-scenario (stub-tool-then-text (atom 0)))]
-    (let [wire (event-bus/wire-event event)]
+    (let [wire (wire/wire-event event)]
       (t/is (= wire (edn/read-string (pr-str wire)))
             (str "round-trips through EDN: " (:type event))))))
 
@@ -179,6 +179,16 @@
    pins — derived from the vocabulary, the test would only compare the
    declaration with itself."
   #{:turn-end :agent-before-settle})
+
+(t/deftest test-the-wire-projection-drops-a-control-object
+  ;; `:signal` is an abort atom an in-process event may carry; the wire is EDN,
+  ;; so it never crosses.
+  (t/is (not (contains? (wire/wire-event {:type :turn-end :signal (atom false)})
+                        :signal)))
+  (t/is (not (contains? (wire/wire-event {:type :message-update
+                                          :message {:role :assistant}
+                                          :signal (atom false)})
+                        :signal))))
 
 (t/deftest test-every-emitted-event-matches-its-declared-mode
   ;; The vocabulary declares each event's dispatch mode, and the loop dispatches

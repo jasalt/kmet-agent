@@ -52,7 +52,8 @@
    starts a run (the user message is the session log's own) or the handle
    refuses it, so nothing is ever queued with an image and a refusal cannot
    leave an undelivered entry behind."
-  (:require [kmet.srce.core :as srce]))
+  (:require [kmet.app.events :as events]
+            [kmet.srce.core :as srce]))
 
 ;; ── the handle contract ───────────────────────────────────────────────────
 
@@ -163,11 +164,11 @@
 ;; ── emission ──────────────────────────────────────────────────────────────
 
 (defn- emit!
-  "Tell SCOPE's listeners that an agent came or went. The kernel's `emit!` from
-   the scope the service serves, so the registry needs no `:events` lookup (and
-   cannot hold a provider record that a re-provide made stale)."
+  "Tell SCOPE's listeners that an agent came or went, through the app's
+   dispatcher — this plugin's `:events` declaration (registered at mount) is
+   what decides how."
   [scope type event]
-  (srce/emit! scope type (assoc event :type type)))
+  (events/emit! scope (assoc event :type type)))
 
 ;; ── ids ───────────────────────────────────────────────────────────────────
 

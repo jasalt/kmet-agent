@@ -317,7 +317,7 @@
    handle routes (`kmet.app.registries/registry-tags`); a test holds them to
    it, since a forgotten tag leaks silently."
   [:kmet/hook :kmet/entry-renderer :kmet/message-renderer :kmet/flag
-   :kmet/ui-port :kmet/theme :kmet/tool :kmet/tool-source])
+   :kmet/ui-port :kmet/theme :kmet/tool :kmet/tool-source :kmet/event])
 
 ;; ─── Input / before-agent-start hooks (pi: pi.on('input') / ──────────────
 ;; ─── 'before_agent_start'; applied by modes.interactive + app.loop) ──────
@@ -1515,14 +1515,16 @@
                         {:path path})))
       ;; before anything mounts: a bad row list fails before the body runs
       (let [rows (extension-rows ext plugin)
+            host-ctx (:ctx (services))
             fiber (srce/plugin!
-                   (:ctx (services))
+                   host-ctx
                    (assoc plugin
                           :apply (fn [fctx _config]
                                    (let [api (create-extension-api ext config)]
                                      (reset! (:api ext) api)
                                      ((loader-aware ext (:apply plugin)) fctx api)
                                      (reset! (:initialized? ext) true)))))
+            _ (events/declare! host-ctx (extension-owner (:name ext)) (:events plugin))
             {:keys [state error ctx]} (srce/fiber-info fiber)]
         (reset! (:fiber ext) fiber)
         (when (= :failed state)

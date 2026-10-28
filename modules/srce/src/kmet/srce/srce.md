@@ -611,11 +611,10 @@ instead of a stored node.
 from that declaration (not from a generated projection — one was tried and
 deleted: a file in the load path for data that is already in code). The
 dispatcher is `kmet.app.events/emit!`, which picks the fold from the event's
-declared `:mode`; `kmet.app.event-bus` re-exports the names and keeps the wire
-projections only. The extension ABI registers on the host's ctx (the app
-root), so an extension's subscription is an ordinary listener — no second
-table, and one contract test over the app layer (plus the kernel's own) holds
-the delivery behaviors.
+declared `:mode`; `kmet.app.wire` holds the wire projection only. The extension
+ABI registers on the host's ctx (the app root), so an extension's subscription
+is an ordinary listener — no second table, and one contract test over the app
+layer (plus the kernel's own) holds the delivery behaviors.
 
 The retirement settled the two rules the split left open: a subscription's
 scope is the ctx it registers on (the kernel's walk up, no process-wide

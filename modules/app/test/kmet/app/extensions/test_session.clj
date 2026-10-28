@@ -8,6 +8,7 @@
             [babashka.fs :as fs]
             [kmet.extension :as ext]
             [kmet.libs.host :as host]
+            [kmet.app.events :as events]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
@@ -504,6 +505,34 @@
         (t/is (= "dir-data" (:content (tools-registry/execute-tool (registry/current) "dir-ext-tool" {}))))
         (t/is (= (str (fs/canonicalize dir))
                  (str (fs/canonicalize (:extension-dir (first (extensions/get-loaded-extensions))))))))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
+(t/deftest test-an-extensions-events-are-declared-and-swept
+  ;; A plugin's `:events` map is declared into the vocabulary registry at mount
+  ;; (so `emit!` honours its mode) and swept with the extension's owner on
+  ;; unload — the `:kmet/event` tag rides the host's own sweep list.
+  (let [dir "target/test-ext-events"]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/evt_ext"))
+    (spit (str dir "/extension.edn")
+          "{:name \"evt-ext\" :plugin evt-ext.main/plugin :loader [:sci :jolt]}\n")
+    (spit (str dir "/evt_ext/main.clj")
+          (str "(ns evt-ext.main)\n"
+               "(def plugin {:name :evt-ext\n"
+               "              :events {:evt/ping {:mode :emit :domain :app :doc \"fixture\"}}\n"
+               "              :apply (fn [_ctx _api] nil)})\n"))
+    (try
+      (extensions/unload-all-extensions!)
+      (let [result (extensions/load-extension! dir)
+            ctx (support/composition-ctx)]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (t/is (= :emit (:mode (events/declaration ctx :evt/ping)))
+              "the extension's own event is declared")
+        (extensions/unload-all-extensions!)
+        (t/is (nil? (events/declaration ctx :evt/ping))
+              "unload sweeps the declaration with its owner"))
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))

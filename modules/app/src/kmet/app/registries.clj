@@ -71,6 +71,7 @@
    one; a test holds them to it, because a forgotten tag leaks silently."
   {:kmet/tool :tools
    :kmet/tool-source :tools
+   :kmet/event :events
    :kmet/command :commands
    :kmet/prompt :prompts
    :kmet/skill :skills

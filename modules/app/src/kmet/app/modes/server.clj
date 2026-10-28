@@ -72,7 +72,7 @@
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.wire :as wire]
             [kmet.app.events :as events]
             [kmet.app.invocation :as invocation]
             [kmet.app.modes.out :as out]
@@ -422,7 +422,7 @@
       (assoc conn :dispose
              (events/on-every (:ctx handle)
                               (fn [event]
-                                (send! conn (event-bus/wire-event event)))))
+                                (send! conn (wire/wire-event event)))))
       (catch Throwable t
         (try ((:dispose! (:agents server)) handle) (catch Throwable _ nil))
         (throw t)))))
