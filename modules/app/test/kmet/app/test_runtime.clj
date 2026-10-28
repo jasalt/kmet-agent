@@ -72,6 +72,24 @@
         (is (= [:heard] @seen)))
       (finally (runtime/shutdown! {:ctx ctx})))))
 
+(deftest a-disposed-mount-takes-its-declaration-with-it
+  ;; The declaration is an effect of the mounting fiber, so a preset's agent —
+  ;; or any row disposed alone — does not leave vocabulary behind in the app's
+  ;; registry.
+  (let [{:keys [ctx]} (runtime/boot {:rows [events-row]})
+        child (srce/extend ctx {})
+        fiber (srce/plugin! child {:name :child-declarer
+                                   :events {:my/child {:mode :emit :domain :app
+                                                       :doc "a child's event"}}
+                                   :apply (fn [_ _] nil)})]
+    (try
+      (events/declare-mounted! [fiber])
+      (is (some? (events/declaration ctx :my/child)))
+      (srce/dispose! fiber)
+      (is (nil? (events/declaration ctx :my/child))
+          "the vocabulary goes with the mount that added it")
+      (finally (runtime/shutdown! {:ctx ctx})))))
+
 (deftest boot-refuses-two-plugins-declaring-one-event-differently
   (let [declaring (fn [name mode doc]
                     {:name name

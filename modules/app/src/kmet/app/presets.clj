@@ -76,7 +76,7 @@
                          {:type :kmet.app/preset-failed
                           :preset preset-name
                           :fibers failed})))
-       (do (events/declare-mounted! ctx fibers)
+       (do (events/declare-mounted! fibers)
            {:preset preset-name :rows (count rows) :fibers fibers})))))
 
 (defn setup

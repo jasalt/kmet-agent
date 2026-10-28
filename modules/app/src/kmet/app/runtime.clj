@@ -272,7 +272,7 @@
          fibers (mount-rows! ctx mounted)
          _ (srce/settle! ctx)
          failed (check-mounts! ctx mounted fibers fibers diagnose?)
-         _ (events/declare-mounted! ctx fibers)]
+         _ (events/declare-mounted! fibers)]
      {:ctx ctx :fibers fibers :rows (count mounted) :deferred deferred
       :failed failed})))
 
@@ -298,7 +298,7 @@
             _ (srce/settle! ctx)
             all-fibers (into (vec fibers) mounted)
             _ (check-mounts! ctx rows mounted all-fibers false)
-            _ (events/declare-mounted! ctx mounted)]
+            _ (events/declare-mounted! mounted)]
         (assoc booted
                :fibers all-fibers
                :rows (+ (:rows booted) (count rows))

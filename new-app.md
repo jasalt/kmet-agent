@@ -5153,6 +5153,9 @@ What the split was hiding, and the landing fixed:
   tag), so `kmet.app.agents`' `:agent/created` dispatches by its own
   declaration and an extension's events are swept on unload with its owner.
   `emit!` reads one declaration from it; `on-every` reads the public subset.
+  A row's declaration is an effect of the mounting fiber, so disposing the
+  mount (a preset's agent, `dispose-plugin!`) takes its vocabulary with it;
+  `on-every`'s set is fixed at subscription time.
 - The projection namespace is `kmet.app.wire` (`wire-event`/`wire-error`):
   `kmet.app.event-bus` had stopped being a bus and is gone.
 - Tests name the ctx they subscribe on (`events/on!`), and the old

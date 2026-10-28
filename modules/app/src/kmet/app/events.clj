@@ -131,20 +131,31 @@
   nil)
 
 (defn declare-mounted!
-  "Declare the `:events` of every active fiber in FIBERS at CTX, under its
-   plugin name. What a mount path calls once the mounts have settled *and*
+  "Declare the `:events` of every active fiber in FIBERS, under its plugin name
+   and its fiber. What a mount path calls once the mounts have settled *and*
    validated: `boot`, `mount-deferred!` and a preset. A failed fiber's
    declaration is not installed.
 
-   A declaration is app-wide by construction — the registry is the `:events`
-   service's, one per composition — so a preset's declaration outlives the
-   agent it was mounted for. No built-in bundle declares events; a preset that
-   did would be adding vocabulary to the app, not to its agent. Returns nil."
-  [ctx fibers]
+   The declaration is registered as an **effect of the mounting fiber**, so it
+   lives exactly as long as the mount: disposing a row (a preset's agent,
+   `dispose-plugin!`) takes its vocabulary with it, and the effect entry itself
+   unwinds LIFO ahead of the fiber's own provides.
+
+   While it exists the declaration is app-wide — the registry is the
+   composition's `:events` service — so a preset adds vocabulary to the app for
+   as long as its agent lives. Returns nil."
+  [fibers]
   (doseq [fiber fibers
-          :let [{:keys [name state events]} (srce/fiber-info fiber)]
+          :let [{:keys [name uid state events] mount-ctx :ctx} (srce/fiber-info fiber)
+                owner [:app name uid]]
           :when (and (= :active state) (seq events) (some? name))]
-    (declare! ctx [:app name] events))
+    (srce/effect mount-ctx
+                 (fn []
+                   (declare! mount-ctx owner events)
+                   (fn []
+                     (when-let [handle (srce/get mount-ctx :events)]
+                       (registry/deregister-owner! handle tag owner))))
+                 (str "declare " name)))
   nil)
 
 (defn emit!
