@@ -365,6 +365,18 @@
     (srce/dispose! f)
     (is (= [:a :b :b-undo :a-undo] @events))))
 
+(deftest a-disposed-registration-drops-its-effect-entry
+  ;; A registration disposed before its fiber unloads leaves the live effect
+  ;; list — what `/units` prints — rather than a dead label that outlives it.
+  (let [[r] (kernel)
+        f (srce/plugin! r {:name :p :apply (fn [_ _] nil)})
+        ctx (:ctx (srce/fiber-info f))
+        dispose (srce/on ctx :probe/event (fn [_]))]
+    (is (= ["on :probe/event"] (srce/effects f)))
+    (is (true? (dispose)) "the removal reports a registration it removed")
+    (is (= [] (srce/effects f)) "the entry is gone with the registration")
+    (is (nil? (dispose)) "the disposer is single-shot")))
+
 (deftest inactive-effect-throws
   (let [[r] (kernel)
         ctxs (atom nil)

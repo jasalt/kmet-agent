@@ -406,10 +406,12 @@ are the accessor:
   disposers unwind LIFO; across the fiber's effects, unwinding is LIFO by
   creation order — one effect at a time, last created first, so a service that
   must release before another effect does is expressible by effect order. A
-  lazy seq is collected as produced. `(effects fiber)` returns the labels in
-  creation order (the reverse of unwinding), and the label is an **inspection
-  contract** (`:tool/read`, `:command/units`): it is what the booted listing
-  renders, so a vague label is a line that says nothing.
+  lazy seq is collected as produced. `(effects fiber)` returns the labels of
+  the effects still installed, in creation order (the reverse of unwinding); a
+  disposer run early drops its entry, so the list never reports a registration
+  that is gone. The label is an **inspection contract** (`:tool/read`,
+  `:command/units`): it is what the booted listing renders, so a vague label is
+  a line that says nothing.
 - **Disposal order is part of the contract.** `dispose!` is: flip the state to
   `:disposed` (so `get` already reads `nil`), record its `:provides` names as a
   change, unwind the effects LIFO (where a service entry is removed and its

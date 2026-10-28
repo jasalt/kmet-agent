@@ -249,7 +249,11 @@
   "Register a reversible effect on the current fiber: F runs now and the
    disposer(s) it returns — one, a seq, or nil — unwind LIFO, on the returned
    single-shot disposer or when the fiber unloads. Requires an :active fiber;
-   the disposer reports its last result (the removal status `on` needs)."
+   the disposer reports its last result (the removal status `on` needs).
+
+   A disposer run early (a registration deregistered before its fiber unloads)
+   also drops its entry from the fiber's `:effects`, so `effects` lists what is
+   installed rather than what was ever installed."
   [ctx f & [label]]
   (let [fiber (:fiber ctx)
         state (:state @fiber)]
@@ -258,8 +262,12 @@
                       {:type :srce/inactive-effect :state state})))
     (let [undos (atom [])
           live? (atom true)
+          entry (atom nil)
           undo (fn []
                  (when (compare-and-set! live? true false)
+                   (swap! fiber update :effects
+                          (fn [effects]
+                            (into [] (remove #(identical? % @entry)) effects)))
                    (reduce (fn [_ d]
                              (try
                                (d)
@@ -269,7 +277,8 @@
                            (rseq @undos))))]
       ;; The entry is pushed before F runs, so a throwing body still leaves
       ;; cleanup behind for the failure path to run.
-      (swap! fiber update :effects conj {:label (or label :effect) :undo undo})
+      (reset! entry {:label (or label :effect) :undo undo})
+      (swap! fiber update :effects conj @entry)
       (let [result (f)]
         (swap! undos into (cond
                             (nil? result) []
