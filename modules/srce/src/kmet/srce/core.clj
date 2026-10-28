@@ -132,8 +132,8 @@
   fiber/runtimes)
 
 (def settle!
-  "Run any pending provider change to a fixpoint; answers `{:rounds n :churn?
-   bool}` for the passes this call ran."
+  "Run any pending provider change to a fixpoint; answers `{:rounds n}` for the
+   fixpoint rounds this call ran."
   fiber/settle!)
 
 (def dispose!
@@ -147,8 +147,9 @@
 
 (def update!
   "Change FIBER's config in place (same fiber, same uid) through the plugin's
-   `:update`; refuses without one. Dependents keep their resolved value until
-   their own reload."
+   `:update` — `(fn [ctx old-config new-config] …)`; refuses without one. A
+   throw unwinds what the hook registered. Dependents keep their resolved value
+   until their own reload."
   fiber/update!)
 
 (def dispose-plugin!

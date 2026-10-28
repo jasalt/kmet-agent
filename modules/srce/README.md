@@ -336,22 +336,24 @@ is the kernel's: it also carries `:parent`, `:runtime`, `:plugin` and `:epoch`.
   `:srce/failure` is emitted. `(srce/restart! fiber)` is the retry — a config
   or shape error keeps failing, a transient one recovers.
 - `(srce/dispose! fiber)` unwinds everything and detaches the mount. It is
-  idempotent and answers `{:disposed n :failed [{:label … :error …}]}` — a
-  throwing disposer is logged and listed, and the rest still run. The state
-  flips first, so `get` already reads nil while the disposers run.
+  idempotent and answers `{:disposed n :failed [{:label … :error … :message
+  …}]}` — a throwing disposer is logged and listed (throwable and text), and
+  the rest still run. The state flips first, so `get` already reads nil while
+  the disposers run.
 - `(srce/restart! fiber)` is dispose + mount again; it returns a new fiber with
   a new uid, so dependents remount.
 - `(srce/update! fiber new-config)` changes a config **in place** — same fiber,
   same uid, so no dependent remounts and a dependent keeps the value it
   resolved until its own reload. It needs a plugin that declares `:update`
-  (`(fn [ctx resolved-config] …)`, `:srce/no-update` otherwise) and an
+  (`(fn [ctx old-config new-config] …)`, `:srce/no-update` otherwise) and an
   `:active` fiber; `:config` validates the new value first, and a throw leaves
-  the fiber as it was. A plugin that cannot absorb a change is `restart!`.
+  the fiber as it was, unwinding what the hook registered. A plugin that cannot
+  absorb a change is `restart!`.
 - `(srce/dispose-plugin! ctx source)` ends every fiber of one source.
 - `(srce/dispose-subtree! ctx)` ends every fiber under a ctx, children first.
   Both answer the same `{:disposed n :failed […]}` aggregate as `dispose!`.
 - `(srce/settle! ctx)` applies pending provider changes and answers
-  `{:rounds n :churn? bool}`.
+  `{:rounds n}` (the fixpoint rounds that call ran).
 - `(srce/runtimes ctx)` lists the plugin runtimes in mount order;
   `(srce/runtime ctx source)` / `(srce/runtime? ctx source)` ask about one.
 

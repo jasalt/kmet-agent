@@ -226,10 +226,13 @@
   nil)
 
 (defn- dispose-failed!
-  "Record and log a disposer that threw, without stopping the unwind."
+  "Record and log a disposer that threw, without stopping the unwind. The entry
+   carries the throwable for a log and its message for a report."
   [ctx label error]
   (when *dispose-failures*
-    (vswap! *dispose-failures* conj {:label label :error error}))
+    (vswap! *dispose-failures* conj {:label label
+                                     :error error
+                                     :message (or (ex-message error) (str error))}))
   (log! ctx :error "effect disposer threw" error))
 
 (defn assert-active!
@@ -281,11 +284,23 @@
     (undo))
   (swap! fiber assoc :effects []))
 
+(defn rollback-effects!
+  "Unwind the effects FIBER gained after MARK (LIFO) and drop them: the undo of
+   a body that threw part-way. A throwing disposer is logged and the rest still
+   run. Answers nil."
+  [fiber mark]
+  (let [effects (:effects @fiber)
+        mark (min mark (count effects))]
+    (swap! fiber assoc :effects (vec (subvec effects 0 mark)))
+    (doseq [{:keys [undo]} (rseq (subvec effects mark))]
+      (undo))
+    nil))
+
 (defn unwind-effects!
   "Run every effect LIFO and empty the list. The caller must already have set a
    non-:active state, so a disposer cannot register. Returns what threw, as
-   `[{:label … :error …}]` in unwind order — each failure was logged as it ran
-   and the remaining disposers still ran.
+   `[{:label … :error … :message …}]` in unwind order — each failure was logged
+   as it ran and the remaining disposers still ran.
 
    The outermost unwind collects: a `dispose!` performed *by* a disposer
    contributes its failures to that caller's report, and the nested call answers

@@ -232,7 +232,7 @@
           (let [cfg (if-let [validate (:config plugin)]
                       (validate config)
                       config)]
-            (swap! fiber assoc :error nil)
+            (swap! fiber assoc :error nil :resolved cfg)
             (set-state! fiber :active)
             (let [result ((:apply plugin) ctx cfg)]
               (when (some? result)
@@ -285,9 +285,9 @@
 (defn- run-pass!
   "Recompute the provider set of every fiber the change set can affect, remount
    what changed, and repeat to a fixpoint. Round 0 also re-checks pending
-   fibers, which is how a :check that turns true is noticed. Answers
-   `{:rounds n :churn? bool}` — churn is the round budget running out with
-   changes still pending, which are then cleared."
+   fibers, which is how a :check that turns true is noticed. Answers the number
+   of rounds it ran; hitting the budget with changes still pending logs
+   :srce/churn and clears them."
   [ctx]
   (let [{:keys [mounted changes]} (:kernel ctx)]
     (loop [round 0]
@@ -300,19 +300,20 @@
                                 @mounted)]
         (doseq [fiber candidates]
           (refresh! fiber))
-        (cond
-          (and (seq @changes) (< (inc round) max-rounds))
-          (recur (inc round))
+        (let [ran (inc round)]
+          (cond
+            (and (seq @changes) (< ran max-rounds))
+            (recur ran)
 
-          (seq @changes)
-          (do
-            (ctx/log! ctx :warn ":srce/churn" {:rounds (inc round)
-                                               :pending (count @changes)})
-            (reset! changes [])
-            {:rounds (inc round) :churn? true})
+            (seq @changes)
+            (do
+              (ctx/log! ctx :warn ":srce/churn" {:rounds ran
+                                                 :pending (count @changes)})
+              (reset! changes [])
+              ran)
 
-          :else
-          {:rounds (inc round) :churn? false})))))
+            :else
+            ran))))))
 
 (declare settle!)
 
@@ -335,25 +336,22 @@
    at the turn boundary and after every cross-thread submission. When it returns
    and no other thread owns the pass, :changes is empty.
 
-   Answers `{:rounds n :churn? bool}` for the passes *this* call ran; a call
-   that loses the pass to another thread runs none and answers
-   `{:rounds 0 :churn? false}` — its change is that owner's, not lost. Churn is
-   the round budget running out with changes pending, and a mutator's own drain
-   is usually the call that hits it: an explicit `settle!` after a mount
-   answers `:churn? false` even when the mount churned."
+   Answers `{:rounds n}` for the fixpoint rounds *this* call ran; a call that
+   loses the pass to another thread runs none and answers `{:rounds 0}` — its
+   change is that owner's, not lost. A mutator's own drain is a settle of its
+   own, so the rounds it needs are not in a later explicit call's count."
   [ctx]
   (let [{:keys [pass changes]} (:kernel ctx)]
-    (loop [rounds 0 churn? false]
+    (loop [rounds 0]
       (let [ran (when (compare-and-set! pass nil :running)
                   (try
                     (run-pass! ctx)
                     (finally
                       (reset! pass nil))))
-            rounds (+ rounds (:rounds ran 0))
-            churn? (or churn? (:churn? ran))]
+            rounds (+ rounds (or ran 0))]
         (if (and (seq @changes) (nil? @pass))
-          (recur rounds churn?)
-          {:rounds rounds :churn? churn?})))))
+          (recur rounds)
+          {:rounds rounds})))))
 
 (defn- poke!
   "Apply a recorded change now unless a pass is already running; a nested or
@@ -513,9 +511,10 @@
   "Change FIBER's config in place. FIBER must be :active (`:srce/inactive-update`)
    and its plugin must declare `:update` (`:srce/no-update` otherwise) — a
    config change a plugin cannot absorb is `restart!`. The new config is
-   validated by `:config` exactly as a mount would, the hook runs with the
-   resolved config, and the raw config is stored last, so a throw from either
-   leaves the fiber as it was (whatever the hook already registered stays).
+   validated by `:config` exactly as a mount would, the hook runs with the old
+   and the new resolved config (the record's `:resolved`), and the raw config is
+   stored last. A throw from either leaves the fiber as it was: whatever the
+   hook registered before throwing is unwound.
 
    The fiber and its uid stay: no dependent remounts, and a dependent keeps the
    value it resolved until its own reload. A hook that provides a *new* name is
@@ -524,8 +523,8 @@
    `:srce/duplicate-service`), so a hook updates the value it owns — replacing
    a service is `restart!`.
 
-   Like every other mutator, the hook runs with the pass held and the drain
-   runs once at the end."
+   The hook runs under `run-owned!`, so its registrations are drained once at
+   the end, like any other mutator's."
   [fiber new-config]
   (let [{:keys [ctx plugin] :as record} @fiber
         hook (update-hook record)
@@ -535,9 +534,14 @@
     (run-owned!
      ctx
      (fn []
-       (hook ctx config)
-       (swap! fiber assoc :config new-config)
-       fiber))))
+       (let [mark (count (:effects @fiber))]
+         (try
+           (hook ctx (:resolved record) config)
+           (swap! fiber assoc :config new-config :resolved config)
+           fiber
+           (catch Throwable t
+             (ctx/rollback-effects! fiber mark)
+             (throw t))))))))
 
 (defn dispose-plugin!
   "Dispose every fiber of SOURCE, in one pass; the last one drops the runtime.

@@ -384,6 +384,7 @@ are the accessor:
 | key | meaning |
 |---|---|
 | `:uid` `:name` `:config` `:state` `:parent` `:runtime` | identity, raw config, lifecycle (the cordis fields, kept) |
+| `:resolved` | the config `:config` validated to on the last activation — what the current mount received, and the old value `update!` hands its hook |
 | `:ctx` | the child ctx it mounted |
 | `:inject` | the **normalized** deps (each name maps to `nil` or `:optional`) — what the listing prints as `inject=[…]` |
 | `:provides` | the names this fiber has provided and not released — the listing's `provides=[…]`, maintained by `provide!`'s disposer, so a shadowed realm's provider is still attributable |
@@ -422,11 +423,12 @@ are the accessor:
 - **Disposal runs everything and never skips.** A throwing disposer is reported
   through `:logger` at `:error` and the remaining disposers still run. The
   unwind also *collects* them: `dispose!` answers `{:disposed n :failed [{:label
-  … :error …}]}` (`dispose-plugin!`/`dispose-subtree!` aggregate the same
-  shape), so a caller can report a teardown failure instead of leaving it only
-  in a log that is silent without `--debug`. The outermost unwind collects: a
-  dispose performed *by* a disposer contributes to its caller's report and
-  answers an empty one itself.
+  … :error … :message …}]}` (`dispose-plugin!`/`dispose-subtree!` aggregate the
+  same shape), so a caller can report a teardown failure instead of leaving it
+  only in a log that is silent without `--debug`: `:error` is the throwable and
+  `:message` its rendered text. The outermost unwind collects: a dispose
+  performed *by* a disposer contributes to its caller's report and answers an
+  empty one itself.
 - **A failed fiber is a state, not an exception.** `apply` throws → the fiber is
   marked `:failed` with `:error e` **first**, so an effect or `provide!` from
   inside its own disposers throws `:srce/inactive-effect`; then its partial effects
@@ -456,8 +458,9 @@ are the accessor:
   narrow one: it requires an `:active` fiber and a plugin that declares
   `:update` (`:srce/no-update`/`:srce/inactive-update` otherwise), validates the
   new config with `:config` exactly as a mount would, runs `(hook ctx
-  resolved-config)` and stores the raw config last — so a throw leaves the
-  fiber as it was. The uid stays, so no dependent remounts and a dependent
+  old-config resolved-config)` and stores the raw config last — so a throw
+  leaves the fiber as it was, and what the hook registered before throwing is
+  unwound. The uid stays, so no dependent remounts and a dependent
   keeps the value it resolved until its own reload: an in-place config change
   is a snapshot, not a provider swap. A hook that provides a *new* name is a
   normal provider-set change (dependents reload at the next `settle!`); the
@@ -649,7 +652,7 @@ as a map, shape-checked at compile time by `defplugin` and once at mount by
  :inject  {:tools nil}         ; optional, default {} — required deps, nil values
  :config  (fn [cfg] …)         ; optional, default identity — validator, cfg or throw
  :provide #{:web-search}       ; optional, default #{} — declared, checked after apply
- :update  (fn [ctx cfg] …)     ; optional — absorb a config change in place (`update!`)
+ :update  (fn [ctx old new] …) ; optional — absorb a config change in place (`update!`)
  :apply   (fn [ctx cfg] …)}    ; required — the effect body
 ```
 
@@ -967,7 +970,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 59 contract tests (232 assertions) — one per bullet in §2–§8 that can fail,
+- 60 contract tests (237 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate
@@ -995,13 +998,14 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
   `:inject`/`:provides`/`:waiting-for` matching the store after a mount, a
   provide and a dispose; the pass flag — two threads entering `provide!` at
   once run one pass owner, both changes land, and `settle!` returning with no
-  other owner means `:changes` empty, answering `{:rounds 1 :churn? false}` for
-  an empty pass; `update!` refusing a plugin without `:update`
-  (`:srce/no-update`) and a non-active fiber (`:srce/inactive-update`), passing
-  the hook the resolved config, keeping the uid so no dependent remounts, and
-  storing nothing when the validator throws; a hook that provides a new name
-  reloading a dependent; and a teardown reporting the disposer that threw (with
-  its label) while the rest still ran, a dispose performed by a disposer
+  other owner means `:changes` empty, answering `{:rounds 1}` for an empty
+  pass; `update!` refusing a plugin without `:update` (`:srce/no-update`) and a
+  non-active fiber (`:srce/inactive-update`), passing the hook the old and the
+  resolved new config, keeping the uid so no dependent remounts, storing
+  nothing when the validator throws, and unwinding what the hook registered
+  when it throws; a hook that provides a new name reloading a dependent; and a
+  teardown reporting the disposer that threw (with its label, its throwable and
+  its message) while the rest still ran, a dispose performed by a disposer
   reporting into the outer run, `dispose!` answering `{:disposed 0 :failed []}`
   a second time, and `dispose-subtree!` aggregating the same shape; and a
   non-fn `:update` rejected as `:srce/bad-plugin`.

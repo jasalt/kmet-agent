@@ -637,8 +637,8 @@
 
 (deftest settle-is-idempotent
   (let [[r] (kernel)]
-    (is (= {:rounds 1 :churn? false} (srce/settle! r)) "one empty pass")
-    (is (= {:rounds 1 :churn? false} (srce/settle! r)))
+    (is (= {:rounds 1} (srce/settle! r)) "one empty pass")
+    (is (= {:rounds 1} (srce/settle! r)))
     (is (empty? @(:changes (:kernel r))))))
 
 (deftest two-threads-provide-at-once
@@ -732,7 +732,7 @@
         provider (srce/plugin! r {:name :probe/provider
                                   :provide #{:probe}
                                   :config (fn [cfg] (assoc cfg :resolved true))
-                                  :update (fn [_ cfg] (swap! seen conj cfg))
+                                  :update (fn [_ old new] (swap! seen conj [old new]))
                                   :apply (fn [c cfg]
                                            (srce/provide! c :probe cfg {:in (:parent c)})
                                            nil)}
@@ -745,7 +745,8 @@
       (srce/update! provider {:n 2})
       (let [after (srce/fiber-info provider)]
         (is (= (:uid before) (:uid after)) "same fiber, same uid")
-        (is (= [{:n 2 :resolved true}] @seen) "the hook gets the resolved config")
+        (is (= [[{:n 1 :resolved true} {:n 2 :resolved true}]] @seen)
+            "the hook gets the old and the resolved new config")
         (is (= {:n 2} (:config after)) "the raw config is what is stored")
         (is (= 1 @applied) "no dependent remounted")
         (is (= {:n 1 :resolved true} (srce/get r :probe))
@@ -759,7 +760,7 @@
                                      (when-not (:ok cfg)
                                        (throw (ex-info "bad config" {:type ::bad})))
                                      cfg)
-                           :update (fn [_ cfg] (swap! seen conj cfg))
+                           :update (fn [_ _ cfg] (swap! seen conj cfg))
                            :apply (fn [_ _] nil)}
                         {:ok true})]
     (is (thrown? Throwable (srce/update! f {:ok false})))
@@ -782,6 +783,7 @@
       (is (= 1 (count failed)))
       (is (= :probe/first (:label (first failed))) "the failing effect is named")
       (is (= "boom" (ex-message (:error (first failed)))))
+      (is (= "boom" (:message (first failed))) "the report carries text, not only the throwable")
       (is (true? @second-ran) "the remaining disposers still ran"))
     (is (= {:disposed 0 :failed []} (srce/dispose! f)) "a second dispose is a no-op")))
 
@@ -813,9 +815,9 @@
                                       nil)})]
     (let [{:keys [disposed failed]} (srce/dispose-subtree! r)]
       (is (= 2 disposed) "children first, both fibers")
-      (is (= [{:label :probe/bad :error "bad"}]
-             (mapv (fn [f] (update f :error ex-message)) failed))
-          "the failure keeps the effect's label"))
+      (is (= [{:label :probe/bad :message "bad"}]
+             (mapv #(select-keys % [:label :message]) failed))
+          "the failure keeps the effect's label and its message"))
     (is (not (srce/active? ok)))
     (is (not (srce/active? bad)))))
 
@@ -823,7 +825,7 @@
   (let [[r] (kernel)
         applied (atom 0)
         provider (srce/plugin! r {:name :probe/grower
-                                  :update (fn [c cfg]
+                                  :update (fn [c _ cfg]
                                             (srce/provide! c :grown cfg {:in (:parent c)}))
                                   :apply (fn [_ _] nil)})]
     (srce/plugin! r {:name :probe/late
@@ -833,3 +835,16 @@
     (srce/update! provider :value)
     (is (= 1 @applied) "the update's own drain reloads the dependent")
     (is (= :value (srce/get r :grown)))))
+
+(deftest a-throwing-update-unwinds-what-its-hook-registered
+  (let [[r] (kernel)
+        f (srce/plugin! r {:name :probe/partial
+                           :update (fn [c _ new]
+                                     (srce/provide! c :partial new {:in (:parent c)})
+                                     (throw (ex-info "late" {})))
+                           :apply (fn [_ _] nil)}
+                        :before)]
+    (is (thrown? Throwable (srce/update! f :after)))
+    (is (nil? (srce/get r :partial)) "the hook's provide was unwound")
+    (is (= :before (:config (srce/fiber-info f))) "the config is untouched")
+    (is (srce/active? f) "the mount is still live")))

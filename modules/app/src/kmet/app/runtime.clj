@@ -98,7 +98,9 @@
 (defn boundary!
   "The turn boundary: run what other threads submitted, then settle the
    kernel's provider changes, repeating while submissions arrive. Returns
-   `{:applied n :rounds n}`. Idempotent, and cheap when nothing was submitted.
+   `{:applied n :drains n}` — drains, not the kernel's fixpoint rounds, which
+   `settle!` reports for itself. Idempotent, and cheap when nothing was
+   submitted.
 
    **One boundary at a time per root.** A submitted thunk may mount, and the
    kernel runs plugin code on one thread at a time (`srce.md` §8) — two agents
@@ -117,8 +119,8 @@
             (recur rounds (+ applied n))
             (do
               (when (seq @q)
-                (srce/log! ctx :warn ":kmet.app/churn" {:rounds rounds}))
-              {:applied (+ applied n) :rounds rounds})))))
+                (srce/log! ctx :warn ":kmet.app/churn" {:drains rounds}))
+              {:applied (+ applied n) :drains rounds})))))
     (no-queue!)))
 
 ;; ── boot ──────────────────────────────────────────────────────────────────

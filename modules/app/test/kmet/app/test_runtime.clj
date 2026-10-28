@@ -187,10 +187,10 @@
           "submit! returns without running the change")
       (srce/emit! ctx :turn-start {:type :turn-start :n 1})
       (is (= [] @heard) "the hook is not registered yet — the boundary has not run")
-      (is (= {:applied 1 :rounds 1} (runtime/boundary! ctx)))
+      (is (= {:applied 1 :drains 1} (runtime/boundary! ctx)))
       (srce/emit! ctx :turn-start {:type :turn-start :n 2})
       (is (= [2] @heard) "the boundary applied it")
-      (is (= {:applied 0 :rounds 1} (runtime/boundary! ctx))
+      (is (= {:applied 0 :drains 1} (runtime/boundary! ctx))
           "a boundary with nothing submitted runs the kernel pass and stops")
       (finally (runtime/shutdown! {:ctx ctx})))))
 
@@ -231,7 +231,7 @@
       (runtime/submit! ctx (fn []
                              (swap! seen conj :first)
                              (runtime/submit! ctx (fn [] (swap! seen conj :nested)))))
-      (is (= {:applied 2 :rounds 2} (runtime/boundary! ctx)))
+      (is (= {:applied 2 :drains 2} (runtime/boundary! ctx)))
       (is (= [:first :nested] @seen) "a submission made while draining runs in the next round")
       (finally (runtime/shutdown! {:ctx ctx})))))
 
