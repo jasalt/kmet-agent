@@ -2,6 +2,7 @@
   "The /theme command: the theme registry, the dock's generated theme pane, reload
    fixtures, and cleanup of contributed widgets."
   (:require [clojure.test :as t :refer [deftest testing]]
+            [kmet.app.events :as events]
             [kmet.test-utils :as tu]
             [kmet.app.debug :as debug]
             [kmet.tui.components.container :as container]
@@ -27,7 +28,6 @@
             [kmet.ui.tui.footer-data-provider :as fdp]
             [babashka.fs :as fs]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
 
@@ -130,8 +130,8 @@
                 :session-before-tree (the prep-event contract is
                 exercised by the manual /review run, not here)."
               (let [seen (atom nil)
-                    dereg (event-bus/on-event :session-before-tree
-                                              (fn [ev] (reset! seen ev)))
+                    dereg (events/on! (hs/events-ctx handle) :session-before-tree
+                                      (fn [ev] (reset! seen ev)))
                     result ((:navigate-tree ctx) "missing-target"
                                                  {:summarize false
                                                   :custom-instructions "ci"

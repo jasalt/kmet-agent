@@ -430,8 +430,8 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (support/run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=24 patches=1")
-        (str "the bundle: the process world, the extension host, the bus, the"
+    (is (str/starts-with? out "profile :tui rows=25 patches=1")
+        (str "the bundle: the logger, the process world, the extension host, the bus, the"
              " four registries, the prompt builder, the session log and its"
              " storage, the projections, the agent registry, the loop's two"
              " stage rows, the loop driver, the five tool rows, and the"
@@ -456,7 +456,7 @@
     (try
       (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=25 patches=2"))
+        (is (str/starts-with? out "profile :tui rows=26 patches=2"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -488,7 +488,7 @@
       (with-redefs [cfg/patch-paths (fn [] [global local])]
         (let [{:keys [code out]} (support/run-main ["--dump-config"])]
           (is (zero? code))
-          (is (str/starts-with? out "profile :tui rows=25 patches=2")
+          (is (str/starts-with? out "profile :tui rows=26 patches=2")
               "the global layer inserts the row; the project layer patches it")
           (is (str/includes? out "config={:a 2}")
               "the project layer applies over the global one"))
@@ -515,7 +515,7 @@
         (let [{:keys [code out]} (support/run-main ["--dump-default-config"
                                                     "--patch" path])]
           (is (zero? code) "neither the ambient layer nor --patch is read")
-          (is (str/starts-with? out "profile :tui rows=24 patches=1"))))
+          (is (str/starts-with? out "profile :tui rows=25 patches=1"))))
       (finally (io/delete-file path true)))))
 
 (deftest dump-state-prints-the-booted-tree
@@ -526,7 +526,7 @@
       (is (zero? code))
       (is (str/starts-with? out "[:app]")
           "the root frame, at the origin of every unit path")
-      (is (str/includes? out "children=23")
+      (is (str/includes? out "children=24")
           (str "the twenty-two bundle rows the world is deferred out of, then the"
                " TUI's mode row — mounted, not run"))
       (is (str/includes? out ":active"))
@@ -589,9 +589,9 @@
       (let [{:keys [code err]} (support/run-main ["--patch" path "hello"])]
         (is (= 1 code))
         (is (str/includes? err
-                           (str "booted 22 plugin rows (22 fibers, 1 deferred: :world, services:"
+                           (str "booted 23 plugin rows (23 fibers, 1 deferred: :world, services:"
                                 " agents approvals commands compaction events llm"
-                                " loop-guard projections prompts retry-policy"
+                                " logger loop-guard projections prompts retry-policy"
                                 " sessionPersistence sessions skills system-prompt"
                                 " tools ui)"))
             "the boot is the point: a run with no mode still proves the rows mount,

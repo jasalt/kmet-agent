@@ -26,7 +26,7 @@
    :model-select. The :get-api-key atom holds a dynamic API key resolver."
   (:require [kmet.app.loop.message :as message]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.model-resolver :as resolver]
             [kmet.app.system-prompt :as system-prompt]
             [kmet.app.retry :as retry]
@@ -233,29 +233,23 @@ Be precise and concise in your responses."}}]
                     :ctx ctx}))
 
 (defn emit
-  "Route an event to the UI callback (:on-event) and to both listener tables a
-   process has: the composition's kernel table, resolved from the run's own ctx
-   upward (the `:events` row, so a listener registered at the app's scope hears
-   what any agent under it did), and the app's process-level table
-   (`event-bus/emit-event!`), which is where the extension ABI registers. The two
-   hold different listeners, so one event reaches each listener once.
+  "Route an event to the UI callback (:on-event) and to the run's listeners.
 
-   Neither sink can kill the loop: `emit-event!` reports a broken extension and
-   the kernel's `invoke!` a broken listener.
+   One table: the composition's kernel listener table, resolved from the run's
+   own ctx upward, so a listener registered at the app's scope hears what any
+   agent under it did, and the extension ABI registers at the app root like any
+   other listener. `events/emit!` dispatches by the event's declared mode and
+   returns what the mode answers; a broken listener is logged and reads as nil,
+   so neither sink can kill the loop.
 
-   The 2-arity routes a different map to the public sinks and to the extension
-   table — pi's agent_end split (`_emit` vs `_emitExtensionEvent`), where the
-   public copy is decorated (`:will-retry`) and the extension runner's is
-   emitted before the decoration. The app's layer is public — it is where a
-   front end listens — so it gets the decorated copy, and only the table gets
-   the bare one. That split becomes per-listener when the extension ABI moves
-   onto the kernel: pi's two emissions, per subscription instead of per arity."
-  ([agent event] (emit agent event event))
-  ([agent ui-event ext-event]
-   (when-let [cb (:on-event agent)]
-     (cb ui-event))
-   (srce/emit! (:ctx agent) (:type ui-event) ui-event)
-   (event-bus/emit-event! ext-event (:ctx agent))))
+   The event is one map: pi's agent_end split (`_emit` vs
+   `_emitExtensionEvent`) emitted a bare copy to extensions and a decorated one
+   to the front end. With one table there is one copy, and it carries the
+   decoration (`:will-retry`)."
+  [agent event]
+  (when-let [cb (:on-event agent)]
+    (cb event))
+  (events/emit! (:ctx agent) event))
 
 (defn set-agent-status!
   "Update the run's :status atom and emit the matching :status event. EXTRA, when

@@ -1,7 +1,7 @@
 (ns kmet.ui.tui.interactive.test-interactive
   "Interactive-mode tests: the agent-loop :on-event handler
    (make-agent-event-handler) must consume every event type in the loop
-   vocabulary (kmet.app.event-bus/event-types) without throwing.
+   vocabulary (kmet.app.events/event-types) without throwing.
 
    Regression guard: the handler's case previously had no clause for
    :agent-start and no :default — it threw IllegalArgumentException on the
@@ -18,8 +18,8 @@
             [kmet.ui.tui.interactive.turn :as turn]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
             [kmet.app.commands :as commands]
+            [kmet.app.events :as events]
             [kmet.app.extensions.rows :as extension-rows]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.loop.state :as loop-state]
             [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
@@ -121,9 +121,10 @@
           parked-bash (bash-execution/make-bash-execution :command "sleep 10")
           _ (reset! (:pending-bash-components cs) [parked-bash])
           shutdown-events (atom [])
-          _ (event-bus/clear-event-listeners!)
-          _ (event-bus/on-event :session-shutdown
-                                (fn [ev] (swap! shutdown-events conj ev)))]
+          _ (tu/clear-listeners! (hs/events-ctx handle))
+          _ (events/on! (hs/events-ctx handle)
+                        :session-shutdown
+                        (fn [ev] (swap! shutdown-events conj ev)))]
       (try
            ;; a live turn: /new settles it and the runtime drops its turn flag
            ;; (a cancelled run never reaches the wrapped :on-done)
@@ -155,7 +156,7 @@
               "parked bash refs are dropped"))
         (finally
             ;; the fixture deletes the session tree it created
-          (event-bus/clear-event-listeners!))))))
+          (tu/clear-listeners! (hs/events-ctx handle)))))))
 
 (deftest handle-new-session-extension-cancel
   (testing "a {:cancel true} :session-before-switch handler aborts /new —
@@ -170,13 +171,15 @@
           cs (hs/core-state handle)
           shutdown-events (atom [])
           seen-before-switch (atom nil)
-          _ (event-bus/clear-event-listeners!)
-          _ (event-bus/on-event :session-before-switch
-                                (fn [ev]
-                                  (reset! seen-before-switch ev)
-                                  {:cancel true}))
-          _ (event-bus/on-event :session-shutdown
-                                (fn [ev] (swap! shutdown-events conj ev)))]
+          _ (tu/clear-listeners! (hs/events-ctx handle))
+          _ (events/on! (hs/events-ctx handle)
+                        :session-before-switch
+                        (fn [ev]
+                          (reset! seen-before-switch ev)
+                          {:cancel true}))
+          _ (events/on! (hs/events-ctx handle)
+                        :session-shutdown
+                        (fn [ev] (swap! shutdown-events conj ev)))]
       (try
         ((var session-admin/handle-new-session) cs)
         (is (= old-sess (runtime/session handle)) "session NOT swapped")
@@ -189,7 +192,7 @@
         (is (empty? @shutdown-events)
             "no :session-shutdown on a cancelled switch")
         (finally
-          (event-bus/clear-event-listeners!))))))
+          (tu/clear-listeners! (hs/events-ctx handle)))))))
 
 (deftest runtime-started-run-gets-the-working-presentation
   (testing "a run the runtime starts without start-agent-run! (a submit! or
@@ -225,7 +228,7 @@
 (deftest agent-event-handler-consumes-vocabulary
   (testing "every loop event type is consumed by the UI handler without throwing"
     (let [h (make-handler)
-          types (keys event-bus/loop-event-types)]
+          types (keys events/loop-event-types)]
       (is (seq types) "loop-event-types must not be empty")
       (doseq [type types]
         (testing (name type)
@@ -934,8 +937,8 @@
                       loaded-resources/loaded-resources-set-sections! (fn [_ _] nil)
                       extensions/ui-reset! (fn [] nil)
                       extensions/clear-extensions! (fn [] nil)
-                      extensions/discover-resources! (fn [_] nil)
-                      event-bus/emit-event! (fn [& _] nil)]
+                      extensions/discover-resources! (fn [_ _] nil)
+                      events/emit! (fn [& _] nil)]
           ((var builtins/handle-reload) cs nil))
         (is (= {:show-images true :image-width-cells 120} @subs/image-settings-atom)
             "live image settings re-seeded from the reloaded config")
@@ -973,8 +976,8 @@
                                  context/load-project-context-files (fn [_ _] [])
                                  extensions/ui-reset! (fn [] nil)
                                  extensions/clear-extensions! (fn [] nil)
-                                 extensions/discover-resources! (fn [_] nil)
-                                 event-bus/emit-event! (fn [& _] nil)]
+                                 extensions/discover-resources! (fn [_ _] nil)
+                                 events/emit! (fn [& _] nil)]
                      ((var builtins/handle-reload) cs nil)))]
       (try
         (reload :expanded)
@@ -1020,8 +1023,8 @@
                     loaded-resources/loaded-resources-set-sections! (fn [_ _] nil)
                     extensions/ui-reset! (fn [] nil)
                     extensions/clear-extensions! (fn [] nil)
-                    extensions/discover-resources! (fn [_] nil)
-                    event-bus/emit-event! (fn [& _] nil)]
+                    extensions/discover-resources! (fn [_ _] nil)
+                    events/emit! (fn [& _] nil)]
         ((var builtins/handle-reload) cs nil))
       (is (= (str (fs/cwd)) @loader-cwd)
           "context files load from the launch dir, not the active session's cwd")

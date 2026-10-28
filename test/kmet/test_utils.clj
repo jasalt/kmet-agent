@@ -172,6 +172,13 @@
   (let [reg (tool-registry)]
     (fn [name] (tools/get-tool reg name))))
 
+(defn clear-listeners!
+  "Drop every listener registered on CTX — the one thing a test needs from the
+   kernel's table that the production API cannot express. The fiber's effect
+   list keeps the dead entries, whose disposers then remove nothing."
+  [ctx]
+  (reset! (:listeners ctx) {}))
+
 (defn with-extension-host
   "clojure.test :each fixture: this namespace needs a bound extension host.
 

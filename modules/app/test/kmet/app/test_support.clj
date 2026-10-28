@@ -6,6 +6,7 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.core :as core]
+            [kmet.app.events :as events]
             [kmet.app.runtime :as runtime]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
@@ -148,6 +149,23 @@
   "The composed root ctx `with-composition` bound."
   []
   (:ctx *composition*))
+
+(defn on-event
+  "Register F for TYPE on the composition's root ctx — the ctx a booted run's
+   agents hang under. The 3-arity carries an owner, as the app's `on!` does."
+  ([type f] (events/on! (composition-ctx) type f))
+  ([type owner f]
+   (events/on! (composition-ctx) type (when owner {:owner owner}) f)))
+
+(defn clear-listeners!
+  "Drop every listener on the composition's root ctx."
+  []
+  (tu/clear-listeners! (composition-ctx)))
+
+(defn emit-event!
+  "Emit EVENT on the composition's root ctx through the app's dispatcher."
+  [event]
+  (events/emit! (composition-ctx) event))
 
 (defn with-host
   "clojure.test :each fixture: this namespace needs a bound extension host.

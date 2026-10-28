@@ -21,7 +21,7 @@
   (:require
    [babashka.fs :as fs]
    [kmet.app.config :as cfg]
-   [kmet.app.event-bus :as event-bus]
+   [kmet.app.events :as events]
    [kmet.app.loop.stages :as loop-stages]
    [kmet.app.loop.state :as loop-state]
    [kmet.app.model-resolver :as resolver]
@@ -142,11 +142,10 @@
   (let [sess (session engine)
         sanitized (session/sanitize-session-name name)]
     (session/append-session-info! sess sanitized)
-    (event-bus/emit-event!
-     {:type :session-info-changed
-      :session-file (:file sess)
-      :name sanitized}
-     (agent-ctx engine))
+    (events/emit! (agent-ctx engine)
+                  {:type :session-info-changed
+                   :session-file (:file sess)
+                   :name sanitized})
     sanitized))
 
 (defn export-html!

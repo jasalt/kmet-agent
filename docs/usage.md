@@ -74,7 +74,9 @@ and is TUI-only. A mode that opens its own session (print, rpc, server)
 refuses these flags by name instead of silently starting a fresh one.
 
 `--mode edn` (implies `--print`) writes the machine-readable variant to
-stdout: the session header line, then every event as one EDN map per line.
+stdout: the session header line, then every public event as one EDN map
+per line (the extension-only hooks — provider request payloads/headers, the
+session-before events — stay in-process).
 Streaming `:message-update` events carry only the delta — no cumulative
 message snapshot — and `:agent-settled` ends the stream with the run's
 outcome; the exit code follows it (0 completed, 1 error or aborted).

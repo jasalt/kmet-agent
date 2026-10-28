@@ -168,10 +168,17 @@
 (defn on-event
   "Register a handler for an event type (e.g. :session-start, :agent-end,
    :message-end). Handlers always receive (event ctx) — the ctx is the
-   extension context, built fresh per event. Returns a deregister fn."
+   extension context, built fresh per event. The subscription registers on the
+   host's ctx (the app root), so it hears every agent under it and nothing
+   outside the app; it is disposed by unload. Returns a deregister fn."
   [api event-type handler]
   ((:on-event api) event-type handler))
-(defn emit-event! [api event] ((:emit-event! api) event))
+
+(defn emit-event!
+  "Emit EVENT at the host's ctx (the app root), as the app's dispatcher does:
+   its return follows the event's declared mode (nil for a notification, the
+   last non-nil answer for `:collect-last`, the decision map for a boundary)."
+  [api event] ((:emit-event! api) event))
 
 (defn on-input [api hook] ((:on-input api) hook))
 (defn on-before-agent-start [api hook] ((:on-before-agent-start api) hook))

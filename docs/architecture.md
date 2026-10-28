@@ -272,9 +272,10 @@ front end:
   emitting thread (fast, non-blocking) and the vocabulary — `event-types` /
   `app-event-types` / `loop-event-types`, declared as `:events` in
   `kmet.app.events/plugin` and read from that declaration,
-  re-exported by `kmet.app.event-bus`, which keeps the app's process-level
-  table the extension ABI registers in beside the composition's ctx table — is
-  the shared contract; `:agent-settled` carries the
+  re-exported by `kmet.app.event-bus` — is the shared contract; there is one
+  listener table (the ctx tree), one registration (`events/on!`) and one
+  mode-driven dispatcher (`events/emit!`), and the extension ABI registers on
+  the host's ctx like any other listener. `:agent-settled` carries the
   run's `:outcome` (`:completed` / `:error` / `:aborted`). A front end that
   needs data not on the stream extends the event, not the reader.
 - Extension UI splits into runtime capabilities (installed by `bootstrap`,

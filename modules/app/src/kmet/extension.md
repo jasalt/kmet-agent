@@ -491,6 +491,22 @@ be passed for a per-tool override.
 (ext/emit-event! api {:type :my-event :data 1})
 ```
 
+The listener table is the ctx tree's: a registration lands on the host's ctx
+(the app root), so a handler hears every event an agent under it emits and
+nothing outside the app. `emit-event!` emits at the same ctx, and its return
+follows the event's declared mode — nil for a notification, the last non-nil
+answer for a `:collect-last` event, the accumulated decision map for a
+boundary.
+
+Six events are **extension-only**: `:context` `:context-with-system`
+`:before-provider-request` `:before-provider-headers`
+`:after-provider-response` `:resources-discover`, plus the four
+`:session-before-*` hooks. They exist to let an extension shape a request or
+veto a session move, carry request machinery (a payload, a header map) or a
+control object, and are therefore not on the public stream a front end or the
+wire takes (`kmet.app.events/on-every` skips them) — an extension subscribes
+them by name, as above.
+
 Event types: `:agent-start` `:agent-end` `:agent-settled` `:turn-start`
 `:turn-end` `:agent-before-settle` `:message-start` `:message-update`
 `:message-end`

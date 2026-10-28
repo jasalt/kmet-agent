@@ -6,10 +6,10 @@
    kmet.app.loop.state (steer!, follow-up!, the queue modes, and the
    injection of drained messages into the context).
 
-   Emits lifecycle events (see kmet.app.event-bus) to the :on-event callback
-   (UI) and to both listener tables a process has: the composition's kernel
-   table, resolved from the run's own ctx upward, and the app's process-level
-   table that the extension ABI registers in.
+   Emits lifecycle events (see kmet.app.events) to the :on-event callback
+   (UI) and to the one listener table, resolved from the run's own ctx upward;
+   the extension ABI registers at the app root and hears the run like any
+   other listener.
 
    Auto-retry (pi: agent-session auto-retry): transient LLM errors are retried
    with exponential backoff (base-delay-ms * 2^(attempt-1)), up to max-retries.
@@ -85,7 +85,6 @@
             [kmet.app.session.core :as session]
             [kmet.ai.models :as models]
             [kmet.app.extensions.core :as extensions]
-            [kmet.app.event-bus :as event-bus]
             [kmet.srce.core :as srce]
             [kmet.app.debug :as debug]))
 ;; ─── Agent state ───────────────────────────────────────────────────────────
@@ -352,17 +351,12 @@
 
 (defn- emit-boundary
   "Route an actionable boundary event: the UI callback gets it as a plain
-   notification, the kernel's listeners hear it first (a front end awaits
-   :agent-settled this way), and the extension bus dispatches it as a boundary,
-   where each handler sees the accumulated {:entries [] :continue false} state
-   merged in (pi: emitBoundary) and the kernel's decision as its starting
-   state — so one event threads one decision across both layers instead of two
-   that silently disagree. Returns the accumulated handler result, or nil."
+   notification and the listeners dispatch it as a boundary, where each handler
+   sees the accumulated {:entries [] :continue false} state merged in (pi:
+   emitBoundary). One table, so one dispatch threads one decision. Returns the
+   accumulated handler result, or nil."
   [agent event]
-  (when-let [cb (:on-event agent)]
-    (cb event))
-  (let [ctx (:ctx agent)]
-    (event-bus/emit-boundary! event ctx (srce/boundary! ctx (:type event) event))))
+  (state/emit agent event))
 
 (defn- finish-turn!
   "Finish a turn (pi: the session's wrapped finishTurn, installed by
@@ -811,10 +805,9 @@
                                  :messages (get @(:run-messages agent) run-token)
                                  :error error
                                  :will-retry (boolean will-retry)}]
-                      ;; pi decorates the public agent_end with :will-retry but
-                      ;; emits the extension runner's copy before the
-                      ;; decoration (agent-session.ts) — send each its own map.
-                      (state/emit agent event (dissoc event :will-retry))))
+                      ;; one table carries one copy, and it is the decorated
+                      ;; one (:will-retry) the front end reads
+                      (state/emit agent event)))
         attempt {:agent agent
                  :stages stage-map
                  :retry-decide (get-in stage-map [:retry-policy :call])
@@ -1051,8 +1044,8 @@
    to the in-flight LLM promise (active-call); the attempt exits quietly
    (no on-error, no on-done) and the prompt settles.
 
-   Emits lifecycle events (see kmet.app.event-bus) to the UI callback and the
-   extension system via emit. The prompt settles exactly once with
+   Emits lifecycle events (see kmet.app.events) to the UI callback and the
+   listeners via emit. The prompt settles exactly once with
    :agent-settled, which carries :outcome (:completed | :error | :aborted —
    :aborted when the cancel signal fired; a prompt that cannot start also
    settles, with :error).

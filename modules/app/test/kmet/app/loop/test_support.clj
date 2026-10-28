@@ -6,7 +6,7 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.session.core :as session]
             [kmet.app.loop :as loop]
             [kmet.app.loop.stages :as loop-stages]
@@ -34,6 +34,19 @@
    suite's own ctx otherwise."
   []
   (or *ctx* @suite-ctx))
+
+(defn on-event
+  "Register a listener for TYPE on the test's ctx (`process-ctx`) — the ctx a
+   hand-built state emits at. The 3-arity carries an owner, as the app's `on!`
+   does (`:resources-discover` contributions are read back beside it). Returns
+   the disposer."
+  ([type f] (events/on! (process-ctx) type f))
+  ([type owner f] (events/on! (process-ctx) type {:owner owner} f)))
+
+(defn clear-listeners!
+  "Drop every listener on the test's ctx (`process-ctx`)."
+  []
+  (tu/clear-listeners! (process-ctx)))
 
 (defn tool-table
   "The tool table the loop reads on `process-ctx`: the `:tools` service, a
@@ -192,7 +205,7 @@
         opts (atom [])
         warn (java.io.StringWriter.)
         agent (make-agent-state)]
-    (event-bus/on-event event (fn [_] (assoc extra :continue true)))
+    (on-event event (fn [_] (assoc extra :continue true)))
     (try
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (stub-llm-text-turns calls ["done"] opts)]
@@ -201,7 +214,7 @@
                                        :on-done (fn [_])
                                        :on-error (fn [_])})))
       (finally
-        (event-bus/clear-event-listeners!)))
+        (clear-listeners!)))
     {:calls @calls :warn (str warn) :agent agent}))
 
 (defn stub-llm-two-tool-calls-then-text

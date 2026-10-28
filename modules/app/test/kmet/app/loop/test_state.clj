@@ -14,7 +14,6 @@
             [kmet.app.system-prompt :as system-prompt]
             [kmet.app.loop :as loop]
             [kmet.app.retry :as retry]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as events]
             [kmet.app.loop.test-support :as support]))
 
@@ -388,27 +387,21 @@
     (t/is (pos? (count @events)))
     (t/is (= :idle (:status (last @events))))))
 
-(t/deftest test-loop-emit-reaches-three-sinks-with-two-copies
-  ;; 7b-i: an event reaches the front end twice — the `:on-event` callback and
-  ;; the app's event layer, which is where a kmet2 front end listens — and the
-  ;; extension table once. The 2-arity's split is pi's (`_emit` vs
-  ;; `_emitExtensionEvent`), and the app's layer is a *public* sink: it gets
-  ;; the decorated copy, so a front end can still render :will-retry.
+(t/deftest test-loop-emit-reaches-the-callback-and-the-one-table
+  ;; One table: an event reaches the front end twice — the `:on-event` callback
+  ;; and the listeners — and both see the same decorated copy (`:will-retry`),
+  ;; because pi's two-copy agent_end split became one emission.
   (let [{ctx :ctx} (support/test-ctx)
         ui (atom [])
-        kernel (atom [])
-        table (atom [])
-        dispose-kernel (events/on! ctx :agent-end (fn [ev] (swap! kernel conj ev)))
-        dispose-table (event-bus/on-event :agent-end (fn [ev] (swap! table conj ev)))]
+        heard (atom [])
+        dispose (events/on! ctx :agent-end (fn [ev] (swap! heard conj ev)))]
     (try
       (binding [support/*ctx* ctx]
         (state/emit (support/make-agent-state :on-event (fn [e] (swap! ui conj e)))
-                    {:type :agent-end :will-retry true}
-                    {:type :agent-end}))
-      (t/is (= [true] (mapv :will-retry @ui)) "the callback gets the decorated copy")
-      (t/is (= [true] (mapv :will-retry @kernel)) "and so does the app's layer")
-      (t/is (= [nil] (mapv :will-retry @table)) "the extension table gets the bare one")
-      (finally (dispose-kernel) (dispose-table)))))
+                    {:type :agent-end :will-retry true}))
+      (t/is (= [true] (mapv :will-retry @ui)) "the callback gets the event")
+      (t/is (= [true] (mapv :will-retry @heard)) "and so does the listener")
+      (finally (dispose)))))
 
 (t/deftest test-loop-on-event-no-listener
   (let [agent (support/make-agent-state)]

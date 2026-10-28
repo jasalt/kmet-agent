@@ -11,7 +11,6 @@
             [kmet.app.extensions.core :as extensions]
             [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
@@ -211,32 +210,32 @@
           (fs/delete-tree dir))))))
 
 (defn- on-context
-  "The bridge's :on-context hook (extensions/provider-hooks) — the request-time
+  "The bridge's :on-context hook (extensions/provider-hooks (support/composition-ctx)) — the request-time
    context phases provider events flow through."
   [messages]
-  ((:on-context (extensions/provider-hooks)) messages))
+  ((:on-context (extensions/provider-hooks (support/composition-ctx))) messages))
 
-(defn- on-payload [payload] ((:on-payload (extensions/provider-hooks)) payload))
-(defn- on-headers [headers] ((:on-headers (extensions/provider-hooks)) headers))
+(defn- on-payload [payload] ((:on-payload (extensions/provider-hooks (support/composition-ctx))) payload))
+(defn- on-headers [headers] ((:on-headers (extensions/provider-hooks (support/composition-ctx))) headers))
 (defn- on-response [status headers]
-  ((:on-response (extensions/provider-hooks)) {:status status :headers headers}))
+  ((:on-response (extensions/provider-hooks (support/composition-ctx))) {:status status :headers headers}))
 
 (t/deftest test-provider-event-bridges
   (testing "bus events drive the per-call provider hooks; last non-nil handler result wins"
-    (let [u1 (event-bus/on-event :context
-                                 (fn [_ev] {:messages ["first"]}))
-          u2 (event-bus/on-event :context
-                                 (fn [_ev] nil)) ;; nil result — first wins
-          u3 (event-bus/on-event :context
-                                 (fn [_ev] {:messages ["second"]}))]
+    (let [u1 (support/on-event :context
+                               (fn [_ev] {:messages ["first"]}))
+          u2 (support/on-event :context
+                               (fn [_ev] nil)) ;; nil result — first wins
+          u3 (support/on-event :context
+                               (fn [_ev] {:messages ["second"]}))]
       (t/is (= ["second"] (on-context ["orig"]))
             "last non-nil handler result wins (pi chains)")
       (u1) (u2) (u3))
     (testing "a throwing handler is skipped"
-      (let [u1 (event-bus/on-event :context
-                                   (fn [_ev] (throw (ex-info "boom" {}))))
-            u2 (event-bus/on-event :context
-                                   (fn [_ev] {:messages ["kept"]}))]
+      (let [u1 (support/on-event :context
+                                 (fn [_ev] (throw (ex-info "boom" {}))))
+            u2 (support/on-event :context
+                                 (fn [_ev] {:messages ["kept"]}))]
         ;; The throwing listener prints a warning to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
           (t/is (= ["kept"] (on-context ["orig"]))))
@@ -244,15 +243,15 @@
       (t/is (= ["orig"] (on-context ["orig"]))
             "no handlers — passthrough"))
     (testing "before-provider-headers: the returned map replaces the headers"
-      (let [u1 (event-bus/on-event :before-provider-headers
-                                   (fn [_ev] {"x-api-key" "k"}))]
+      (let [u1 (support/on-event :before-provider-headers
+                                 (fn [_ev] {"x-api-key" "k"}))]
         (t/is (= {"x-api-key" "k"}
                  (on-headers {"a" "b"})))
         (u1))
       (t/is (= {"a" "b"} (on-headers {"a" "b"}))))
     (testing "before-provider-request: the last non-nil result replaces the payload"
-      (let [u1 (event-bus/on-event :before-provider-request
-                                   (fn [_ev] {:payload :replaced}))]
+      (let [u1 (support/on-event :before-provider-request
+                                 (fn [_ev] {:payload :replaced}))]
         (t/is (= {:payload :replaced}
                  (on-payload {:payload :orig}))
               "the bridge returns the handler's replacement payload")
@@ -260,8 +259,8 @@
       (t/is (= {:payload :orig} (on-payload {:payload :orig}))))
     (testing "after-provider-response fires with status/headers"
       (let [seen (atom nil)
-            u1 (event-bus/on-event :after-provider-response
-                                   (fn [ev] (reset! seen ev)))]
+            u1 (support/on-event :after-provider-response
+                                 (fn [ev] (reset! seen ev)))]
         (on-response 200 {"h" "v"})
         (t/is (= 200 (:status @seen)))
         (t/is (= {"h" "v"} (:headers @seen)))
@@ -275,14 +274,14 @@
     (let [system-msg {:role :system :content [{:type :text :text "prompt"}]}
           user-msg {:role :user :content [{:type :text :text "hi"}]}
           seen (atom [])
-          u1 (event-bus/on-event :context
-                                 (fn [ev]
-                                   (swap! seen conj [:context (mapv :role (:messages ev))])
-                                   nil))
-          u2 (event-bus/on-event :context-with-system
-                                 (fn [ev]
-                                   (swap! seen conj [:with-system (mapv :role (:messages ev))])
-                                   nil))]
+          u1 (support/on-event :context
+                               (fn [ev]
+                                 (swap! seen conj [:context (mapv :role (:messages ev))])
+                                 nil))
+          u2 (support/on-event :context-with-system
+                               (fn [ev]
+                                 (swap! seen conj [:with-system (mapv :role (:messages ev))])
+                                 nil))]
       (try
         (t/is (= [system-msg user-msg] (on-context [system-msg user-msg]))
               "no replacement — the transcript passes through")
@@ -291,8 +290,8 @@
         (finally (u1) (u2))))
     (testing "a :context replacement gets the system prompt re-attached"
       (let [system-msg {:role :system :content [{:type :text :text "prompt"}]}
-            u (event-bus/on-event :context
-                                  (fn [_] {:messages [{:role :user :content "pruned"}]}))]
+            u (support/on-event :context
+                                (fn [_] {:messages [{:role :user :content "pruned"}]}))]
         (try
           (t/is (= [system-msg {:role :user :content "pruned"}]
                    (on-context [system-msg {:role :user :content "orig"}]))
@@ -301,7 +300,7 @@
     (testing "a :context-with-system result is used verbatim, even without the prompt"
       (let [system-msg {:role :system :content [{:type :text :text "prompt"}]}
             user-msg {:role :user :content [{:type :text :text "hi"}]}
-            u (event-bus/on-event :context-with-system (fn [_] {:messages [user-msg]}))
+            u (support/on-event :context-with-system (fn [_] {:messages [user-msg]}))
             err (java.io.StringWriter.)]
         (try
           (let [out (binding [*err* err] (on-context [system-msg user-msg]))]
@@ -312,7 +311,7 @@
 
 (t/deftest test-resources-discover
   (extensions/clear-extensions!)
-  (event-bus/clear-event-listeners!)
+  (support/clear-listeners!)
   (let [dir (str "target/test-ext-resources-" (System/currentTimeMillis))
         skill-dir (str dir "/skill")
         prompt-dir (str dir "/prompt")
@@ -332,14 +331,14 @@
     (try
       (testing "handler results are all collected and applied (pi: emitResourcesDiscover)"
         (swap! unsubs conj
-               (event-bus/on-event :resources-discover
-                                   (fn [ev]
-                                     (swap! seen-reasons conj (:reason ev))
-                                     (t/is (string? (:cwd ev)))
-                                     {:skill-paths [skill-dir]
-                                      :prompt-paths [prompt-dir]
-                                      :theme-paths [theme-dir]})))
-        (let [result (extensions/discover-resources! :startup)]
+               (support/on-event :resources-discover
+                                 (fn [ev]
+                                   (swap! seen-reasons conj (:reason ev))
+                                   (t/is (string? (:cwd ev)))
+                                   {:skill-paths [skill-dir]
+                                    :prompt-paths [prompt-dir]
+                                    :theme-paths [theme-dir]})))
+        (let [result (extensions/discover-resources! (support/composition-ctx) :startup)]
           (t/is (some? (skills/get-skill "ext-skill"))
                 "contributed skill dir loads into the skills registry")
           (t/is (some? (prompts/get-prompt-template "ext-prompt"))
@@ -352,24 +351,24 @@
                    result)
                 "the collected path lists are returned")))
       (testing "re-discovery after session-start dedups (pi: mergePaths)"
-        (extensions/discover-resources! :startup)
+        (extensions/discover-resources! (support/composition-ctx) :startup)
         (t/is (= 1 (count (filter #(= "ext-prompt" (:name %))
                                   (prompts/get-prompt-templates))))
               "the prompt is not loaded twice"))
       (testing "a throwing handler is skipped, others still contribute"
         (swap! unsubs conj
-               (event-bus/on-event :resources-discover
-                                   (fn [_] (throw (ex-info "boom" {})))))
+               (support/on-event :resources-discover
+                                 (fn [_] (throw (ex-info "boom" {})))))
         ;; The throwing listener prints a warning to stderr — suppress it.
         (binding [*err* (java.io.StringWriter.)]
-          (extensions/discover-resources! :reload))
+          (extensions/discover-resources! (support/composition-ctx) :reload))
         (t/is (some? (skills/get-skill "ext-skill"))
               "the good handler's paths were already applied")
         (t/is (= [:startup :startup :reload] @seen-reasons)
               "every discovery carried its reason (:startup | :reload)"))
       (finally
         (doseq [u @unsubs] (u))
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (extensions/clear-extensions!)
         (skills/clear-skills!)
         (prompts/clear-prompt-templates!)

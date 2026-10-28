@@ -22,7 +22,7 @@
             [kmet.app.tools.util :as tools-util]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.commands :as commands]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.keybindings :as app-kb]
             [kmet.ui.tui.interactive.state :as state]
             [kmet.ui.tui.interactive.status :as status]))
@@ -200,12 +200,11 @@
                         ;; relative paths in extension bash/tool calls resolve
                         ;; against the runtime cwd, as in an agent run
                         tools-util/*cwd* (state/runtime-cwd cs)]
-                (event-bus/emit-event!
-                 {:type :user-bash
-                  :command command
-                  :exclude-from-context? exclude-from-context?
-                  :cwd (state/runtime-cwd cs)}
-                 (runtime/agent-ctx (:engine cs))))
+                (events/emit! (runtime/agent-ctx (:engine cs))
+                              {:type :user-bash
+                               :command command
+                               :exclude-from-context? exclude-from-context?
+                               :cwd (state/runtime-cwd cs)}))
 
             ;; ── Spawn hook (pi: BashSpawnHook) — extensions can modify command ──
             spawn-hook nil]

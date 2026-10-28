@@ -12,7 +12,12 @@
 ;; anything; a plain run boots it (kmet.app.runtime).
 {:bundles
  {:bundle/minimal
-  {:rows [;; The process world: provider catalogs, the config, the themes and the
+  {:rows [;; The kernel's logger service: every `srce/log!` (a listener failure, a
+          ;; refused registration, a churn warning) reports through it, and
+          ;; nothing else in the composition names one. First, so everything
+          ;; mounted after it can be reported.
+          {:id :logger :plugin kmet.app.debug/plugin}
+          ;; The process world: provider catalogs, the config, the themes and the
           ;; extension CLI flags — what a run stands on that is not an agent's.
           ;; `:defer` keeps it out of a generic boot (a diagnostic mount and a
           ;; test's boot never read the machine's settings); the entry mounts it

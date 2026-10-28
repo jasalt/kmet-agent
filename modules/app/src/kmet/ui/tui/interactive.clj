@@ -12,11 +12,10 @@
             [kmet.app.config :as cfg]
             [babashka.fs :as fs]
             [kmet.app.debug :as debug]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.session.core :as session]
             [kmet.app.session.runtime :as runtime]
-            [kmet.app.events :as events]
             [kmet.ui.tui.theme-controller :as theme-ctrl]
             [kmet.ui.tui.bash-execution :as bash-execution]
             [kmet.ui.tui.chat-history :as chat-history]
@@ -332,15 +331,14 @@
                  (recur)))
             ;; skipped entirely when the TUI already stopped (immediate quit)
              (when @(:running? (:tui cs))
-               (event-bus/emit-event!
-                {:type :session-start
-                 :reason (cond (:resume opts) :resume
-                               (:continue opts) :continue
-                               :else :new)}
-                (runtime/agent-ctx (:engine cs)))
+               (events/emit! (runtime/agent-ctx (:engine cs))
+                             {:type :session-start
+                              :reason (cond (:resume opts) :resume
+                                            (:continue opts) :continue
+                                            :else :new)})
               ;; pi: resources_discover fires after session_start (reason
               ;; startup for non-reload session starts)
-               (extensions/discover-resources! :startup))
+               (extensions/discover-resources! (runtime/agent-ctx (:engine cs)) :startup))
              (catch Exception e
                (debug/log "session-start: " e))))
         ;; Theme detection + application (pi: startup applyFromSettings) —

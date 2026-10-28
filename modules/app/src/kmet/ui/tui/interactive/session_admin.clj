@@ -22,7 +22,7 @@
             [kmet.ui.tui.image-block :as image-block]
             [kmet.ui.tui.status-indicator :as status-indicator]
             [kmet.ui.tui.tool-execution :as tool-execution]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.extensions.core :as extensions]
             [kmet.ui.tui.model-selector :refer [sync-footer-model!]]
             [kmet.ui.tui.tree-selector :refer [show-session-tree]]
@@ -485,11 +485,11 @@
                  ;; pi: emitBeforeSwitch (reason :resume) — extensions may
                  ;; cancel; the copy is still pending there, so a cancelled
                  ;; import leaves no trace
-                 (if (:cancel (event-bus/emit-event!
+                 (if (:cancel (events/emit!
+                               (runtime/agent-ctx (:engine cs))
                                {:type :session-before-switch
                                 :reason :resume
-                                :target-session-file (:path plan)}
-                               (runtime/agent-ctx (:engine cs))))
+                                :target-session-file (:path plan)}))
                    (chat-history/chat-history-show-status! chat "Import cancelled")
                    (do (session/copy-imported-session! plan)
                        (let [sess (session/load-session (:path plan))]
@@ -651,10 +651,10 @@
               :custom-instructions custom-instructions
               :replace-instructions (boolean replace-instructions?)
               :label label}
-        ext-result (event-bus/emit-event! {:type :session-before-tree
-                                           :preparation prep
-                                           :signal abort-atom}
-                                          (runtime/agent-ctx (:engine cs)))
+        ext-result (events/emit! (runtime/agent-ctx (:engine cs))
+                                 {:type :session-before-tree
+                                  :preparation prep
+                                  :signal abort-atom})
         custom-instructions (or (:custom-instructions ext-result) custom-instructions)
         replace-instructions? (if (contains? (or ext-result {}) :replace-instructions)
                                 (:replace-instructions ext-result)

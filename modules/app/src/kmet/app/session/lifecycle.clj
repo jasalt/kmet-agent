@@ -20,7 +20,7 @@
    [babashka.fs :as fs]
    [kmet.app.config :as cfg]
    [kmet.app.debug :as debug]
-   [kmet.app.event-bus :as event-bus]
+   [kmet.app.events :as events]
    [kmet.app.extensions.core :as extensions]
    [kmet.app.loop :as agent]
    [kmet.app.loop.state :as loop-state]
@@ -70,8 +70,9 @@
   [engine payload]
   (future
     (try
-      (event-bus/emit-event! payload (runtime/agent-ctx engine))
-      (extensions/discover-resources! :startup)
+      (let [ctx (runtime/agent-ctx engine)]
+        (events/emit! ctx payload)
+        (extensions/discover-resources! ctx :startup))
       (catch Exception e
         (debug/log "session-start: " e)))))
 
@@ -117,7 +118,7 @@
    engine's ctx and report whether an extension cancelled the pending
    operation (pi: emitBeforeSwitch/emitBeforeFork → cancel)."
   [ctx event]
-  (boolean (:cancel (event-bus/emit-event! event ctx))))
+  (boolean (:cancel (events/emit! ctx event))))
 
 (defn cancel-run!
   "Cancel the in-flight run, if any (pi: abort): abort the loop's turn, which
@@ -186,9 +187,9 @@
            ;; pi: teardownCurrent — after the run is settled, tell extensions the
            ;; runtime is being torn down (reason :new, destination session file)
            ;; so they can persist state before the swap.
-           (event-bus/emit-event! {:type :session-shutdown :reason :new
-                                   :target-session-file previous-file}
-                                  (runtime/agent-ctx engine))
+           (events/emit! (runtime/agent-ctx engine)
+                         {:type :session-shutdown :reason :new
+                          :target-session-file previous-file})
            (let [cwd (runtime/cwd engine)
                  sessions-dir (cfg/get-session-dir (runtime/config engine))
                  new-session (session/create-session (runtime/ensure-cwd-session-dir
@@ -262,13 +263,12 @@
     (loop-state/restore-session-context! (runtime/agent-state engine))
     (reset! (:compaction-queued engine) [])
     (reset! (:pending-compaction engine) [])
-    (event-bus/emit-event!
-     (cond-> {:type :session-tree
-              :new-leaf-id @(:leaf-id sess)
-              :old-leaf-id old-leaf
-              :from-extension? (boolean from-extension?)}
-       summary-entry (assoc :summary-entry summary-entry))
-     (runtime/agent-ctx engine))
+    (events/emit! (runtime/agent-ctx engine)
+                  (cond-> {:type :session-tree
+                           :new-leaf-id @(:leaf-id sess)
+                           :old-leaf-id old-leaf
+                           :from-extension? (boolean from-extension?)}
+                    summary-entry (assoc :summary-entry summary-entry)))
     summary-entry))
 
 (defn fork!

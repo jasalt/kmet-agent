@@ -233,8 +233,8 @@ either key fails the load with the replacement spelled out:
 The kernel mounts the plugin, so the extension stays **pending** while a
 declared service is absent and `:apply` runs the moment the last one appears,
 and unloading disposes what it registered. A name is a service keyword the
-composition provides at the root — for the built-in profiles `:events`,
-`:tools`, `:commands`, `:prompts`, `:skills`, `:system-prompt`,
+composition provides at the root — for the built-in profiles `:logger`,
+`:events`, `:tools`, `:commands`, `:prompts`, `:skills`, `:system-prompt`,
 `:sessionPersistence`, `:sessions`, `:projections`, `:agents`, `:agentLoop`,
 `:approvals` and `:ui` (`:permissions` in a gated profile) — or one an app
 defines itself; `:optional` entries do not hold the mount, and a name nothing

@@ -2,6 +2,7 @@
   "The /import command: picking a session file, switching the live session, and the
    re-render that follows (pi: handleImportCommand)."
   (:require [clojure.test :as t :refer [deftest testing]]
+            [kmet.app.events :as events]
             [kmet.test-utils :as tu :refer [slash strip-ansi]]
             [clojure.string :as str]
             [kmet.tui.components.editor :as editor]
@@ -33,7 +34,6 @@
             [kmet.ui.tui.footer-data-provider :as fdp]
             [babashka.fs :as fs]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions.core :as extensions]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
             [kmet.ui.tui.interactive.test-support :as support]))
@@ -304,8 +304,9 @@
               (testing "an extension cancelling :session-before-switch wins
                           even after Yes — no copy, no switch"
                 (reset! sel-ref nil)
-                (event-bus/clear-event-listeners!)
-                (event-bus/on-event :session-before-switch (fn [_] {:cancel true}))
+                (tu/clear-listeners! (runtime/agent-ctx (:engine cs)))
+                (events/on! (runtime/agent-ctx (:engine cs))
+                            :session-before-switch (fn [_] {:cancel true}))
                 ((:handler cmd) cs (:file src))
                 (protocols/handle-input @sel-ref "\r")
                 (t/is (= {:role :status :content "Import cancelled"} (last-message ch)))
@@ -313,7 +314,7 @@
                 (t/is (= (:id active) (:id (runtime/session (:engine cs))))))
               (testing "a source already in the session dir is not re-copied"
                 (reset! sel-ref nil)
-                (event-bus/clear-event-listeners!)
+                (tu/clear-listeners! (runtime/agent-ctx (:engine cs)))
                 ((:handler cmd) cs (:file active))
                 (protocols/handle-input @sel-ref "\r")
                 (t/is (= 1 (count (fs/list-dir (str dir "/dest"))))

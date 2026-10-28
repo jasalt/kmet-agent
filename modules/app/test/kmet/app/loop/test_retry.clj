@@ -3,7 +3,6 @@
   (:require [clojure.test :as t]
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
@@ -111,13 +110,13 @@
       (t/is (empty? (filter #(= :assistant (:role %)) (state/get-context agent)))
             "no assistant message entered the context"))))
 
-(t/deftest test-loop-agent-end-will-retry-ui-only
-  ;; pi: the public agent_end is decorated with :will-retry; the extension
-  ;; runner's copy is emitted before the decoration and omits the key
-  ;; (agent-session.ts, _emitExtensionEvent vs _emit).
+(t/deftest test-loop-agent-end-carries-will-retry-to-every-listener
+  ;; pi decorates the public agent_end with :will-retry and emits a bare copy to
+  ;; the extension runner. One table carries one copy, so the callback and the
+  ;; listeners see the same decoration (the split's only difference was the key).
   (let [ui (atom [])
         ext (atom [])
-        dereg (event-bus/on-event :agent-end #(swap! ext conj %))
+        dereg (support/on-event :agent-end #(swap! ext conj %))
         call-count (atom 0)
         agent (support/make-agent-state
                :on-event (fn [e] (swap! ui conj e))
@@ -140,9 +139,11 @@
       (let [ui-ae (filter #(= :agent-end (:type %)) @ui)
             ext-ae (filter #(= :agent-end (:type %)) @ext)]
         (t/is (some true? (map :will-retry ui-ae))
-              "the UI copy carries :will-retry on a retryable attempt")
-        (t/is (every? #(not (contains? % :will-retry)) ext-ae)
-              "the extension copy omits :will-retry"))
+              "the callback carries :will-retry on a retryable attempt")
+        (t/is (some true? (map :will-retry ext-ae))
+              "and so does the listener table")
+        (t/is (= (mapv :will-retry ui-ae) (mapv :will-retry ext-ae))
+              "the two sinks see the same agent_end events"))
       (finally (dereg)))))
 
 (t/deftest test-loop-appends-keyed-to-attempt-not-agent-token
@@ -317,7 +318,7 @@
                              (swap! starts conj (state/get-context @agent-ref)))))]
     (try
       (reset! agent-ref agent)
-      (event-bus/on-event
+      (support/on-event
        :turn-end
        (fn [_]
          (when (= 1 (swap! boundaries inc))
@@ -355,7 +356,7 @@
                       (state/get-context agent))
             "the live context excludes the failed attempt")
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-cancel-records-aborted-attempt

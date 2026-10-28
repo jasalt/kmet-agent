@@ -10,7 +10,6 @@
             [kmet.ai.google-adc :as google-adc]
             [kmet.app.tools.util :as tool-util]
             [kmet.app.extensions.core :as extensions]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
@@ -305,7 +304,7 @@
 
 (t/deftest test-loop-events-routed-to-extension-system
   (let [received (atom [])
-        dereg (event-bus/on-event :status (fn [e] (swap! received conj e)))
+        dereg (support/on-event :status (fn [e] (swap! received conj e)))
         agent (support/make-agent-state :on-event (fn [_]))]
     (loop/cancel-turn agent)
     (dereg)

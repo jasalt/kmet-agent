@@ -5115,6 +5115,41 @@ a flag — kernel-shaped, and worth scoping first to leaf rows (`:ext/*`,
 `:restart-required` on every enable, which is dsh's no-HMR behavior and an
 honest place to stop.
 
+## The event bus: one table
+
+**Landed.** The app's process-level listener table (`kmet.app.event-bus`) is
+gone; the extension ABI registers on the host's ctx — the app root, already the
+scope an extension's `:inject` mounts under — and every emission dispatches
+through `kmet.app.events/emit!`, which picks the fold from the event's declared
+`:mode`. The vocabulary, the wire projections and `event-bus/wire-*` stay where
+they were.
+
+What the split was hiding, and the landing fixed:
+
+- `:session-before-compact` was declared `:emit` while `ask-before-compact!`
+  read its return value — the app table ignored modes, so the declaration was
+  never dispatched by. It is `:collect-last` now, and `emit!` refuses a mode the
+  kernel does not implement.
+- An emission must name a ctx (`:kmet.app/bad-event-ctx`); the six
+  process-wide emissions (the provider bridges, `discover-resources!`) take the
+  request's or the run's ctx, so the events stay in the subtree they belong to.
+- `loop.state/emit`'s two-copy agent_end split (`:will-retry` for the front end,
+  a bare copy for extensions) is one emission: one table carries one copy.
+  `loop/emit-boundary` is `state/emit` — the boundary mode is the declaration's
+  job, not a second dispatcher.
+- Extension-only events are a vocabulary property now (`:public false`):
+  `:context` / `:context-with-system` / `:before-provider-request` /
+  `:before-provider-headers` / `:after-provider-response` /
+  `:resources-discover` and the four `:session-before-*` hooks. Unifying the
+  tables had put the provider bridges — a full request payload and the
+  `Authorization` header among them — on the public stream that print-edn,
+  rpc and server write, and the before-hooks carry an abort atom that is not
+  EDN. `on-every` is the public stream and skips them; `wire-event` also drops
+  `:signal` as a belt. The wire gained the app's session lifecycle events,
+  which `docs/rpc.md` already promised.
+- Tests name the ctx they subscribe on (`kmet.test-utils/subscribe!`), and the
+  old `clear-event-listeners!` reset is `clear-listeners! ctx`.
+
 ## Gates
 
 - `bb test`, `bb test-ext`, `bb lint` (zero findings), `bb format-check`,

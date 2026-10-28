@@ -7,11 +7,11 @@
             [kmet.ai.models :as models]
             [kmet.ai.auth :as auth]
             [kmet.app.extensions.core :as extensions]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
             [kmet.app.config :as cfg]
+            [kmet.app.event-bus :as event-bus]
             [kmet.app.loop.test-support :as support]))
 
 (t/use-fixtures :each support/with-host)
@@ -260,19 +260,19 @@
           ends (atom 0)
           late? (fn [m] (= "late" (get-in m [:content 0 :text])))]
       (try
-        (event-bus/on-event :agent-end
-                            (fn [_]
+        (support/on-event :agent-end
+                          (fn [_]
                               ;; deferred once, during the settle window —
                               ;; after the last turn's flush
-                              (when (= 1 (swap! ends inc))
-                                (state/defer-custom-message! agent {:role :custom
-                                                                    :custom-type :note
-                                                                    :content "late"
-                                                                    :display true}))))
-        (event-bus/on-event :agent-before-settle
-                            (fn [e]
-                              (swap! boundaries conj e)
-                              {:continue true}))
+                            (when (= 1 (swap! ends inc))
+                              (state/defer-custom-message! agent {:role :custom
+                                                                  :custom-type :note
+                                                                  :content "late"
+                                                                  :display true}))))
+        (support/on-event :agent-before-settle
+                          (fn [e]
+                            (swap! boundaries conj e)
+                            {:continue true}))
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message (support/stub-llm-text-turns calls ["ok"] opts)]
           ;; the second boundary's rejected continuation warns to stderr
@@ -291,7 +291,7 @@
         (t/is (= 1 (count (filter late? @(:messages agent))))
               "appended exactly once")
         (finally
-          (event-bus/clear-event-listeners!))))))
+          (support/clear-listeners!))))))
 
 (t/deftest test-loop-turn-end-continue-honors-a-deferred-custom-message
   (t/testing "a deferred custom message makes the turn-end boundary runnable
@@ -305,8 +305,8 @@
           calls (atom 0)
           late? (fn [m] (= "late" (get-in m [:content 0 :text])))]
       (try
-        (event-bus/on-event :turn-end
-                            (fn [_] (when (= 1 (swap! turns inc)) {:continue true})))
+        (support/on-event :turn-end
+                          (fn [_] (when (= 1 (swap! turns inc)) {:continue true})))
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message
                       (fn [o]
@@ -328,7 +328,7 @@
         (t/is (= 1 (count (filter late? @(:messages agent))))
               "appended exactly once")
         (finally
-          (event-bus/clear-event-listeners!))))))
+          (support/clear-listeners!))))))
 
 (t/deftest test-loop-events-are-plain-edn
   (t/testing "every event the loop emits is documented and round-trips through EDN"

@@ -133,7 +133,7 @@
                                      :total-timeout-ms deadline
                                      :session-id (some-> (:session agent) :id)
                                      :cache-retention :none
-                                     :hooks (extensions/provider-hooks)
+                                     :hooks (extensions/provider-hooks (:ctx agent))
                                      :max-tokens max-tokens
                                      :on-text (fn [t] (swap! text-buf str t))
                                      :on-tool-call (fn [tc] (swap! tc-buf conj tc))

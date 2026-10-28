@@ -557,7 +557,7 @@ pi events (`core/extensions/types.ts`) → kmet status (`kmet.app.event-bus` `ev
 | `thinking_level_select` | ✅ `:thinking-level-select` | emitted by `set-thinking-level!` on actual change |
 | `user_bash` | ✅ `:user-bash` | |
 | `input` | ✅ | input hooks (transform/handled) |
-| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.app.event-bus` and bridged to the per-call provider hooks (`kmet.agent.extensions.core/provider-hooks` → `kmet.ai.llm/send-message` opts) — the runtime reads them once per attempt: emit-event! → hook apply → last non-nil result |
+| `before_provider_request` / `before_provider_headers` / `after_provider_response` | ✅ | defined in `kmet.app.event-bus` and bridged to the per-call provider hooks (`kmet.agent.extensions.core/provider-hooks` → `kmet.ai.llm/send-message` opts) — the runtime reads them once per attempt: `events/emit!` at the request's ctx → hook apply → last non-nil result |
 | `resources_discover` | ✅ `:resources-discover` | fired after `:session-start`; `extensions/discover-resources!` applies contributed path sets into the skills/prompts/themes registries, each under the owner that contributed it (re-discovery replaces in place, unload takes them with the extension) |
 | `mcp_servers_change` | ❌ | pi 1.3 emits it when an extension registers/unregisters an MCP server; kmet has no extension MCP registration (see §5) |
 | `provider_stream_event` | ❌ | kmet's per-call provider hooks stop at `:on-context` / `:on-payload` / `:on-headers` / `:on-response` (`kmet.ai.llm/send-message`); per-stream events are not bridged |

@@ -147,7 +147,7 @@
       ;; Provider-event bridges (pi: context / before_provider_request / …):
       ;; read once for this attempt, so a handler installed mid-run reaches
       ;; the next request and this one keeps the hooks it started with.
-                       :hooks (extensions/provider-hooks)
+                       :hooks (extensions/provider-hooks (:ctx agent))
                        :idle-timeout-ms (:http-idle-timeout-ms @(:cfg agent))
       ;; Whole-request deadline enforced by the transport (HttpRequest.timeout
       ;; / curl --max-time); the idle timeout above is separate and resets

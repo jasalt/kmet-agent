@@ -3,7 +3,6 @@
    interact with a running turn."
   (:require [clojure.test :as t]
             [kmet.ai.llm :as llm]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.compaction.stage :as compact]
             [kmet.app.loop.state :as state]
             [kmet.app.loop :as loop]
@@ -203,13 +202,13 @@
         events (atom [])
         queue-once (atom true)
         agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))
-        dereg-end (event-bus/on-event
+        dereg-end (support/on-event
                    :agent-end
                    (fn [_]
                      (when (compare-and-set! queue-once true false)
                        (state/steer! agent "steered by agent-end")
                        (state/follow-up! agent "followed up by agent-end"))))
-        dereg-settled (event-bus/on-event
+        dereg-settled (support/on-event
                        :agent-settled
                        (fn [_] (state/follow-up! agent "queued by agent-settled")))]
     (try

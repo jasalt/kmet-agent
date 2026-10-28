@@ -12,7 +12,8 @@
    an effect of the registering fiber (an unload unregisters it LIFO), what a
    listener hears is decided by where it registers (the ctx and its descendants),
    and `srce/collect-all!` reports `[owner result]` pairs — a contribution
-   applied under the owner that made it.
+   applied under the owner that made it. `emit!` dispatches by the event's
+   declared mode, so a declaration is the contract a dispatch honours.
 
    Registration is never bound to a ctx by the service: `on!` always takes the
    registrant's own ctx, because that is the listener's lifetime and its scope.
@@ -44,10 +45,11 @@
 (declare plugin known-event-type?)
 
 (defn declared-events
-  "The vocabulary this namespace declares, as `[{:name :mode :domain :doc}]` in
-   name order — read from the plugin map **in this file**, which is the
-   declaration the kernel mounts. Nothing is loaded beyond the namespace that
-   holds it, and there is no projection to go stale.
+  "The vocabulary this namespace declares, as
+   `[{:name :mode :domain :doc :public}]` in name order — read from the plugin
+   map **in this file**, which is the declaration the kernel mounts. Nothing is
+   loaded beyond the namespace that holds it, and there is no projection to go
+   stale.
 
    A plugin declares its own events the same way (`:events` on `defplugin`); this
    is the row that owns the built-in vocabulary until the loop, the session and
@@ -56,10 +58,55 @@
    mounted fiber's declarations against each other."
   []
   (->> (:events plugin)
-       (map (fn [[event {:keys [mode domain doc]}]]
-              {:name event :mode (or mode :emit) :domain (or domain :loop) :doc doc}))
+       (map (fn [[event {:keys [mode domain doc public]}]]
+              {:name event
+               :mode (or mode :emit)
+               :domain (or domain :loop)
+               :doc doc
+               ;; an extension-only event is not on the public stream: its
+               ;; payload is request machinery (a provider payload, headers, an
+               ;; abort signal), not a fact a wire consumer renders
+               :public (not (false? public))}))
        (sort-by (comp str :name))
        vec))
+
+(defn declarations
+  "The vocabulary as `{name {:mode :domain :doc :public}}` — the plugin map's
+   own declaration, read directly. This is what `emit!` dispatches by."
+  []
+  (:events plugin))
+
+(defn emit!
+  "Dispatch EVENT on CTX by its declared mode — the declaration drives the
+   dispatcher, so an event's `:mode` is its contract, not a comment.
+
+   Returns what the mode answers: nil for `:emit`, the last non-nil result for
+   `:collect-last`, `[owner result]` pairs for `:collect-all`, the accumulated
+   decision map for `:boundary`. An undeclared type dispatches as `:emit` and is
+   reported, as an undeclared registration is."
+  [ctx event]
+  (let [event-type (:type event)
+        declaration (get (declarations) event-type)
+        mode (:mode declaration :emit)]
+    (when-not (srce/ctx? ctx)
+      (throw (ex-info (str "event " (pr-str event-type)
+                           " has no emitting ctx — every emission belongs to a scope")
+                      {:type :kmet.app/bad-event-ctx
+                       :event event-type})))
+    (when-not declaration
+      (srce/log! ctx :warn "events: unknown event type" event-type))
+    (when-not (contains? srce/dispatch-modes mode)
+      (throw (ex-info (str "event " (pr-str event-type) " declares an unknown dispatch mode")
+                      {:type :kmet.app/bad-event-mode
+                       :event event-type
+                       :mode mode})))
+    (case mode
+      :emit (srce/emit! ctx event-type event)
+      :bail (srce/bail! ctx event-type event)
+      :waterfall (srce/waterfall! ctx event-type event)
+      :collect-last (srce/collect-last! ctx event-type event)
+      :collect-all (srce/collect-all! ctx event-type event)
+      :boundary (srce/boundary! ctx event-type event))))
 
 ;; ── registration ──────────────────────────────────────────────────────────
 
@@ -75,16 +122,22 @@
   ([ctx type f] (on! ctx type nil f))
   ([ctx type {:keys [owner]} f]
    (when-not (known-event-type? type)
-     (srce/log! ctx :warn "event-bus: unknown event type" type))
+     (srce/log! ctx :warn "events: unknown event type" type))
    (srce/on ctx type {:data owner} f)))
 
 (defn on-every
-  "Register F for every event the vocabulary declares, as one subscription:
-   F sees each event with its `:type`. Returns the disposer for the lot — a
-   consumer that wants the whole stream (a mode writing the wire) subscribes
-   once, not once per name."
+  "Register F for every **public** event the vocabulary declares, as one
+   subscription: F sees each event with its `:type`. Returns the disposer for
+   the lot — a consumer that wants the whole stream (a front end, a mode
+   writing the wire) subscribes once, not once per name.
+
+   Extension-only events are excluded: `:context` / `:before-provider-*` /
+   `:after-provider-response` carry the request's payload and headers, and the
+   `:session-before-*` hooks carry a control object. They are for extensions,
+   which subscribe by name; a wire must not carry them."
   [ctx f]
-  (let [disposers (mapv (fn [event] (on! ctx (:name event) f)) (declared-events))]
+  (let [disposers (mapv (fn [event] (on! ctx (:name event) f))
+                        (filter :public (declared-events)))]
     (fn []
       (doseq [dispose disposers] (dispose))
       nil)))
@@ -157,7 +210,7 @@
                             :doc "Thinking level changed (pi: thinking_level_select, emitted by
                         kmet.app.loop.state/set-thinking-level! on an actual change).
                         Payload: :level, :previous-level."}
-    :session-before-switch {:mode :collect-last :domain :app
+    :session-before-switch {:mode :collect-last :domain :app :public false
                             :doc "Actionable: fired before /new or /resume replaces the active session
                         (pi: emitBeforeSwitch). Payload: :reason (:new | :resume),
                         :target-session-file (optional; the destination path, or the outgoing
@@ -212,7 +265,7 @@
                         more for every auto-retry, overflow-recovery, or agent-end-queued
                         attempt (pi: agent_start, emitted by agent.prompt and by every
                         agent.continue)."}
-    :session-before-tree {:mode :collect-last :domain :app
+    :session-before-tree {:mode :collect-last :domain :app :public false
                           :doc "Fired before a session-tree navigation branches (pi: session_before_tree).
                         Payload: :preparation {:target-id :old-leaf-id :common-ancestor-id
                         :entries-to-summarize :user-wants-summary :custom-instructions
@@ -232,17 +285,17 @@
                         :follow-up — the complete current queues; :reason :aborted when
                         cancel-turn dropped pending messages, so a headless consumer can tell a
                         drop from a drain that delivered the same (empty) queues."}
-    :session-before-fork {:mode :collect-last :domain :app
+    :session-before-fork {:mode :collect-last :domain :app :public false
                           :doc "Actionable: fired before forking or cloning at a message (pi:
                         session_before_fork). Payload: :entry-id, :position (:at). Handlers may
                         return {:cancel true} to abort the fork."}
-    :context-with-system {:mode :collect-last :domain :app
+    :context-with-system {:mode :collect-last :domain :app :public false
                           :doc "Fired after :context with the full transcript — system prompt included — and
                         the result is sent verbatim (pi: context_with_system). Payload: :messages.
                         Handlers may return {:messages [...]}; a result that drops the leading
                         system message is reported as an extension error and honored, as pi does.
                         The last non-nil result wins."}
-    :after-provider-response {:mode :collect-last :domain :app
+    :after-provider-response {:mode :collect-last :domain :app :public false
                               :doc "Fired after the provider response is received, before its body is
                         consumed (pi: after_provider_response). Payload: :status, :headers."}
     :compaction-end {:mode :emit :domain :loop
@@ -315,13 +368,13 @@
                         :context update, or a compaction (auto or manual) rebuilding the context
                         from the compacted session (pi: compaction_end re-renders the chat).
                         Payload: :messages — the new conversation messages."}
-    :before-provider-headers {:mode :collect-last :domain :app
+    :before-provider-headers {:mode :collect-last :domain :app :public false
                               :doc "Fired with the final request headers before the provider HTTP call (pi:
                         before_provider_headers — handlers mutate the map in place there; kmet's
                         maps are immutable, so handlers RETURN the replacement map and a nil
                         header value deletes that header). Payload: :headers. The last non-nil
                         map result replaces the headers."}
-    :context {:mode :collect-last :domain :app
+    :context {:mode :collect-last :domain :app :public false
               :doc "Fired before each LLM call with the conversation the request would send,
                         without the system prompt (pi: context — emitContext). Payload: :messages.
                         Handlers may return {:messages [...]} to replace the conversation; the
@@ -357,7 +410,7 @@
                        :doc "Fired before a retry attempt's backoff sleep when a transient LLM error
                         is detected (pi: auto_retry_start).
                         Payload: :attempt, :max-attempts, :delay-ms, :error-message."}
-    :resources-discover {:mode :collect-all :domain :app
+    :resources-discover {:mode :collect-all :domain :app :public false
                          :doc "Fired after :session-start to collect extension-contributed resource
                         paths (pi: resources_discover — fired after session_start). Payload:
                         :cwd, :reason (:startup | :reload). Handlers return
@@ -380,7 +433,7 @@
                    :doc "Model was changed (pi: model_select).
                         Payload: :model, :previous-model (resolved Model records; :previous-model
                         nil when the previous model is not registered), :source (:set | :cycle)."}
-    :session-before-compact {:mode :emit :domain :loop
+    :session-before-compact {:mode :collect-last :domain :loop :public false
                              :doc "Actionable: fired before context compaction — manual, threshold, or
                         overflow (pi: session_before_compact). Payload: :preparation (the
                         projection-aware CompactionPreparation: :messages, :tokens-before,
@@ -396,7 +449,7 @@
                            :doc "Session display name changed (pi: session_info_changed, emitted by the
                         /name command).
                         Payload: :session-file, :name."}
-    :before-provider-request {:mode :collect-last :domain :app
+    :before-provider-request {:mode :collect-last :domain :app :public false
                               :doc "Fired with the assembled request payload before the provider HTTP call
                         (pi: before_provider_request). Payload: :payload. The last non-nil
                         handler result replaces the payload."}

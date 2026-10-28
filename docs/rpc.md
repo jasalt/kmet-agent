@@ -57,6 +57,12 @@ the same `{:type ...}` vocabulary as the session stream, with the cumulative
 consumers watch `:message-update` deltas and stop at `:agent-settled`, whose
 `:outcome` is `:completed`, `:error`, or `:aborted`.
 
+The stream carries the **public** events: the loop's, and the app's session
+lifecycle and UI events. The extension-only hooks (`:context`,
+`:before-provider-*`, `:after-provider-response`, `:resources-discover`, the
+`:session-before-*` pair) never cross: they carry request payloads, headers, or
+a control object, and only an in-process extension subscribes them.
+
 ## Discipline
 
 - **Accepted is not completed.** A `prompt` response reports the disposition

@@ -10,7 +10,6 @@
             [kmet.app.extensions.core :as extensions]
             [kmet.app.extensions.context :as ext-context]
             [kmet.app.commands :as commands]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.registry :as registry]
             [kmet.app.test-support :as support]
             [kmet.test-utils :refer [spit-plugin]]
@@ -567,10 +566,10 @@
     (extensions/clear-extensions!)
     (let [dir "target/test-ext-ctx-events"
           probes (atom [])
-          unsub-a (event-bus/on-event :session-info-changed
-                                      (fn [ev] (swap! probes conj [:a ev])))
-          unsub-b (event-bus/on-event :queue-update
-                                      (fn [ev] (swap! probes conj [:b (:mode ev)])))
+          unsub-a (support/on-event :session-info-changed
+                                    (fn [ev] (swap! probes conj [:a ev])))
+          unsub-b (support/on-event :queue-update
+                                    (fn [ev] (swap! probes conj [:b (:mode ev)])))
           content (str "(ns ctx-events (:require [kmet.extension :as ext]))\n"
                        "(defn init [api]\n"
                        "  (ext/register-command! api {:name \"probe-cmd\"\n"
@@ -586,8 +585,8 @@
       (spit-plugin (str dir "/ext.clj") content)
       (let [result (extensions/load-extension! (str dir "/ext.clj"))]
         (t/is (nil? (:error result)) (str "loaded: " (:error result)))
-        (event-bus/emit-event! {:type :session-start})
-        (event-bus/emit-event! {:type :session-tree :new-leaf-id "x"})
+        (support/emit-event! {:type :session-start})
+        (support/emit-event! {:type :session-tree :new-leaf-id "x"})
         (let [[[_ probe-a] [_ mode-b]] @probes]
           (t/is (= :session-start (:from probe-a))
                 "arity-2 handler received the event")

@@ -114,6 +114,13 @@
   []
   (handle-with {}))
 
+(defn events-ctx
+  "The ctx a test's event listeners register on: the handle's agent ctx, which
+   is what the runtime emits at. The one table resolves a listener from the
+   emitting ctx upward, so registering here hears exactly this session."
+  [handle]
+  (:ctx (runtime/agent-state handle)))
+
 (defn- opt-or
   "OPTS' K, or DEFAULT when the caller did not name it — an explicit nil is
    none (the settings panel's :tui nil is a missing terminal, not a stub)."

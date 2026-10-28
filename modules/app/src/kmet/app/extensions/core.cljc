@@ -72,7 +72,7 @@
             [babashka.fs :as fs]
             [babashka.process :as proc]
             [kmet.ai.models :as models]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.extensions.context :as context]
             [kmet.app.registry :as registry]
             [kmet.app.session.core :as session]
@@ -112,17 +112,17 @@
    full transcript and their output is used verbatim. kmet's bus keeps the
    last non-nil result, so the leading-system check in the second phase is
    against that result (pi checks each handler's)."
-  [messages]
+  [ctx messages]
   (let [messages (vec messages)
         head (when (= :system (:role (first messages))) (first messages))
         visible (filterv #(not= :system (:role %)) messages)
-        context-result (event-bus/emit-event! {:type :context :messages visible})
+        context-result (events/emit! ctx {:type :context :messages visible})
         context-replaced (:messages context-result)
         messages (if (and context-replaced (not= context-replaced visible))
                    (into (if head [head] []) context-replaced)
                    messages)
-        result (event-bus/emit-event! {:type :context-with-system
-                                       :messages messages})
+        result (events/emit! ctx {:type :context-with-system
+                                  :messages messages})
         system-replaced (:messages result)]
     (cond
       (nil? system-replaced) messages
@@ -142,21 +142,23 @@
    after_provider_response events). The runtime reads this once per attempt
    and merges it into the request opts, so a handler installed mid-run
    reaches the next request while an in-flight one keeps the hooks it
-   started with — the hooks are arguments, not installed globals."
-  []
-  {:on-context emit-context-events
+   started with — the hooks are arguments, not installed globals. They emit at
+   CTX: the caller names the scope the request belongs to (the agent's), so a
+   listener registered there or above hears it."
+  [ctx]
+  {:on-context (fn [messages] (emit-context-events ctx messages))
    :on-payload (fn [payload]
-                 (let [result (event-bus/emit-event! {:type :before-provider-request
-                                                      :payload payload})]
+                 (let [result (events/emit! ctx {:type :before-provider-request
+                                                 :payload payload})]
                    (if (some? result) result payload)))
    :on-headers (fn [headers]
-                 (let [result (event-bus/emit-event! {:type :before-provider-headers
-                                                      :headers headers})]
+                 (let [result (events/emit! ctx {:type :before-provider-headers
+                                                 :headers headers})]
                    (if (map? result) result headers)))
    :on-response (fn [{:keys [status headers]}]
-                  (event-bus/emit-event! {:type :after-provider-response
-                                          :status status
-                                          :headers headers}))})
+                  (events/emit! ctx {:type :after-provider-response
+                                     :status status
+                                     :headers headers}))})
 
 ;; ─── Extension records ────────────────────────────────────────────────────
 (defrecord Extension [name path kind loader-kind bundled? artifact entry-ns loader jars api deregister-fns initialized? jar-files])
@@ -1121,6 +1123,22 @@
 
 (declare loader-aware loader-aware-map)
 
+(defn- host-ctx
+  "The ctx an extension's registrations and emissions land in: the app root the
+   host is bound to, or nil when the binding carries none. Guarded because the
+   host may be read before its owner binds it."
+  []
+  (try (:ctx (services)) (catch Exception _ nil)))
+
+(defn- host-ctx!
+  "Like `host-ctx`, but a caller without one gets an error instead of a
+   registration (or an emission) on no tree."
+  []
+  (or (host-ctx)
+      (throw (ex-info (str "the extension host has no ctx to register on — "
+                           "bind-services! must carry one")
+                      {:type :kmet/no-host-ctx}))))
+
 (defn- create-extension-api
   "Build the api map for an extension, with the composition row's CONFIG (nil
    for a load outside a row). A registration the app owns (commands,
@@ -1155,7 +1173,7 @@
       ;; extension's plugin mounts under — app-wide by construction; the
       ;; plugin's own ctx is `:apply`'s first argument. nil when no ctx is
       ;; bound.
-      :ctx (try (:ctx (services)) (catch Exception _ nil))
+      :ctx (host-ctx)
       ;; host agent dir (KMET_CODING_AGENT_DIR-aware; pi: getAgentDir) —
       ;; extensions keep their configs/caches under it
       :agent-dir (cfg/get-agent-dir)
@@ -1202,13 +1220,18 @@
       :get-all-tools #(vals (tools/get-all-tools (handle)))
       :get-active-tools get-active-tools
       :set-active-tools set-active-tools
+      ;; The subscription registers at the host ctx — the app root — so it
+      ;; hears every agent under it, as the old process-wide table did; it is
+      ;; `track`ed because a non-plugin extension owns no fiber effect.
       :on-event (fn [event-type handler]
-                  (let [dereg (event-bus/on-event
-                               event-type (extension-owner name)
-                               (wrap-event-handler (loader-aware ext handler)))]
+                  (let [dereg (events/on! (host-ctx!) event-type
+                                          {:owner (extension-owner name)}
+                                          (wrap-event-handler (loader-aware ext handler)))]
                     (track dereg)
                     dereg))
-      :emit-event! event-bus/emit-event!
+      ;; An extension's own emission belongs to its host's scope, so an
+      ;; extension hears its own event and the app hears it too.
+      :emit-event! (fn [event] (events/emit! (host-ctx!) event))
       ;; The hooks, renderers and flags live in the app's registries under the
       ;; extension's own owner, so unload's owner sweep is their teardown and
       ;; they are NOT tracked: the tracked list stays for what lives outside any
@@ -1835,18 +1858,19 @@
    skills/prompts registries, :theme-paths into the theme store (pi:
    resourceLoader.extendResources → updateSkills/Prompts/ThemesFromPaths;
    paths are directories). ALL handler results are collected (pi collects
-   each handler's contribution — see emit-event-collect!), each applied under
-   the owner that contributed it, so re-discovery after the next session
+   each handler's contribution — the :collect-all fold of `events/emit!`),
+   each applied under the owner that contributed it, so re-discovery after the
+   next session
    start replaces the same names instead of duplicating them (pi's mergePaths
    dedup, done by the registry's per-owner addressing rather than a path set)
    and unloading an extension takes its resources with it. A throwing handler is skipped (its
    paths are lost). Returns the collected
    {:skill-paths [...] :prompt-paths [...] :theme-paths [...]}."
-  [reason]
-  (let [contributions (event-bus/emit-event-collect!
-                       {:type :resources-discover
-                        :cwd (str (fs/cwd))
-                        :reason reason})]
+  [ctx reason]
+  (let [contributions (events/emit! ctx
+                                    {:type :resources-discover
+                                     :cwd (str (fs/cwd))
+                                     :reason reason})]
     (reduce (fn [acc [owner result]]
               (apply-contributed-paths! owner result)
               (cond-> acc

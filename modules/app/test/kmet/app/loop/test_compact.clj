@@ -7,7 +7,6 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.ai.usage :as usage]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.session.core :as session]
             [kmet.app.compaction :as compact]
             [kmet.app.loop.state :as state]
@@ -921,16 +920,16 @@
       (fn [{:keys [sess events agent]}]
         (let [calls (atom 0)]
           (try
-            (event-bus/on-event :session-before-compact
-                                (fn [ev]
-                                  (t/is (some? (:custom-instructions ev))
-                                        "the handler sees pi's customInstructions")
-                                  {:compaction
-                                   {:summary "extension summary"
-                                    :first-kept-id (get-in ev [:preparation :first-kept-id])
-                                    :tokens-before 123
-                                    :usage {:prompt_tokens 7 :completion_tokens 2}
-                                    :details {:artifact 42}}}))
+            (support/on-event :session-before-compact
+                              (fn [ev]
+                                (t/is (some? (:custom-instructions ev))
+                                      "the handler sees pi's customInstructions")
+                                {:compaction
+                                 {:summary "extension summary"
+                                  :first-kept-id (get-in ev [:preparation :first-kept-id])
+                                  :tokens-before 123
+                                  :usage {:prompt_tokens 7 :completion_tokens 2}
+                                  :details {:artifact 42}}}))
             (with-redefs [cfg/get-api-key (fn [_] "test-key")
                           llm/send-message (fn [_] (swap! calls inc) (future :done))]
               (binding [*err* (java.io.StringWriter.)]
@@ -949,7 +948,7 @@
               (t/is (= {:artifact 42} (:details entry)))
               (t/is (true? (:from-hook entry))
                     "the entry records the extension origin (pi: fromHook)"))
-            (finally (event-bus/clear-event-listeners!))))))))
+            (finally (support/clear-listeners!))))))))
 
 (t/deftest test-loop-extension-supplied-compaction-bad-target
   (t/testing "an extension-supplied compaction whose first-kept-id is not in
@@ -957,10 +956,10 @@
     (support/with-compaction-run
       (fn [{:keys [sess events agent]}]
         (try
-          (event-bus/on-event :session-before-compact
-                              (fn [_] {:compaction {:summary "bogus"
-                                                    :first-kept-id "no-such-entry"
-                                                    :tokens-before 1}}))
+          (support/on-event :session-before-compact
+                            (fn [_] {:compaction {:summary "bogus"
+                                                  :first-kept-id "no-such-entry"
+                                                  :tokens-before 1}}))
           (with-redefs [cfg/get-api-key (fn [_] "test-key")
                         llm/send-message (fn [_] (future :done))]
             (t/is (= :failed (binding [*err* (java.io.StringWriter.)]
@@ -970,7 +969,7 @@
           (t/is (nil? (first (filter #(= :compaction (:role %)) @(:entries sess))))
                 "nothing was appended")
           (t/is (nil? (support/event-of events :session-compact)) "no success event")
-          (finally (event-bus/clear-event-listeners!)))))))
+          (finally (support/clear-listeners!)))))))
 
 (t/deftest test-loop-empty-summary-is-appended
   (t/testing "an empty summarization response is appended as-is (pi:
@@ -1301,7 +1300,7 @@
                  :session sess
                  :keep-recent-tokens 40
                  :on-event (fn [e] (swap! events conj e)))
-          dereg (event-bus/on-event
+          dereg (support/on-event
                  :session-before-compact
                  (fn [ev]
                    (t/is (= :threshold (:reason ev)) "reason rides the event")

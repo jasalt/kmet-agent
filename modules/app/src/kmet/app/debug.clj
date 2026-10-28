@@ -7,7 +7,8 @@
    the session loader's wrong-shape reporting (`kmet.app.session.store`),
    which is why this namespace names that layer. One switch owned in one place,
    rather than every `--debug` consumer remembering to flip its own."
-  (:require [kmet.app.session.store :as session-store]))
+  (:require [kmet.app.session.store :as session-store]
+            [kmet.srce.core :as srce]))
 
 (defonce ^:private log-path "kmet-debug.log")
 (defonce ^:private error-path "kmet-error.log")
@@ -55,6 +56,15 @@
     (when @debug-enabled
       (write-line log-path line))))
 
+(defn logger
+  "The kernel's `:logger` service (`srce/log!`): `(logger level & args)`. An
+   `:error` is always written (log-error); every other level follows --debug,
+   with the level as the line's prefix so one file stays readable."
+  [level & args]
+  (if (= level :error)
+    (apply log-error args)
+    (apply log (str (name level) ": ") args)))
+
 (defn enable!
   "Enable debug logging and the diagnostics it implies."
   []
@@ -74,4 +84,11 @@
   []
   @debug-enabled)
 
-
+;; The kernel's `:logger` service (`srce/log!`), provided into the mount site's
+;; scope: a listener failure or a refused registration is reported through it,
+;; and absent means silent. A row rather than a boot-time provision, so it
+;; unwinds with the composition like every other service.
+(srce/defplugin plugin
+  {:name :logger
+   :apply (fn [ctx _config]
+            (srce/provide! ctx :logger logger {:in (:parent ctx)}))})

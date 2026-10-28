@@ -33,6 +33,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -69,6 +70,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -99,6 +101,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -129,6 +132,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -160,6 +164,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -190,6 +195,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -219,6 +225,7 @@ its layers; this page is what the build ships.
 
 | row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:logger` | `kmet.app.debug/plugin` |  |  |  |  |
 | `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
@@ -310,7 +317,9 @@ Run a Clojure script with the active tools bridged in: one call can do a whole t
 
 Use it for general scripting and multi-step work — parse/transform/generate data, scan or filter many files with fs/slurp/sh, run a search→read→verify chain, or fan out N tool calls and reduce them. Use bash for one small command and read for one file.
 
-Tools: (tools/call "name" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe "name"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.
+Tools: (tools/call "name" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe "name"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. Calls start in submission order and calls to a sequential tool run alone, so an awaited write is never overtaken by a later call. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.
+
+Images: (emit-image "shot.png") attaches an image to the result — a supported image file path or an {:data <base64> :mime-type <str>} block; up to 8 images of 5 MiB each.
 
 Sandbox: Clojure; on babashka a full babashka surface, on the JVM the java.lang/java.io/java.util subset. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); System/java.io.*/Throwable resolve on babashka and the JVM (Jolt's SCI exposes no class table). Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB.
 

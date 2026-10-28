@@ -10,7 +10,6 @@
             [kmet.app.registries :as registries]
             [kmet.app.commands :as commands]
             [kmet.app.registry :as registry]
-            [kmet.app.event-bus :as event-bus]
             [kmet.srce.core :as srce]
             [kmet.app.prompts :as prompts]
             [kmet.app.skills :as skills]
@@ -181,7 +180,7 @@
   ;; owner, so re-discovery replaces instead of duplicating (no applied-path
   ;; set) and unload takes the skills, prompts and themes with it.
   (extensions/clear-extensions!)
-  (event-bus/clear-event-listeners!)
+  (support/clear-listeners!)
   (let [dir "target/test-ext-resource-owner"
         skill-dir (str dir "/skills")
         prompt-dir (str dir "/prompts")
@@ -215,7 +214,7 @@
         (t/is (nil? (:error result)) (str "loaded: " (:error result))))
       (t/is (= {:skill-paths [skill-dir] :prompt-paths [prompt-dir]
                 :theme-paths [theme-dir]}
-               (extensions/discover-resources! :startup))
+               (extensions/discover-resources! (support/composition-ctx) :startup))
             "the collected paths are reported")
       (doseq [[service tag name] [[:skills :kmet/skill "res-owned-skill"]
                                   [:prompts :kmet/prompt "res-owned-prompt"]]]
@@ -226,7 +225,7 @@
                (set (keys (registry/by-owner (registry/current) :kmet/theme "res-owned-theme"))))
             "the theme is the contributor's registry record")
       (t/is (some? (theme/get-theme-by-name "res-owned-theme")))
-      (extensions/discover-resources! :startup)
+      (extensions/discover-resources! (support/composition-ctx) :startup)
       (t/is (= 1 (count (filter #(= "res-owned-skill" (:name %)) (skills/get-skills)))))
       (t/is (= 1 (count (filter #(= "res-owned-prompt" (:name %))
                                 (prompts/get-prompt-templates)))))
@@ -241,7 +240,7 @@
       (t/is (empty? (registry/by-owner (registry/current) :kmet/theme "res-owned-theme")))
       (finally
         (extensions/clear-extensions!)
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-extension-resource-in-a-late-callback

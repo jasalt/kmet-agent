@@ -605,26 +605,23 @@ at all: a listener hears what is emitted from the ctx it registered on and that
 ctx's subtree — the same rule as kmet1's node scoping, expressed by the tree
 instead of a stored node.
 
-**The app's process-level table is the extension ABI's.** The *vocabulary*
+**The app owns the vocabulary; the kernel owns the table.** The *vocabulary*
 (three fifths of what was `event-bus.clj`, pure data) lives in
 `kmet.app.events`, declared as `:events` in the `:events` plugin map and read
 from that declaration (not from a generated projection — one was tried and
-deleted: a file in the load path for data that is already in code), and the
-modes over the ctx table are the kernel's. `kmet.app.event-bus` re-exports the
-names and keeps the app's process-level table, its owner/scope and its three
-emitters, because the extension ABI registers there: an extension subscribes
-at load, before any agent exists, and its lifetime is load → unload rather
-than a fiber's. One contract test asserts the same delivery behaviors against
-both tables so the pair cannot drift. The two agree on the *value*: a
-subscription's scope is a ctx (`srce/inside?`), so the app table and the
-kernel table differ on where a listener lives, not on what a scope means.
+deleted: a file in the load path for data that is already in code). The
+dispatcher is `kmet.app.events/emit!`, which picks the fold from the event's
+declared `:mode`; `kmet.app.event-bus` re-exports the names and keeps the wire
+projections only. The extension ABI registers on the host's ctx (the app
+root), so an extension's subscription is an ordinary listener — no second
+table, and one contract test over the app layer (plus the kernel's own) holds
+the delivery behaviors.
 
-Retiring the app table is therefore not a mechanical re-point: the kernel
-dispatch walks *up* from the emitting ctx, while the app table also lets a
-process-wide emission reach a listener registered on a child ctx, so a
-retirement has to decide that rule as well as where an unscoped registration
-lands. The kernel's own rule is the one `srce.md` documents, and adopting it is
-what the retirement waits on.
+The retirement settled the two rules the split left open: a subscription's
+scope is the ctx it registers on (the kernel's walk up, no process-wide
+special case), and an emission must name a ctx — `events/emit!` refuses a nil
+one (`:kmet.app/bad-event-ctx`). The extension ABI needed no new mechanism for
+either: the host's ctx is the app root, which is an ancestor of every agent.
 
 **Declaration lives above the kernel.** `:events` on a plugin is the
 declaration form: `plugin!` checks the shape (`{event {:mode :doc …}}`), the
@@ -718,8 +715,9 @@ from the keyword. A runtime is dropped when its last fiber unloads, so a later
 ## 7. `:logger` is a service, not a subsystem
 
 The kernel writes nothing to stdout. `(srce/log! ctx level & args)` resolves
-`:logger` and calls it; absent means silent. kmet2 provides
-`(srce/provide! ctx :logger kmet.app.debug/log)` at boot.
+`:logger` and calls it; absent means silent. The composition's `:logger` row
+(`kmet.app.debug/plugin`) provides `kmet.app.debug/logger`: an `:error` always
+writes `kmet-error.log`, the other levels follow `--debug`.
 
 `kmet.srce.*` may require only rank-0 code — in practice `kmet.libs.*` and, for
 source resolution, `kmet.loader.*` — plus third-party code, so the kernel

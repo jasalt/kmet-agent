@@ -7,7 +7,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.session.backend :as backend]
             [kmet.app.session.core :as session]
@@ -17,7 +17,6 @@
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
             [kmet.app.agents :as agents]
-            [kmet.app.events :as events]
             [kmet.app.extensions :as host]
             [kmet.app.loop.driver :as driver]
             [kmet.app.permissions :as permissions]
@@ -406,12 +405,11 @@
   ;; session facades answered nil in a kmet2 run.
   (let [{:keys [root agents]} (mounted)
         seen (atom [])
-        off (event-bus/on-event
-             :agent-start nil
-             (fn [_]
-               (swap! seen conj
-                      {:session (:id (extensions/get-session))
-                       :model (:model (extensions/build-extension-context))})))]
+        off (events/on! root :agent-start {}
+                        (fn [_]
+                          (swap! seen conj
+                                 {:session (:id (extensions/get-session))
+                                  :model (:model (extensions/build-extension-context))})))]
     (try
       (with-stubbed-llm
         (fn [_]
@@ -443,16 +441,14 @@
       (with-stubbed-llm
         (fn [_]
           (let [h (create! {:root root :agents agents})
-                off (event-bus/on-event
-                     :agent-start nil
-                     (fn [_]
-                       (let [ctx (extensions/build-extension-context)]
-                         (swap! seen conj [:mode (:mode ctx)])
-                         (swap! seen conj [:has-ui (:has-ui ctx)]))
-                       (extensions/ui-notify "hi")
-                       (extensions/append-custom-message! :note "custom" true)
-                       (extensions/append-custom-entry! :blob {:a 1}))
-                     (:ctx h))]
+                off (events/on! (:ctx h) :agent-start {}
+                                (fn [_]
+                                  (let [ctx (extensions/build-extension-context)]
+                                    (swap! seen conj [:mode (:mode ctx)])
+                                    (swap! seen conj [:has-ui (:has-ui ctx)]))
+                                  (extensions/ui-notify "hi")
+                                  (extensions/append-custom-message! :note "custom" true)
+                                  (extensions/append-custom-entry! :blob {:a 1})))]
             (try
               (reset! (:front-end h)
                       {:mode :interactive :has-ui true :ui port
@@ -490,10 +486,8 @@
       (with-stubbed-llm
         (fn [_]
           (let [h (create! {:root root :agents agents})
-                off (event-bus/on-event
-                     :agent-start nil
-                     (fn [_] (extensions/ui-notify "inert"))
-                     (:ctx h))]
+                off (events/on! (:ctx h) :agent-start {}
+                                (fn [_] (extensions/ui-notify "inert")))]
             (try
               (reset! (:front-end h) {:mode :interactive :has-ui true :ui {}})
               ((:send! agents) h "go" {:target :next-turn})
@@ -517,13 +511,11 @@
       (with-stubbed-llm
         (fn [_]
           (let [h (create! {:root root :agents agents})
-                off (event-bus/on-event
-                     :agent-start nil
-                     (fn [_]
-                       (when (compare-and-set! once false true)
-                         (extensions/send-user-message "steer me" {:deliver-as :steer})
-                         (deliver handled true)))
-                     (:ctx h))]
+                off (events/on! (:ctx h) :agent-start {}
+                                (fn [_]
+                                  (when (compare-and-set! once false true)
+                                    (extensions/send-user-message "steer me" {:deliver-as :steer})
+                                    (deliver handled true))))]
             (try
               ((:send! agents) h "hi" {:target :next-turn})
               (is (true? (deref handled 2000 false)) "the handler ran")

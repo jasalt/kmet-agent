@@ -6,7 +6,6 @@
             [clojure.test :refer [deftest is testing]]
             [kmet.app.commands :as commands]
             [kmet.app.config :as cfg]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.compaction :as agent-compact]
             [kmet.app.loop :as agent]
@@ -557,17 +556,17 @@
       (is (true? (session-driver/wait-idle! engine 100)) "idle again after both clear"))))
 
 (deftest test-a-subscription-outlives-any-engine
-  ;; Extensions subscribe at load, before any engine exists, and the bus is a
-  ;; process-level registry (F10): an engine neither adopts nor wipes it, so
-  ;; a subscription is live before the first engine and after that engine is
-  ;; disposed — the engine-owned copy started the next one blind.
-  (event-bus/clear-event-listeners!)
+  ;; Extensions subscribe at load, before any engine exists, at the composition
+  ;; root: an engine neither adopts nor wipes it, so a subscription is live
+  ;; before the first engine and after that engine is disposed — the
+  ;; engine-owned copy started the next one blind.
+  (support/clear-listeners!)
   (let [fired (atom 0)
-        dereg (event-bus/on-event :message-start (fn [_] (swap! fired inc)))]
+        dereg (support/on-event :message-start (fn [_] (swap! fired inc)))]
     (try
-      (with-engine (fn [_ _] (event-bus/emit-event! {:type :message-start})))
+      (with-engine (fn [_ _] (support/emit-event! {:type :message-start})))
       (is (= 1 @fired) "the subscription registered before the engine fires")
-      (with-engine (fn [_ _] (event-bus/emit-event! {:type :message-start})))
+      (with-engine (fn [_ _] (support/emit-event! {:type :message-start})))
       (is (= 2 @fired) "and it survives the first engine's disposal")
       (finally (dereg)))))
 

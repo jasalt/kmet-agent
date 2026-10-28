@@ -12,11 +12,12 @@
    agent, one new session."
   (:require [clojure.string :as str]
             [clojure.test :as t :refer [deftest is testing]]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.session.runtime :as runtime]
             [kmet.tui.components.editor :as editor]
             [kmet.ui.tui.interactive.session-admin :as session-admin]
+            [kmet.app.events :as events]
+            [kmet.test-utils :as tu]
             [kmet.ui.tui.interactive.test-handle-support :as hs]))
 
 (t/use-fixtures :each hs/with-boot)
@@ -27,10 +28,11 @@
             install is what an out-of-run extension handler sees"
     (let [{:keys [ctx agents handle]} (hs/create-handle! (hs/current))
           old-session (runtime/session handle)
-          _ (event-bus/clear-event-listeners!)
+          _ (tu/clear-listeners! (hs/events-ctx handle))
           shutdown-events (atom [])
-          _ (event-bus/on-event :session-shutdown
-                                (fn [ev] (swap! shutdown-events conj ev)))
+          _ (events/on! (hs/events-ctx handle)
+                        :session-shutdown
+                        (fn [ev] (swap! shutdown-events conj ev)))
           cs (hs/core-state handle)]
       (try
         (session-admin/handle-new-session cs)
@@ -48,4 +50,4 @@
               "extensions are told the runtime is torn down before the swap")
           (is (str/blank? (editor/editor-get-text (:editor cs)))
               "the editor is cleared"))
-        (finally (event-bus/clear-event-listeners!))))))
+        (finally (tu/clear-listeners! (hs/events-ctx handle)))))))

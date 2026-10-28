@@ -24,7 +24,7 @@
             [kmet.app.commands.builtins :as runtime-commands]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.extensions.rows :as extension-rows]
-            [kmet.app.event-bus :as event-bus]
+            [kmet.app.events :as events]
             [kmet.app.keybindings :as app-kb]
             [kmet.app.packages :as packages]
             [kmet.app.prompts :as prompts]
@@ -659,8 +659,8 @@
         ;; pi: session.reload → emitSessionShutdownEvent(reason reload)
         ;; BEFORE the runner is torn down, so extensions can persist
         ;; state; then extension shutdown/start
-              _ (event-bus/emit-event! {:type :session-shutdown :reason :reload}
-                                       (runtime/agent-ctx (:engine cs)))
+              _ (events/emit! (runtime/agent-ctx (:engine cs))
+                              {:type :session-shutdown :reason :reload})
               _ (extensions/ui-reset!)
               ;; extensions are plugin rows: reload the ones the composition
               ;; mounted in place (the world no longer loads any from settings)
@@ -730,11 +730,11 @@
           ;; Runs on a future — handlers may block on dialog promises, which
           ;; must never happen on the input thread.
           (future
-            (try (event-bus/emit-event! {:type :session-start :reason :reload}
-                                        (runtime/agent-ctx (:engine cs)))
+            (try (events/emit! (runtime/agent-ctx (:engine cs))
+                               {:type :session-start :reason :reload})
                  ;; pi: resources_discover fires after session_start (reason
                  ;; reload) — extensions contribute skill/prompt/theme paths
-                 (extensions/discover-resources! :reload)
+                 (extensions/discover-resources! (runtime/agent-ctx (:engine cs)) :reload)
                  (catch Exception e (debug/log "session-start: " e))))
           (chat-history/chat-history-add-message! chat-history
                                                   {:role :info :label "Reload"

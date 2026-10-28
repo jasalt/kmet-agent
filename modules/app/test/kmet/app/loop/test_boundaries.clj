@@ -7,7 +7,6 @@
             [babashka.fs :as fs]
             [kmet.ai.llm :as llm]
             [kmet.ai.models :as models]
-            [kmet.app.event-bus :as event-bus]
             [kmet.app.events :as events]
             [kmet.app.session.core :as session]
             [kmet.app.loop.state :as state]
@@ -186,7 +185,7 @@
         agent (support/make-agent-state :on-event (fn [e] (swap! events conj e))
                                         :session (session/create-session dir))]
     (try
-      (event-bus/on-event
+      (support/on-event
        :turn-end
        (fn [e]
          (swap! boundaries conj e)
@@ -227,7 +226,7 @@
                (mapv :type (take 2 (drop-while #(not= :turn-end (:type %)) @events))))
             "the committed message is announced as the boundary closes")
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-turn-end-boundary-carries-persisted-entry-ids
@@ -240,7 +239,7 @@
         calls (atom 0)
         agent (support/make-agent-state :session (session/create-session dir))]
     (try
-      (event-bus/on-event :turn-end (fn [e] (swap! boundaries conj e) nil))
+      (support/on-event :turn-end (fn [e] (swap! boundaries conj e) nil))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     state/execute-tool-for (fn [_ _ _ _] {:content "ok" :is-error false})
                     llm/send-message (support/stub-llm-tool-then-text calls)]
@@ -274,7 +273,7 @@
         (t/is (= (:context-messages tool-turn) (:llm-messages tool-turn))
               "nothing to flatten: the llm view is the projection"))
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-turn-end-boundary-continue-runs-one-more-turn
@@ -283,12 +282,12 @@
         opts (atom [])
         agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
-      (event-bus/on-event :turn-end
-                          (fn [e]
-                            (when (zero? (:turn-index e))
-                              {:entries [{:role :user
-                                          :content [{:type :text :text "nudge"}]}]
-                               :continue true})))
+      (support/on-event :turn-end
+                        (fn [e]
+                          (when (zero? (:turn-index e))
+                            {:entries [{:role :user
+                                        :content [{:type :text :text "nudge"}]}]
+                             :continue true})))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["first" "second"] opts)]
         @(loop/run-agent-turn agent {:message "run"
@@ -301,7 +300,7 @@
       (t/is (= ["run" "nudge"] (support/request-user-texts (second @opts)))
             "the committed entry is part of the next request")
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-turn-end-continue-without-a-runnable-context-is-rejected
   (let [{:keys [calls warn]} (support/run-prompt-asking-to-continue :turn-end {})]
@@ -370,7 +369,7 @@
                                      :on-done (fn [_])
                                      :on-error (fn [_])}))
       (let [seed-id (:id (first (session/get-branch (:session agent))))]
-        (event-bus/on-event
+        (support/on-event
          :turn-end
          (fn [_]
            ;; only the first boundary dispatches a draft
@@ -404,7 +403,7 @@
         (t/is (= ["second" "third"] (support/request-user-texts (last @opts)))
               "the next prompt's request excludes the omitted message"))
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-turn-end-boundary-invalid-context-edit-is-dropped
@@ -414,7 +413,7 @@
         warn (java.io.StringWriter.)
         agent (support/make-agent-state :session (session/create-session dir))]
     (try
-      (event-bus/on-event
+      (support/on-event
        :turn-end
        (fn [_]
          {:entries [{:role :context-edit :target-id "missing" :replacement nil}
@@ -431,7 +430,7 @@
             "the rest of the batch still commits")
       (t/is (= 1 @calls) "the prompt settled normally")
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-finish-turn-hook-decisions
@@ -495,10 +494,10 @@
           opts (atom [])
           agent (support/make-agent-state)]
       (reset! (:finish-turn agent) (fn [_] :end))
-      (event-bus/on-event :turn-end
-                          (fn [_] {:entries [{:role :user
-                                              :content [{:type :text :text "nudge"}]}]
-                                   :continue true}))
+      (support/on-event :turn-end
+                        (fn [_] {:entries [{:role :user
+                                            :content [{:type :text :text "nudge"}]}]
+                                 :continue true}))
       (try
         (with-redefs [cfg/get-api-key (fn [_] "test-key")
                       llm/send-message (support/stub-llm-text-turns calls ["done"] opts)]
@@ -509,7 +508,7 @@
         (t/is (= "nudge" (get-in (last (state/get-context agent)) [:content 0 :text]))
               "the boundary's entries are committed regardless")
         (finally
-          (event-bus/clear-event-listeners!))))))
+          (support/clear-listeners!))))))
 
 (t/deftest test-loop-turn-end-fires-for-a-failed-attempt
   ;; pi: finishTurn and turn_end run for a stopReason-error response too, so an
@@ -540,7 +539,7 @@
         (t/is (= :error (get-in (first tes) [:message :stop-reason])))
         (t/is (= 0 (:turn-index (first tes)))))
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-turn-end-fires-for-an-aborted-turn
   (let [events (atom [])
@@ -561,7 +560,7 @@
         (t/is (= [:turn-end :agent-end :agent-settled]
                  (support/events-of @events #{:turn-end :agent-end :agent-settled}))))
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-agent-before-settle-carries-the-context-preview
   ;; pi: _buildBoundaryContext — the pre-settle boundary carries the same
@@ -572,7 +571,7 @@
         opts (atom [])
         agent (support/make-agent-state :session (session/create-session dir))]
     (try
-      (event-bus/on-event :agent-before-settle (fn [e] (swap! boundaries conj e) nil))
+      (support/on-event :agent-before-settle (fn [e] (swap! boundaries conj e) nil))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["done"] opts)]
         @(loop/run-agent-turn agent {:message "run"
@@ -588,7 +587,7 @@
         (t/is (= (:context-messages boundary) (:llm-messages boundary))
               "nothing to flatten: the llm view is the projection"))
       (finally
-        (event-bus/clear-event-listeners!)
+        (support/clear-listeners!)
         (fs/delete-tree dir)))))
 
 (t/deftest test-loop-agent-before-settle-continue-runs-another-attempt
@@ -599,7 +598,7 @@
         opts (atom [])
         agent (support/make-agent-state :on-event (fn [e] (swap! events conj e)))]
     (try
-      (event-bus/on-event
+      (support/on-event
        :agent-before-settle
        (fn [e]
          (swap! boundaries conj e)
@@ -625,7 +624,7 @@
                (support/events-of @events #{:agent-before-settle :agent-settled}))
             "the boundary precedes the terminal :agent-settled")
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-agent-before-settle-continue-without-context-is-rejected
   (let [{:keys [calls warn]} (support/run-prompt-asking-to-continue :agent-before-settle {})]
@@ -642,10 +641,10 @@
         queued (atom 0)
         agent (support/make-agent-state)]
     (try
-      (event-bus/on-event :agent-before-settle
-                          (fn [_]
-                            (when (= 1 (swap! queued inc))
-                              (state/follow-up! agent "settle follow-up"))))
+      (support/on-event :agent-before-settle
+                        (fn [_]
+                          (when (= 1 (swap! queued inc))
+                            (state/follow-up! agent "settle follow-up"))))
       (with-redefs [cfg/get-api-key (fn [_] "test-key")
                     llm/send-message (support/stub-llm-text-turns calls ["first" "second"] opts)]
         @(loop/run-agent-turn agent {:message "run"
@@ -655,7 +654,7 @@
       (t/is (= ["run" "settle follow-up"] (support/request-user-texts (second @opts))))
       (t/is (empty? @(:follow-up agent)) "the queue was drained into the prompt")
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-agent-before-settle-reports-an-error-outcome
   ;; pi: a terminal error still reaches the pre-settle boundary, with the
@@ -665,7 +664,7 @@
         boundaries (atom [])
         agent (support/make-agent-state :max-retries 0 :base-delay-ms 1)]
     (try
-      (event-bus/on-event
+      (support/on-event
        :agent-before-settle
        (fn [e]
          (swap! boundaries conj e)
@@ -686,7 +685,7 @@
       (t/is (= 2 @calls) "the boundary revived the errored prompt")
       (t/is (= 2 @errors) "the second attempt's error surfaces too")
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 (t/deftest test-loop-agent-before-settle-not-run-for-a-cancelled-prompt
   (let [events (atom [])
@@ -707,7 +706,7 @@
             "a cancelled prompt skips the pre-settle boundary (pi: the prompt
              loop's abort exits before _runBeforeSettleBoundary)")
       (finally
-        (event-bus/clear-event-listeners!)))))
+        (support/clear-listeners!)))))
 
 ;; ─── Total request deadline ──────────────────────────────────────────────
 
@@ -824,26 +823,25 @@
 
 ;; ─── Phase 7b-i: one boundary, one decision ───────────────────────────────
 
-(t/deftest test-a-boundary-decision-crosses-both-event-layers
-  ;; The loop dispatches an actionable boundary on the kernel first and hands
-  ;; that decision to the extension table as its seed (new-app.md, 7b-i), so a
-  ;; front end's contribution reaches an extension handler: one chain, not two
-  ;; opinions that silently disagree.
+(t/deftest test-a-boundary-decision-reaches-the-next-handler
+  ;; One chain: a front end's contribution reaches the handler after it, so two
+  ;; layers cannot hold different opinions (new-app.md, 7b-i). The handlers sit
+  ;; on the run's own ctx, which is where the loop dispatches.
   (let [{ctx :ctx} (support/test-ctx)
         front-end-saw (atom [])
-        table-saw (atom [])
+        next-saw (atom [])
         dispose-fe (events/on! ctx :turn-end
                                (fn [ev] (swap! front-end-saw conj (:type ev))
                                  {:kmet.test/marker true}))
-        dispose-table (event-bus/on-event :turn-end
-                                          (fn [ev] (swap! table-saw conj (:kmet.test/marker ev))))]
+        dispose-next (events/on! ctx :turn-end
+                                 (fn [ev] (swap! next-saw conj (:kmet.test/marker ev))))]
     (try
       (binding [support/*ctx* ctx]
         (support/run-turn-capturing-llm (support/make-agent-state) {:message "hi"}))
-      (t/is (= [:turn-end] @front-end-saw) "the app's layer hears the boundary")
-      (t/is (= [true] @table-saw)
-            "and the handler after it sees the front end's decision, not a blank slate")
-      (finally (dispose-fe) (dispose-table)))))
+      (t/is (= [:turn-end] @front-end-saw) "the first listener hears the boundary")
+      (t/is (= [true] @next-saw)
+            "and the handler after it sees the decision, not a blank slate")
+      (finally (dispose-fe) (dispose-next)))))
 
 (t/deftest test-a-runs-events-belong-to-its-subtree
   ;; The loop dispatches from the run's own ctx, not from the app's scope: a

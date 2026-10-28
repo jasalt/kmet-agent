@@ -11,6 +11,7 @@
             [kmet.app.session.core :as session]
             [kmet.app.session.driver :as session-driver]
             [kmet.app.config :as cfg]
+            [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))
 
 (defn- install-runtime-capabilities!
@@ -27,7 +28,7 @@
             until the whole prompt loop finishes, so an :agent-end handler's
             message extends the prompt)"
     (let [model (m/map->Model {:provider :test-native :id "test-model"})
-          ag (agent/make-agent-state :provider :test-native :model "test-model")
+          ag (agent/make-agent-state :ctx (srce/root) :provider :test-native :model "test-model")
           ;; The settle window: a prompt is in flight (running-turn? true) but
           ;; the last attempt already reported the agent idle.
           cs (tu/with-test-engine {:agent-state (atom ag)
@@ -79,7 +80,7 @@
                                                          (System/currentTimeMillis))))
                   fs/absolutize str)
           sess (session/create-session dir)
-          ag (agent/make-agent-state :session sess)
+          ag (agent/make-agent-state :ctx (srce/root) :session sess)
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :config cfg/default-config
                                    :session-atom (atom sess)})
@@ -134,7 +135,7 @@
   (testing "the runtime :set-model capability follows the Model record"
     (let [old (m/map->Model {:provider :test-native :id "old"})
           model (m/map->Model {:provider :test-adapter :id "test-model"})
-          ag (agent/make-agent-state :provider :test-native :model "old")
+          ag (agent/make-agent-state :ctx (srce/root) :provider :test-native :model "old")
           cs (tu/with-test-engine {:agent-state (atom ag)
                                    :config cfg/default-config
                                    :session-atom (atom nil)})

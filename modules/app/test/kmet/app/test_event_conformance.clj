@@ -185,9 +185,8 @@
   ;; plain events as :emit and the actionable ones (loop-boundary-names) as
   ;; boundaries. The declaration is only honest if what a live turn emits goes
   ;; down the path its own entry names — a name sent down the other fold would
-  ;; contradict its documentation. Both listener tables receive the same
-  ;; dispatch, so this is a property of the vocabulary plus the loop, not a
-  ;; comparison between two layers.
+  ;; contradict its documentation. One table, one dispatch: this is a property
+  ;; of the vocabulary plus the loop, not a comparison between two layers.
   (let [modes (into {} (map (juxt :name :mode)) (app-events/declared-events))
         emitted (set (map :type (run-scenario (stub-tool-then-text (atom 0)))))]
     (t/is (contains? emitted :turn-end) "the scenario reaches the boundary path")

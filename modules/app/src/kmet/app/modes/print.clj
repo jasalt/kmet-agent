@@ -70,8 +70,9 @@
 
 (defn- subscriptions
   "SCOPE's listeners for a run of FORMAT, as one disposer — text mode takes three
-   kinds (deltas, the error, the settle), edn mode takes every event the
-   vocabulary declares and prints it. Both deliver SETTLED once: a settle that
+   kinds (deltas, the error, the settle), edn mode takes every public event the
+   vocabulary declares and prints it (an extension-only hook is not wire data).
+   Both deliver SETTLED once: a settle that
    never arrives would leave the run's thread parked, so the disposer delivers
    `:disposed`."
   [scope format settled error]
