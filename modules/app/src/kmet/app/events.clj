@@ -130,32 +130,48 @@
       (registry/register! handle tag name spec owner)))
   nil)
 
+(defn- deregister!
+  "Remove OWNER's declarations from the vocabulary registry at CTX, when one is
+   still mounted."
+  [ctx owner]
+  (when-let [handle (srce/get ctx :events)]
+    (registry/deregister-owner! handle tag owner))
+  nil)
+
+(defn declare-fiber!
+  "Declare FIBER's `:events` under OWNER, at the fiber's mount ctx.
+
+   An **active** fiber's declaration is an effect of that fiber, so it lives
+   exactly as long as the mount: disposing the fiber (a preset's agent,
+   `dispose-plugin!`, an extension's unload) takes its vocabulary with it, and
+   the entry unwinds LIFO ahead of the fiber's own provides. A **pending**
+   fiber cannot own effects yet, so its declaration is direct and lives until
+   the caller sweeps OWNER — the host's unload does. Returns nil."
+  [fiber owner]
+  (let [{:keys [ctx name state events]} (srce/fiber-info fiber)]
+    (if (= :active state)
+      (srce/effect ctx
+                   (fn []
+                     (declare! ctx owner events)
+                     (fn [] (deregister! ctx owner)))
+                   (str "declare " name))
+      (declare! ctx owner events))
+    nil))
+
 (defn declare-mounted!
   "Declare the `:events` of every active fiber in FIBERS, under its plugin name
-   and its fiber. What a mount path calls once the mounts have settled *and*
-   validated: `boot`, `mount-deferred!` and a preset. A failed fiber's
-   declaration is not installed.
-
-   The declaration is registered as an **effect of the mounting fiber**, so it
-   lives exactly as long as the mount: disposing a row (a preset's agent,
-   `dispose-plugin!`) takes its vocabulary with it, and the effect entry itself
-   unwinds LIFO ahead of the fiber's own provides.
+   and its fiber (`declare-fiber!`). What a mount path calls once the mounts
+   have settled *and* validated: `boot`, `mount-deferred!` and a preset. A
+   failed fiber's declaration is not installed.
 
    While it exists the declaration is app-wide — the registry is the
    composition's `:events` service — so a preset adds vocabulary to the app for
    as long as its agent lives. Returns nil."
   [fibers]
   (doseq [fiber fibers
-          :let [{:keys [name uid state events] mount-ctx :ctx} (srce/fiber-info fiber)
-                owner [:app name uid]]
+          :let [{:keys [name state events uid]} (srce/fiber-info fiber)]
           :when (and (= :active state) (seq events) (some? name))]
-    (srce/effect mount-ctx
-                 (fn []
-                   (declare! mount-ctx owner events)
-                   (fn []
-                     (when-let [handle (srce/get mount-ctx :events)]
-                       (registry/deregister-owner! handle tag owner))))
-                 (str "declare " name)))
+    (declare-fiber! fiber [:app name uid]))
   nil)
 
 (defn emit!

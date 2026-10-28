@@ -538,6 +538,63 @@
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))
 
+(t/deftest test-an-extensions-declaration-is-an-effect-of-its-mount
+  ;; An active extension's events are declared as an effect of its plugin fiber
+  ;; (`declare-fiber!`), the same way a composition row's are: the mount's
+  ;; disposal removes the vocabulary, not only the unload sweep.
+  (let [dir "target/test-ext-events-dispose"
+        ctx (support/composition-ctx)]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/evt_disp"))
+    (spit (str dir "/extension.edn")
+          "{:name \"evt-disp\" :plugin evt-disp.main/plugin :loader [:sci :jolt]}\n")
+    (spit (str dir "/evt_disp/main.clj")
+          (str "(ns evt-disp.main)\n"
+               "(def plugin {:name :evt-disp\n"
+               "              :events {:evt/disp {:mode :emit :domain :app :doc \"fixture\"}}\n"
+               "              :apply (fn [_ctx _api] nil)})\n"))
+    (try
+      (extensions/unload-all-extensions!)
+      (let [result (extensions/load-extension! dir)
+            mount (first (filter #(= :evt-disp (:name %)) (srce/fibers ctx)))]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (t/is (= :active (:state mount)) "the plugin mounted")
+        (t/is (some #{"declare :evt-disp"} (:effects mount))
+              "the declaration is an effect of the mount")
+        (t/is (some? (events/declaration ctx :evt/disp))))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
+(t/deftest test-a-pending-extensions-declaration-is-swept-on-unload
+  ;; A pending mount cannot own effects, so its declaration is direct and the
+  ;; host's unload sweep is its teardown — the other half of `declare-fiber!`.
+  (let [dir "target/test-ext-events-pending"
+        ctx (support/composition-ctx)]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/evt_pending"))
+    (spit (str dir "/extension.edn")
+          "{:name \"evt-pending\" :plugin evt-pending.main/plugin :loader [:sci :jolt]}\n")
+    (spit (str dir "/evt_pending/main.clj")
+          (str "(ns evt-pending.main)\n"
+               "(def plugin {:name :evt-pending\n"
+               "              :inject [:nothing-provides-this]\n"
+               "              :events {:evt/pending {:mode :emit :domain :app :doc \"fixture\"}}\n"
+               "              :apply (fn [_ctx _api] nil)})\n"))
+    (try
+      (extensions/unload-all-extensions!)
+      (let [result (extensions/load-extension! dir)]
+        (t/is (nil? (:error result)) (str "loaded: " (:error result)))
+        (t/is (true? (:pending result)) "the mount is pending on its inject")
+        (t/is (some? (events/declaration ctx :evt/pending))
+              "a pending mount still declares its events")
+        (extensions/unload-all-extensions!)
+        (t/is (nil? (events/declaration ctx :evt/pending))
+              "unload sweeps it"))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
 (t/deftest test-an-extension-cannot-redeclare-a-core-event
   ;; The vocabulary is one contract: a plugin adding a name is fine, changing
   ;; how a core event dispatches fails the load — and the load-failure unload

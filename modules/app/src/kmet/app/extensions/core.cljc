@@ -1526,8 +1526,10 @@
                                      (reset! (:initialized? ext) true)))))
             _ (reset! (:fiber ext) fiber)
             ;; after the record holds the fiber: a refused declaration fails
-            ;; the load, whose unload must find the mount to dispose it
-            _ (events/declare! host-ctx (extension-owner (:name ext)) (:events plugin))
+            ;; the load, whose unload must find the mount to dispose it. An
+            ;; active mount owns its declaration as an effect; a pending one
+            ;; cannot, and unload's owner sweep is its teardown.
+            _ (events/declare-fiber! fiber (extension-owner (:name ext)))
             {:keys [state error ctx]} (srce/fiber-info fiber)]
         (when (= :failed state)
           (throw (ex-info (str "Extension " (:name ext) " failed: "
