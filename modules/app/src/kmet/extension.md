@@ -501,7 +501,14 @@ boundary.
 Ten events are **extension-only**: the six provider/resource bridges
 (`:context` `:context-with-system` `:before-provider-request`
 `:before-provider-headers` `:after-provider-response` `:resources-discover`)
-and the four `:session-before-*` hooks. They exist to let an extension shape a request or
+and the four `:session-before-*` hooks.
+
+An extension's own plugin map may declare events too — `:events {:my/event
+{:mode :emit :domain :app :doc "…"}}` on the `defplugin` map. The host
+registers them at load, so `emit-event!` on the name dispatches by that
+declaration, and unload sweeps them with the extension. A declaration is
+public unless it says `:public false`, and a name may be re-declared only
+identically — a plugin cannot change how a core event dispatches. They exist to let an extension shape a request or
 veto a session move, carry request machinery (a payload, a header map) or a
 control object, and are therefore not on the public stream a front end or the
 wire takes (`kmet.app.events/on-every` skips them) — an extension subscribes

@@ -271,9 +271,10 @@
          mounted (into [] (remove defer?) rows)
          fibers (mount-rows! ctx mounted)
          _ (srce/settle! ctx)
+         failed (check-mounts! ctx mounted fibers fibers diagnose?)
          _ (events/declare-mounted! ctx fibers)]
      {:ctx ctx :fibers fibers :rows (count mounted) :deferred deferred
-      :failed (check-mounts! ctx mounted fibers fibers diagnose?)})))
+      :failed failed})))
 
 (defn mount-deferred!
   "Mount the deferred rows BOOTED holds that PICK? matches, TRANSFORM applied to
@@ -295,9 +296,9 @@
             rows (mapv transform chosen)
             mounted (mount-rows! ctx rows)
             _ (srce/settle! ctx)
-            _ (events/declare-mounted! ctx mounted)
-            all-fibers (into (vec fibers) mounted)]
-        (check-mounts! ctx rows mounted all-fibers false)
+            all-fibers (into (vec fibers) mounted)
+            _ (check-mounts! ctx rows mounted all-fibers false)
+            _ (events/declare-mounted! ctx mounted)]
         (assoc booted
                :fibers all-fibers
                :rows (+ (:rows booted) (count rows))

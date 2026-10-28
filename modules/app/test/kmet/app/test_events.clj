@@ -11,6 +11,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [kmet.app.events :as events]
+            [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]))
 
 (defn- fresh-ctx
@@ -162,6 +163,25 @@
       (is (= [1] @seen))
       (is (= [:message-end] (vec (srce/event-names ctx)))
           "the surviving registration is the only name left"))))
+
+(deftest test-a-contradicting-declaration-is-refused
+  ;; A plugin may add a name, or re-declare one identically; it may not change
+  ;; how an already-declared event dispatches — including a built-in one.
+  (let [ctx (fresh-ctx)
+        spec {:mode :emit :domain :app :doc "mine"}]
+    (srce/provide! ctx :events (registry/atom-registry))
+    (events/declare! ctx [:app :a] {:my/event spec})
+    (is (= :emit (:mode (events/declaration ctx :my/event))))
+    (is (nil? (events/declare! ctx [:app :b] {:my/event spec}))
+        "an identical re-declaration is allowed")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already declared differently"
+                          (events/declare! ctx [:app :c]
+                                           {:my/event (assoc spec :mode :collect-last)}))
+        "a contradicting spec is refused")
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already declared differently"
+                          (events/declare! ctx [:app :c]
+                                           {:turn-end {:mode :emit :domain :loop :doc "hijack"}}))
+        "a built-in event cannot be re-declared differently")))
 
 ;; ── the public stream: extension-only events stay in-process ─────────────
 

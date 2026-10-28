@@ -87,12 +87,13 @@
   :kmet/event)
 
 (defn declaration
-  "TYPE's declaration visible from CTX: the mounted vocabulary registry's entry,
-   or this namespace's own when no registry is mounted (a bare test root) or
-   when that one does not name TYPE."
+  "TYPE's declaration visible from CTX: this namespace's own for a built-in name
+   (the hot path — no ctx walk, no allocation), else the mounted registry's
+   entry. The built-in vocabulary also cannot be overridden: `declare!` refuses
+   a spec that differs from the one already visible."
   [ctx type]
-  (or (some-> (srce/get ctx :events) (registry/entry tag type))
-      (get (declarations) type)))
+  (or (get (declarations) type)
+      (some-> (srce/get ctx :events) (registry/entry tag type))))
 
 (defn visible-declarations
   "The vocabulary visible from CTX as `{name spec}`: the mounted plugins'
@@ -107,22 +108,40 @@
   "Register EVENTS (`{name spec}`) under OWNER in the vocabulary registry the
    `:events` service holds at CTX — a plugin's `:events` map, made visible to
    `emit!` and `on-every`. A ctx with no service (a bare test root) keeps the
-   built-in vocabulary only. Returns nil."
+   built-in vocabulary only.
+
+   A name may be re-declared only identically (`kmet.app.runtime/boot` holds the
+   same rule across composition rows); a contradicting spec throws
+   `:kmet.app/event-conflict`, so no plugin can change how a core event
+   dispatches or silently disagree with a sibling. Returns nil."
   [ctx owner events]
   (when-let [handle (srce/get ctx :events)]
     (doseq [[name spec] events]
+      (when-some [existing (declaration ctx name)]
+        (when (not= existing spec)
+          (throw (ex-info (str "event " (pr-str name) " is already declared differently")
+                          {:type :kmet.app/event-conflict
+                           :event name
+                           :existing existing
+                           :declared spec
+                           :owner owner}))))
       (registry/register! handle tag name spec owner)))
   nil)
 
 (defn declare-mounted!
   "Declare the `:events` of every active fiber in FIBERS at CTX, under its
-   plugin name. What a mount path calls once the mounts have settled: `boot`,
-   `mount-deferred!` and a preset. A fiber without a declaration is skipped.
-   Returns nil."
+   plugin name. What a mount path calls once the mounts have settled *and*
+   validated: `boot`, `mount-deferred!` and a preset. A failed fiber's
+   declaration is not installed.
+
+   A declaration is app-wide by construction — the registry is the `:events`
+   service's, one per composition — so a preset's declaration outlives the
+   agent it was mounted for. No built-in bundle declares events; a preset that
+   did would be adding vocabulary to the app, not to its agent. Returns nil."
   [ctx fibers]
   (doseq [fiber fibers
-          :let [{:keys [name events]} (srce/fiber-info fiber)]
-          :when (and (seq events) (some? name))]
+          :let [{:keys [name state events]} (srce/fiber-info fiber)]
+          :when (and (= :active state) (seq events) (some? name))]
     (declare! ctx [:app name] events))
   nil)
 
@@ -184,7 +203,10 @@
    Extension-only events are excluded: `:context` / `:before-provider-*` /
    `:after-provider-response` carry the request's payload and headers, and the
    `:session-before-*` hooks carry a control object. They are for extensions,
-   which subscribe by name; a wire must not carry them."
+   which subscribe by name; a wire must not carry them.
+
+   The set is fixed at subscription time: an event a plugin declares later is
+   heard only by a subscriber that names it."
   [ctx f]
   (let [disposers (mapv (fn [[name _spec]] (on! ctx name f))
                         (filter (fn [[_ spec]] (not (false? (:public spec))))

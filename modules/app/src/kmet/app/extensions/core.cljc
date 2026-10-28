@@ -1524,9 +1524,11 @@
                                      (reset! (:api ext) api)
                                      ((loader-aware ext (:apply plugin)) fctx api)
                                      (reset! (:initialized? ext) true)))))
+            _ (reset! (:fiber ext) fiber)
+            ;; after the record holds the fiber: a refused declaration fails
+            ;; the load, whose unload must find the mount to dispose it
             _ (events/declare! host-ctx (extension-owner (:name ext)) (:events plugin))
             {:keys [state error ctx]} (srce/fiber-info fiber)]
-        (reset! (:fiber ext) fiber)
         (when (= :failed state)
           (throw (ex-info (str "Extension " (:name ext) " failed: "
                                (or (ex-message error)

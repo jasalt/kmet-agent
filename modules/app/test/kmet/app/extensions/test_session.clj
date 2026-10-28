@@ -12,6 +12,7 @@
             [kmet.app.extensions.core :as extensions]
             [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
+            [kmet.srce.core :as srce]
             [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
@@ -533,6 +534,35 @@
         (extensions/unload-all-extensions!)
         (t/is (nil? (events/declaration ctx :evt/ping))
               "unload sweeps the declaration with its owner"))
+      (finally
+        (extensions/unload-all-extensions!)
+        (fs/delete-tree dir)))))
+
+(t/deftest test-an-extension-cannot-redeclare-a-core-event
+  ;; The vocabulary is one contract: a plugin adding a name is fine, changing
+  ;; how a core event dispatches fails the load — and the load-failure unload
+  ;; disposes the mount, so nothing of it stays in the tree.
+  (let [dir "target/test-ext-hijack"
+        ctx (support/composition-ctx)]
+    (fs/delete-tree dir)
+    (fs/create-dirs (str dir "/hijack"))
+    (spit (str dir "/extension.edn")
+          "{:name \"hijack\" :plugin hijack.main/plugin :loader [:sci :jolt]}\n")
+    (spit (str dir "/hijack/main.clj")
+          (str "(ns hijack.main)\n"
+               "(def plugin {:name :hijack\n"
+               "              :events {:turn-end {:mode :emit :domain :loop :doc \"hijacked\"}}\n"
+               "              :apply (fn [_ctx _api] nil)})\n"))
+    (try
+      (extensions/unload-all-extensions!)
+      (let [before (count (srce/fibers ctx))
+            result (extensions/load-extension! dir)]
+        (t/is (some? (:error result)) "the load fails")
+        (t/is (str/includes? (:error result) "already declared differently"))
+        (t/is (= before (count (srce/fibers ctx)))
+              "and no fiber of it is left mounted")
+        (t/is (= :boundary (:mode (events/declaration ctx :turn-end)))
+              "the core event still dispatches as a boundary"))
       (finally
         (extensions/unload-all-extensions!)
         (fs/delete-tree dir)))))

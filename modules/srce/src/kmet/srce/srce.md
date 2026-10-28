@@ -178,8 +178,8 @@ is what reporting a subscription list reads instead of reaching into the
 :ctx` closes the loop, and no host's default printer detects it: `pr-str` of a
 ctx, or of any value holding one, is a stack overflow. Report names, counts and
 states (`(:state @fiber)`, `(children ctx)` counted, a service's *name*), never
-the value — which is also why a service value must not carry its ctx
-(`kmet.app.events/service` binds it in a closure).
+the value — which is also why a service value must not carry its ctx (the app's
+`:events` service is a registry handle for the same reason).
 
 **The kernel owns its tree.** `kmet.srce.*` must not require
 `kmet.libs.scope`: the kernel needs a parent/child walk and a per-fiber effect
