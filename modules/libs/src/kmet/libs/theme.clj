@@ -458,6 +458,21 @@
          (str/join "\n"))
     s))
 
+(defn- last-line-start-token
+  "Index and start offset of the last token in TOKENS that begins a line of
+   TEXT (at the start or just after a newline), or nil. Cutting there keeps
+   the newline token on the cached side, so a word's :function/:attr
+   lookahead (which skips spaces and tabs only) cannot reach into the tail
+   and be decided differently on the next delta."
+  [text tokens]
+  (loop [i 0, off 0, found nil, ts (seq tokens)]
+    (if-let [tok (first ts)]
+      (let [found (if (or (zero? off) (= \newline (nth text (dec off))))
+                    [i off]
+                    found)]
+        (recur (inc i) (+ off (count (second tok))) found (next ts)))
+      found)))
+
 (defn render-highlighted
   "Highlight CODE as LANG → vector of ANSI-colored lines (pi: highlightCode).
    Unsupported language → each line in mdCodeBlock color (pi behavior);
@@ -466,11 +481,12 @@
    code-block renderer and the write tool renderer (pi: both call
    highlightCode).
 
-   With CACHE (an atom) and a growing code text, the styled prefix before the
-   last token is reused and only that token plus the appended text is
+   With CACHE (an atom) and a growing code text, the styled prefix through
+   the last line-start token is reused and only the lines after it are
    tokenized — a token boundary is a clean scanner restart point for the
-   generic scanner. A streaming code fence therefore re-highlights its last
-   token, not its whole body. The cache is keyed by language and raw prefix;
+   generic scanner, and the newline before the cut keeps a word's lookahead
+   out of the tail. A streaming code fence therefore re-highlights its last
+   lines, not its whole body. The cache is keyed by language and raw prefix;
    markup/diff/Dockerfile/Markdown (custom scanners with construct state) are
    not prefix-cached."
   ([t code lang] (render-highlighted t code lang *code-cache*))
@@ -484,19 +500,25 @@
                              (str/starts-with? code (:text cached))
                              (< (count (:text cached)) (count code)))
                     cached)
-           tokens (hl/tokenize lang (if prefix (subs code (count (:text prefix))) code))]
+           suffix (if prefix (subs code (count (:text prefix))) code)
+           tokens (hl/tokenize lang suffix)]
        (if tokens
          (let [fmts (highlight-formatters t)
                styled (mapv #(highlight-token fmts %) tokens)
                full (str (when prefix (:styled prefix)) (apply str styled))]
            (when cacheable?
-             ;; Cache up to the start of the last token: the next delta
-             ;; re-tokenizes only that token plus whatever was appended.
-             (let [[_ last-text] (last tokens)
-                   last-styled (peek styled)]
-               (reset! cache {:text (subs code 0 (- (count code) (count last-text)))
-                              :styled (subs full 0 (- (count full) (count last-styled)))
-                              :lang lang})))
+             ;; Cut at the last line-start token: the next delta re-tokenizes
+             ;; only the lines after it.
+             (let [old-text (or (:text prefix) "")
+                   old-styled (or (:styled prefix) "")
+                   [cut-index cut-offset] (last-line-start-token suffix tokens)
+                   advance? (pos? cut-offset)]
+               (reset! cache
+                       {:text (if advance? (str old-text (subs suffix 0 cut-offset)) old-text)
+                        :styled (if advance?
+                                  (str old-styled (apply str (subvec styled 0 cut-index)))
+                                  old-styled)
+                        :lang lang})))
            (str/split full #"\n" -1))
          (mapv (fn [l] (fg t :md-code-block l)) (str/split code #"\n" -1)))))))
 

@@ -166,9 +166,8 @@
 
 (def ^:private ^:dynamic *code-lines-cache*
   "Optional atom for render-code's body-line cache, bound by render-lines.
-   Entry: {:text complete-line-prefix :n complete-line-count :hl styled
-   complete lines :groups body lines per line :prefix indent :content-width
-   cw :lang lang}. A streaming fence re-wraps only the line being typed and
+   Entry: {:key [pad indent width] :hl styled complete lines :groups body
+   lines per line}. A streaming fence re-wraps only the line being typed and
    the new lines."
   nil)
 
@@ -193,42 +192,35 @@
    wrap-text-with-ansi to CONTENT-WIDTH, not truncated with ellipsis.
 
    With *code-lines-cache* bound, the body lines of the complete code lines
-   are reused when the text still starts with them, so a growing fence wraps
-   only its last line and the new lines. The incomplete last line is never
+   are reused while their styled lines match, so a growing fence wraps only
+   its last line and the new lines. The incomplete last line is never
    cached."
   [result t theme content-width left-pad extra-indent]
   (let [indent (or (:code-block-indent theme) "  ")
         prefix (str left-pad extra-indent)
         lang (:lang t "")
-        text (:text t)
+        text (or (:text t) "")
         lines (vec (if-let [hl (:highlight-code theme)]
                      (hl text lang)
                      (mapv #((:code-block theme) %)
                            (if (str/blank? text) [] (str/split text #"\n" -1)))))
         ;; the last line is incomplete while the fence streams; only the
         ;; complete lines (through the last newline) are cacheable
-        nl (str/last-index-of text "\n")
-        prefix-text (if nl (subs text 0 (inc nl)) "")
-        ;; complete lines: one per newline, capped by what the highlighter
-        ;; returned (a custom hook may drop the trailing empty line)
         n-complete (min (count lines) (newline-count text))
+        cache-key [prefix indent content-width]
         cached (when *code-lines-cache*
                  (let [c @*code-lines-cache*]
                    (when (and c
-                              (= prefix (:prefix c))
-                              (= content-width (:content-width c))
-                              (= lang (:lang c))
-                              (str/starts-with? text (:text c))
-                              ;; the styled prefix must still be the same —
-                              ;; a highlighter may depend on later text
+                              (= cache-key (:key c))
+                              ;; the styled lines are what the body renders
+                              ;; from; a highlighter may depend on later text
                               (<= (count (:hl c)) (count lines))
                               (= (:hl c) (subvec lines 0 (count (:hl c)))))
                      c)))
+        body (fn [l] (code-body-lines (str prefix indent l) content-width))
         groups (if cached
-                 (into (vec (:groups cached))
-                       (map (fn [l] (code-body-lines (str prefix indent l) content-width))
-                            (drop (:n cached) lines)))
-                 (mapv (fn [l] (code-body-lines (str prefix indent l) content-width)) lines))
+                 (into (vec (:groups cached)) (map body (drop (count (:hl cached)) lines)))
+                 (mapv body lines))
         push-wrapped (fn [styled]
                        (doseq [l (code-body-lines styled content-width)]
                          (vswap! result conj l)))]
@@ -239,13 +231,9 @@
     (when *code-lines-cache*
       (reset! *code-lines-cache*
               (when (pos? n-complete)
-                {:text prefix-text
-                 :n n-complete
+                {:key cache-key
                  :hl (subvec lines 0 n-complete)
-                 :groups (subvec groups 0 n-complete)
-                 :prefix prefix
-                 :content-width content-width
-                 :lang lang})))))
+                 :groups (subvec groups 0 n-complete)})))))
 
 (defn- longest-word-width
   "Visible width of TEXT's longest word, capped at LIMIT (0 when empty)."

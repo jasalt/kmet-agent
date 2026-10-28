@@ -1490,12 +1490,13 @@ construct spanning blank lines (a loose list, a code fence) refuses the
 promotion — the attempt is remembered so later deltas do not re-parse it — and
 re-parses its tail instead, which is correct and bounded by that construct.
 That tail is still cheap for a code fence: the built-in highlighter caches the
-styled prefix before the last token and re-tokenizes only that token plus the
-appended text (generic-scanner languages; markup, diff, Dockerfile and
-Markdown carry scanner state and restart from the last clean token boundary),
-and `render-code` caches the wrapped body lines of the code's complete lines
-after re-checking that their styled text did not change, so a growing fence
-re-wraps only its last line and the new lines.
+styled prefix through the last token that starts a line and re-tokenizes only
+the lines after it — the newline before the cut keeps a word's `:function`/
+`:attr` lookahead out of the tail (generic-scanner languages; markup, diff,
+Dockerfile and Markdown keep scanner state across tokens, so they are not
+prefix-cached at all). `render-code` caches the wrapped body lines of the
+code's complete lines after re-checking that their styled text did not
+change, so a growing fence re-wraps only its last line and the new lines.
 `:cache-key` must identify everything besides the text the lines depend on
 (width, theme, default style, transform, border), so a theme or resize change
 starts a fresh entry; the per-block lines are also compared structurally, so a

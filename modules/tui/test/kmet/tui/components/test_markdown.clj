@@ -1084,14 +1084,61 @@
                 (str "the cached body is not re-wrapped, got " @calls " wraps"))))
       (let [grown (str base (apply str (for [i (range 5)]
                                          (str "  (prn :more " i ")\n"))))
-            rewritten (str base "  (prn :changed)\n")
+            appended (str base "  (prn :changed)\n")
+            ;; a complete line before the streaming tail changed: the styled
+            ;; prefix no longer matches and the block is re-rendered
+            rewritten (str "intro\n\n```clojure\n(defn CHANGED [x]\n"
+                           (apply str (drop 2 (str/split-lines fence)))
+                           "\n")
             partial-fence (str grown "``")]
         (t/is (= (md/render-lines grown 60 :padding-x 0 :theme md/default-theme)
                  (rendered-with-cache cache grown 60)))
+        (t/is (= (md/render-lines appended 60 :padding-x 0 :theme md/default-theme)
+                 (rendered-with-cache cache appended 60)))
         (t/is (= (md/render-lines rewritten 60 :padding-x 0 :theme md/default-theme)
                  (rendered-with-cache cache rewritten 60)))
         (t/is (= (md/render-lines partial-fence 60 :padding-x 0 :theme md/default-theme)
                  (rendered-with-cache cache partial-fence 60)))))))
+
+(t/deftest test-render-highlighted-custom-scanner-not-cached
+  (t/testing "markup/diff-style scanners keep state across tokens; a suffix
+              must not restart mid-construct, so they are not prefix-cached"
+    (let [cache (atom nil)]
+      (binding [theme/*code-cache* cache]
+        (theme/render-highlighted theme/dark-theme
+                                  "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n" "diff"))
+      (t/is (nil? @cache)))))
+
+(t/deftest test-render-lines-code-indent-change-invalidates-body-cache
+  (t/testing "the code body cache is keyed by the code indent as well as the
+              pad and width"
+    (let [text (str "```clojure\n" (apply str (repeat 5 "(prn :x)\n")) "```")
+          cache (atom nil)
+          two (assoc md/default-theme :code-block-indent "  ")
+          four (assoc md/default-theme :code-block-indent "    ")]
+      (md/render-lines text 40 :padding-x 0 :theme two :cache-key [:x] :cache-atom cache)
+      (t/is (= (md/render-lines text 40 :padding-x 0 :theme four)
+               (md/render-lines text 40 :padding-x 0 :theme four
+                                :cache-key [:x] :cache-atom cache))))))
+
+(t/deftest test-render-highlighted-lookahead-across-lines
+  (t/testing "a word's :function/:attr lookahead cannot be decided by text
+              after the cached cut"
+    (let [t (assoc theme/dark-theme :fg-colors
+                   {:syntax-function "<F>" :syntax-punctuation "<P>"})
+          cache (atom nil)
+          render (fn [code]
+                   (binding [theme/*code-cache* cache]
+                     (theme/render-highlighted t code "javascript")))
+          fresh (fn [code] (theme/render-highlighted t code "javascript"))]
+      (render "x\nfoo ")
+      (t/is (= (fresh "x\nfoo (") (render "x\nfoo (")))
+      (reset! cache nil)
+      (render "x\nfoo(")
+      (t/is (= (fresh "x\nfoo ") (render "x\nfoo ")))
+      (reset! cache nil)
+      (render "foo ")
+      (t/is (= (fresh "foo (") (render "foo ("))))))
 
 ;; ─── Default theme ─────────────────────────────────────────────────────────
 
