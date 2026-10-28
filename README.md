@@ -3,11 +3,25 @@
 A minimal coding agent built in Clojure, with a terminal user interface,
 streaming LLM conversations, and a local tool loop.
 
-Inspired by [pi](https://pi.dev), kmet runs on Linux, macOS, Windows, WSL, and
-Termux from one source tree on three hosts: [Babashka](https://babashka.org/)
-(the primary runtime), native [Jolt](https://github.com/jolt-lang/jolt)
-builds, and the JVM (JDK 22+ enables the native clipboard backend; older JDKs
-still run the app).
+kmet is inspired by two reference harnesses:
+
+- **[pi](https://pi.dev)** — the functionality: minimalism, a terminal-first
+  TUI with a multi-line editor and differential rendering, streaming
+  conversations, one local tool loop, and behavior carried by prompts and
+  tools instead of a privileged core.
+- **[DeepSeek Harness](https://deepseek-harness.github.io/deepseek-harness/)** —
+  the architecture: *everything is a plugin*. The loop, tools, sessions, model
+  access, and modes are replaceable rows on one context tree, with services
+  found by key, dependencies declared with `inject`, effects that unwind, and
+  extensions that mount beside the core instead of patching it.
+
+The gap to pi is tracked in [pi alignment](docs/pi-alignment.md); the plugin
+architecture and its closed landings are in [the design record](new-app.md).
+
+kmet runs on Linux, macOS, Windows, WSL, and Termux from one source tree on
+three hosts: [Babashka](https://babashka.org/) (the primary runtime), native
+[Jolt](https://github.com/jolt-lang/jolt) builds, and the JVM (JDK 22+ enables
+the native clipboard backend; older JDKs still run the app).
 
 ## Highlights
 
