@@ -154,6 +154,26 @@
               "it mounts after what the boot mounted, in deferred order")))
       (finally (runtime/shutdown! booted)))))
 
+(deftest a-defer-option-holds-back-more-rows-and-never-fewer
+  ;; The option adds to the row rule rather than replacing it: a deferred row
+  ;; is the caller's to mount, so no boot option mounts it.
+  (let [noop (fn [name] {:name name :apply (fn [_ _] nil)})
+        rows [{:id :row-defer :defer true :plugin (noop :row-defer)}
+              {:id :entry-defer :plugin (noop :entry-defer)}]
+        booted (runtime/boot {:rows rows} {:defer #(= :entry-defer (:id %))})]
+    (try
+      (is (= [:row-defer :entry-defer] (mapv :id (:deferred booted)))
+          "the row's own :defer and the caller's predicate both hold")
+      (is (= [] (:fibers booted)) "so neither mounted")
+      (finally (runtime/shutdown! booted))))
+  (let [booted (runtime/boot {:rows [{:id :row-defer :defer true
+                                      :plugin {:name :row-defer :apply (fn [_ _] nil)}}]}
+                             {:defer (constantly false)})]
+    (try
+      (is (= [:row-defer] (mapv :id (:deferred booted)))
+          "a caller's predicate cannot mount what the row deferred")
+      (finally (runtime/shutdown! booted)))))
+
 ;; ── the submission point ──────────────────────────────────────────────────
 
 (deftest a-submission-from-another-thread-waits-for-the-boundary

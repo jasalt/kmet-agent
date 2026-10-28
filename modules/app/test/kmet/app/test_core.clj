@@ -251,6 +251,26 @@
               "and the invocation's input rides the same map")))
       (finally (io/delete-file path true)))))
 
+(deftest a-mode-row-that-also-declares-defer-still-runs
+  ;; `:defer` is "a boot does not mount me", not "the entry's last mount skips
+  ;; me": the entry mounts the deferred rows that are not the mode first, then
+  ;; the mode. A mode row that declared `:defer` therefore gets its input
+  ;; instead of leaving the entry waiting on a report that never comes.
+  (let [path (scratch-patch!
+              (str "{:rows [{:id :mode-probe :plugin kmet.app.test-core/probe-mode"
+                   " :mode true :defer true}]"
+                   " :patch [{:id :mode-tui :remove true}]}\n"))]
+    (try
+      (reset! probe-mode-input nil)
+      (with-redefs [world/load! (fn [_ _] {})]
+        (let [result (deref (future (support/run-main ["--patch" path "hi"]))
+                            20000 ::timeout)]
+          (is (not= ::timeout result) "the entry returns instead of waiting forever")
+          (is (zero? (:code result)))
+          (is (= "hi" (:prompt @probe-mode-input))
+              "the mode ran with the invocation's input")))
+      (finally (io/delete-file path true)))))
+
 (deftest parse-args-collects-extension-flags
   ;; kmet1's three forms: `=` splits, a following non-`-` token is the value,
   ;; and nothing following is true. The key drops the dashes — the name
@@ -499,19 +519,22 @@
       (finally (io/delete-file path true)))))
 
 (deftest dump-state-prints-the-booted-tree
-  (let [{:keys [code out err]} (support/run-main ["--dump-state"])]
-    (is (zero? code))
-    (is (str/starts-with? out "[:app]")
-        "the root frame, at the origin of every unit path")
-    (is (str/includes? out "children=23")
-        (str "the twenty-two bundle rows the world is deferred out of, then the"
-             " TUI's mode row — mounted, not run"))
-    (is (str/includes? out ":active"))
-    (is (str/includes? out "provides=[commands]"))
-    (is (str/includes? out "deferred: :world")
-        "the row a dump holds back is named, so the tree explains the count")
-    (is (str/ends-with? out "\n"))
-    (is (= "" err) "a dump boots and disposes; it reports nothing else")))
+  ;; A dump must not read the machine's settings: the process world is deferred
+  ;; out of it, so a load that throws is never reached.
+  (with-redefs [world/load! (fn [& _] (throw (ex-info "a dump loaded the world" {})))]
+    (let [{:keys [code out err]} (support/run-main ["--dump-state"])]
+      (is (zero? code))
+      (is (str/starts-with? out "[:app]")
+          "the root frame, at the origin of every unit path")
+      (is (str/includes? out "children=23")
+          (str "the twenty-two bundle rows the world is deferred out of, then the"
+               " TUI's mode row — mounted, not run"))
+      (is (str/includes? out ":active"))
+      (is (str/includes? out "provides=[commands]"))
+      (is (str/includes? out "deferred: :world")
+          "the row a dump holds back is named, so the tree explains the count")
+      (is (str/ends-with? out "\n"))
+      (is (= "" err) "a dump boots and disposes; it reports nothing else"))))
 
 (deftest dump-state-composes-a-patch-layer
   (let [path (scratch-patch!

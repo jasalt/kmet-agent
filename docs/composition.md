@@ -93,7 +93,7 @@ its layers; this page is what the build ships.
 | `:agent-loop` | `kmet.app.loop.driver/plugin` | `agents`, `projections`, `sessions`, `system-prompt` |  |  |  |
 | `:approvals` | `kmet.app.permissions/approvals` |  | `approvals` |  |  |
 | `:ui` | `kmet.ui.headless/plugin` |  | `ui` |  |  |
-| `:mode-print` | `kmet.app.modes.print/plugin` | `agents`, `ui` |  |  | mode |
+| `:mode-print` | `kmet.app.modes.print/plugin` | `agents`, `ui` |  |  | mode prompt |
 
 ### `:rpc`
 
@@ -213,7 +213,7 @@ its layers; this page is what the build ships.
 | `:llm` | `kmet.app.llm/plugin` |  | `llm` |  |  |
 | `:agent-loop` | `kmet.app.loop.driver/plugin` | `agents`, `projections`, `sessions`, `system-prompt` |  |  |  |
 | `:ui` | `kmet.ui.tui/provider-plugin` |  | `approvals`, `ui` |  |  |
-| `:mode-tui` | `kmet.ui.tui/plugin` | `system-prompt`, `tools` |  |  | mode |
+| `:mode-tui` | `kmet.ui.tui/plugin` | `system-prompt`, `tools` |  |  | mode session-lifecycle |
 
 ### `:tui-ask`
 
@@ -242,7 +242,7 @@ its layers; this page is what the build ships.
 | `:llm` | `kmet.app.llm/plugin` |  | `llm` |  |  |
 | `:agent-loop` | `kmet.app.loop.driver/plugin` | `agents`, `projections`, `sessions`, `system-prompt` |  |  |  |
 | `:ui` | `kmet.ui.tui/provider-plugin` |  | `approvals`, `ui` |  |  |
-| `:mode-tui` | `kmet.ui.tui/plugin` | `system-prompt`, `tools` |  | {:presets [:bundle/gated]} | mode |
+| `:mode-tui` | `kmet.ui.tui/plugin` | `system-prompt`, `tools` |  | {:presets [:bundle/gated]} | mode session-lifecycle |
 
 ## Tools
 

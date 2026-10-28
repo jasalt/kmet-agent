@@ -67,22 +67,21 @@
 
 ;; ── the row ───────────────────────────────────────────────────────────────
 
-(defn- root-mount
+(defn- root-context
   "The root ctx CTX is mounted under, or a throw when it is not: the world is
    the process's, so it mounts at the root — a run's composition, a test's boot
    — and never under an agent, which is what a preset naming a bundle that
    carries this row would otherwise do."
   [ctx]
-  (let [mounted-under (:parent ctx)]
-    (if (nil? (:parent mounted-under))
-      mounted-under
-      (throw (ex-info (str "the :world row mounts at the root, not under "
-                           (pr-str (:name mounted-under))
-                           " — the process world is the composition's, so a"
-                           " preset cannot mount it")
+  (let [under (:parent ctx)]
+    (if (nil? (:parent under))
+      under
+      (throw (ex-info (str "the :world row mounts at the root, not inside an"
+                           " agent's ctx — the process world is the"
+                           " composition's")
                       {:type :kmet.app/world-not-root
                        :mount (:name ctx)
-                       :under (:name mounted-under)})))))
+                       :under (:name under)})))))
 
 (defn- serve
   "The `:world` row's apply: load the process world into the root CTX is
@@ -93,9 +92,12 @@
    there. A world row a composition mounts by hand has no invocation, and loads
    with none."
   [ctx config]
-  (let [root-ctx (root-mount ctx)
-        loaded (load! (:invocation config) root-ctx)]
-    (srce/provide! ctx :world {:config loaded} {:in root-ctx})
+  (let [root-ctx (root-context ctx)]
+    (srce/provide! ctx :world
+                   {:config (load! (:invocation config) root-ctx)}
+                   {:in root-ctx})
+    ;; the provide! registers its own effect; apply returning it would add a
+    ;; second, no-op disposer to the fiber
     nil))
 
 (srce/defplugin plugin

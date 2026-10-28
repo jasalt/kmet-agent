@@ -64,12 +64,16 @@
 (defn- name-list [names]
   (str/join ", " (map (comp code name) (sort-by name names))))
 
+(def ^:private row-flag-keys
+  "The row keys that are not composition data (`kmet.app.profile`), in the
+   order the page shows them: the row the entry runs and how, then the row a
+   generic boot leaves for its owner."
+  [:mode :prompt :session-lifecycle :defer])
+
 (defn- row-flags
-  "The row's non-composition keys, in the order a reader should care about them:
-   `mode` is the row the entry runs, `defer` is the row a generic boot leaves for
-   its owner."
+  "ROW's declared flags, space-separated, or `\"\"`."
   [row]
-  (str/join " " (cond-> [] (:mode row) (conj "mode") (:defer row) (conj "defer"))))
+  (str/join " " (keep (fn [k] (when (get row k) (name k))) row-flag-keys)))
 
 (defn- row-line [row]
   (str "| " (code (:id row))

@@ -527,12 +527,14 @@
    the boot, the load and the teardown."
   [composed mode opts prompt]
   (let [result (promise)
+        ;; the mode is the boot's second deferral, whatever else a row declared:
+        ;; a `:defer` row is still deferred, and the mode is what phase 2 mounts
         mode? #(= (:id mode) (:id %))
-        booted (runtime/boot composed {:defer #(or (true? (:defer %)) (mode? %))})]
+        booted (runtime/boot composed {:defer mode?})]
     (try
       (let [booted (runtime/mount-deferred!
                     booted
-                    #(true? (:defer %))
+                    (complement mode?)
                     (fn [row] (update row :config merge {:invocation opts})))
             config (world-config (:ctx booted))
             opts (invocation/resolve-overrides opts)]
