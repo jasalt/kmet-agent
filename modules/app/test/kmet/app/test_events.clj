@@ -192,7 +192,7 @@
   ;; public stream a front end or a wire consumer takes must not carry them.
   (let [ctx (fresh-ctx)
         seen (atom [])
-        declared (events/declared-events)
+        declared (events/builtin-events)
         dispose (events/on-every ctx (fn [event] (swap! seen conj (:type event))))]
     (try
       (doseq [{:keys [name]} declared]
@@ -232,6 +232,6 @@
         (is (nil? (events/emit! ctx {:type :my-custom})))
         (is (= :my-custom @typed))))
     (testing "a declaration naming an unknown mode is refused"
-      (with-redefs [events/declarations (fn [] {:bad {:mode :serial}})]
+      (with-redefs [events/builtin-declarations (fn [] {:bad {:mode :serial}})]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unknown dispatch mode"
                               (events/emit! ctx {:type :bad})))))))

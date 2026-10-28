@@ -34,7 +34,7 @@
             [kmet.srce.core :as srce]))
 ;; ── declarations ─────────────────────────────────────────────────────────
 ;; The vocabulary is declared by the plugin map at the end of this file and read
-;; from it directly (declared-events): the declaration is the truth, there is no
+;; from it directly (builtin-events): the declaration is the truth, there is no
 ;; projection in the path, and a mounted plugin's own `:events` is what
 ;; inspection reads. The generated plugin catalog stays what landing 1 made it —
 ;; `--dump-config`'s card projection, so composition can be printed without
@@ -47,20 +47,19 @@
    consumes the loop's stream and may ignore the app's."
   #{:loop :app})
 
-(declare plugin known-event-type?)
+(declare plugin)
 
-(defn declared-events
+(defn builtin-events
   "The vocabulary this namespace declares, as
    `[{:name :mode :domain :doc :public}]` in name order — read from the plugin
    map **in this file**, which is the declaration the kernel mounts. Nothing is
    loaded beyond the namespace that holds it, and there is no projection to go
    stale.
 
-   A plugin declares its own events the same way (`:events` on `defplugin`); this
-   is the row that owns the built-in vocabulary until the loop, the session and
-   the mode plugins land and claim theirs. A second plugin may re-declare a name
-   only with the same mode, domain and doc — `kmet.app.runtime/boot` checks every
-   mounted fiber's declarations against each other."
+   A plugin declares its own events the same way (`:events` on `defplugin`);
+   this is the built-in vocabulary the `:events` row ships. A name may be
+   re-declared only with the same mode, domain and doc — `declare!` refuses
+   anything else."
   []
   (->> (:events plugin)
        (map (fn [[event {:keys [mode domain doc public]}]]
@@ -75,9 +74,10 @@
        (sort-by (comp str :name))
        vec))
 
-(defn declarations
-  "The vocabulary as `{name {:mode :domain :doc :public}}` — the plugin map's
-   own declaration, read directly. This is what `emit!` dispatches by."
+(defn builtin-declarations
+  "The built-in vocabulary as `{name spec}` — this namespace's plugin map, read
+   directly. `declaration` consults it first, so a built-in name costs no ctx
+   walk."
   []
   (:events plugin))
 
@@ -92,15 +92,15 @@
    entry. The built-in vocabulary also cannot be overridden: `declare!` refuses
    a spec that differs from the one already visible."
   [ctx type]
-  (or (get (declarations) type)
+  (or (get (builtin-declarations) type)
       (some-> (srce/get ctx :events) (registry/entry tag type))))
 
-(defn visible-declarations
+(defn declarations
   "The vocabulary visible from CTX as `{name spec}`: the mounted plugins'
-   declarations (the `:events` registry) over this namespace's own map, so a
-   bare ctx still knows the built-in names."
+   declarations (the `:events` registry) over the built-in map, so a bare ctx
+   still knows the built-in names."
   [ctx]
-  (merge (declarations)
+  (merge (builtin-declarations)
          (when-let [handle (srce/get ctx :events)]
            (into {} (registry/effective-entries handle tag)))))
 
@@ -210,7 +210,7 @@
   [ctx f]
   (let [disposers (mapv (fn [[name _spec]] (on! ctx name f))
                         (filter (fn [[_ spec]] (not (false? (:public spec))))
-                                (visible-declarations ctx)))]
+                                (declarations ctx)))]
     (fn []
       (doseq [dispose disposers] (dispose))
       nil)))
@@ -517,13 +517,13 @@
   "Map of event type keyword → description. The canonical vocabulary, read from
    this namespace's own declaration: what the loop, the interactive mode and the
    provider bridges emit."
-  (into {} (map (juxt :name :doc)) (declared-events)))
+  (into {} (map (juxt :name :doc)) (builtin-events)))
 
 (def app-event-types
   "The `:app`-domain events: emitted outside the agent loop's path — the
    interactive mode, extensions and the provider bridges. A front end's event
    handler consumes the loop's stream; these arrive by other routes."
-  (into #{} (comp (filter #(= :app (:domain %))) (map :name)) (declared-events)))
+  (into #{} (comp (filter #(= :app (:domain %))) (map :name)) (builtin-events)))
 
 (def loop-event-types
   "The `:loop`-domain events: the agent loop emits every one of them."
@@ -531,7 +531,7 @@
 
 (def ^:private event-modes
   "Event type keyword → its declared dispatch mode."
-  (into {} (map (juxt :name :mode)) (declared-events)))
+  (into {} (map (juxt :name :mode)) (builtin-events)))
 
 (defn mode-of
   "The declared dispatch mode for TYPE, `:emit` when the event declares none."

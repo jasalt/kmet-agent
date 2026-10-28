@@ -197,7 +197,7 @@
   ;; down the path its own entry names — a name sent down the other fold would
   ;; contradict its documentation. One table, one dispatch: this is a property
   ;; of the vocabulary plus the loop, not a comparison between two layers.
-  (let [modes (into {} (map (juxt :name :mode)) (app-events/declared-events))
+  (let [modes (into {} (map (juxt :name :mode)) (app-events/builtin-events))
         emitted (set (map :type (run-scenario (stub-tool-then-text (atom 0)))))]
     (t/is (contains? emitted :turn-end) "the scenario reaches the boundary path")
     (t/is (contains? emitted :agent-before-settle) "and the settle boundary")

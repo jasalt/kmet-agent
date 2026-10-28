@@ -261,30 +261,29 @@
       (throw (ex-info "cannot create an effect on an inactive fiber"
                       {:type :srce/inactive-effect :state state})))
     (let [undos (atom [])
-          live? (atom true)
-          entry (atom nil)
-          undo (fn []
-                 (when (compare-and-set! live? true false)
-                   (swap! fiber update :effects
-                          (fn [effects]
-                            (into [] (remove #(identical? % @entry)) effects)))
-                   (reduce (fn [_ d]
-                             (try
-                               (d)
-                               (catch Throwable t
-                                 (dispose-failed! ctx (or label :effect) t))))
-                           nil
-                           (rseq @undos))))]
-      ;; The entry is pushed before F runs, so a throwing body still leaves
-      ;; cleanup behind for the failure path to run.
-      (reset! entry {:label (or label :effect) :undo undo})
-      (swap! fiber update :effects conj @entry)
-      (let [result (f)]
-        (swap! undos into (cond
-                            (nil? result) []
-                            (sequential? result) result
-                            :else [result])))
-      undo)))
+          live? (atom true)]
+      (letfn [(undo []
+                (when (compare-and-set! live? true false)
+                  ;; the entry's :undo is this fn, so it finds its own entry
+                  (swap! fiber update :effects
+                         (fn [effects]
+                           (into [] (remove #(identical? undo (:undo %))) effects)))
+                  (reduce (fn [_ d]
+                            (try
+                              (d)
+                              (catch Throwable t
+                                (dispose-failed! ctx (or label :effect) t))))
+                          nil
+                          (rseq @undos))))]
+        ;; The entry is pushed before F runs, so a throwing body still leaves
+        ;; cleanup behind for the failure path to run.
+        (swap! fiber update :effects conj {:label (or label :effect) :undo undo})
+        (let [result (f)]
+          (swap! undos into (cond
+                              (nil? result) []
+                              (sequential? result) result
+                              :else [result])))
+        undo))))
 
 (defn- drain-effects!
   "Run FIBER's effects LIFO and empty the list; the state is already non-:active."
