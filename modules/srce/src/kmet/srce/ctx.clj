@@ -274,14 +274,25 @@
                             :else [result])))
       undo)))
 
+(defn- drain-effects!
+  "Run FIBER's effects LIFO and empty the list; the state is already non-:active."
+  [fiber]
+  (doseq [{:keys [undo]} (rseq (:effects @fiber))]
+    (undo))
+  (swap! fiber assoc :effects []))
+
 (defn unwind-effects!
   "Run every effect LIFO and empty the list. The caller must already have set a
    non-:active state, so a disposer cannot register. Returns what threw, as
    `[{:label … :error …}]` in unwind order — each failure was logged as it ran
-   and the remaining disposers still ran."
+   and the remaining disposers still ran.
+
+   The outermost unwind collects: a `dispose!` performed *by* a disposer
+   contributes its failures to that caller's report, and the nested call answers
+   an empty one (its failures are already in the outer run's)."
   [fiber]
-  (binding [*dispose-failures* (volatile! [])]
-    (doseq [{:keys [undo]} (rseq (:effects @fiber))]
-      (undo))
-    (swap! fiber assoc :effects [])
-    @*dispose-failures*))
+  (if *dispose-failures*
+    (do (drain-effects! fiber) [])
+    (binding [*dispose-failures* (volatile! [])]
+      (drain-effects! fiber)
+      @*dispose-failures*)))

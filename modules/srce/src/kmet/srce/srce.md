@@ -319,9 +319,9 @@ a provider change runs one synchronous pass that a second thread cannot split:
    the names. A `provide!` issued from a plugin's own `apply` joins the pass's
    change set and is processed after that `apply` returns — a fiber never
    remounts itself. That is true unconditionally because **the pass never runs
-   reentrantly**: `plugin!`, `restart!`, `dispose!`, `dispose-plugin!` and
-   `dispose-subtree!` hold the pass flag for their whole body and drain once at
-   the end, so a mount's own `provide!` only records. A fiber is never a
+   reentrantly**: `plugin!`, `restart!`, `update!`, `dispose!`,
+   `dispose-plugin!` and `dispose-subtree!` hold the pass flag for their whole
+   body and drain once at the end, so a mount's own `provide!` only records. A fiber is never a
    candidate for its own pass: it is either not yet mounted or no longer
    `:active`. Remounting replaces the fiber's `:mounted` entry in place, so the
    listing's "fibers in mount order" is stable; only a fresh `plugin!` appends.
@@ -424,7 +424,9 @@ are the accessor:
   unwind also *collects* them: `dispose!` answers `{:disposed n :failed [{:label
   … :error …}]}` (`dispose-plugin!`/`dispose-subtree!` aggregate the same
   shape), so a caller can report a teardown failure instead of leaving it only
-  in a log that is silent without `--debug`.
+  in a log that is silent without `--debug`. The outermost unwind collects: a
+  dispose performed *by* a disposer contributes to its caller's report and
+  answers an empty one itself.
 - **A failed fiber is a state, not an exception.** `apply` throws → the fiber is
   marked `:failed` with `:error e` **first**, so an effect or `provide!` from
   inside its own disposers throws `:srce/inactive-effect`; then its partial effects
@@ -965,7 +967,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 58 contract tests (227 assertions) — one per bullet in §2–§8 that can fail,
+- 59 contract tests (232 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate
@@ -999,9 +1001,10 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
   the hook the resolved config, keeping the uid so no dependent remounts, and
   storing nothing when the validator throws; a hook that provides a new name
   reloading a dependent; and a teardown reporting the disposer that threw (with
-  its label) while the rest still ran, `dispose!`
-  answering `{:disposed 0 :failed []}` a second time, and
-  `dispose-subtree!` aggregating the same shape.
+  its label) while the rest still ran, a dispose performed by a disposer
+  reporting into the outer run, `dispose!` answering `{:disposed 0 :failed []}`
+  a second time, and `dispose-subtree!` aggregating the same shape; and a
+  non-fn `:update` rejected as `:srce/bad-plugin`.
 - srce self-containment: `kmet.srce.*` may require only rank-0 code
   (`kmet.libs.*`, `kmet.loader.*`, `kmet.reakt.*`) and third-party code — no
   `kmet.agent.*`, no `tui`/`tk`, nothing at its own rank or above.

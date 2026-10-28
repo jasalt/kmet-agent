@@ -260,6 +260,10 @@
     (testing "a reserved :inject value surfaces as a plugin problem"
       (is (= :srce/bad-plugin
              (thrown-type #(srce/plugin! r {:name :x :apply (fn [_ _]) :inject {:a 1}})))))
+    (testing "a non-fn :update is a plugin problem"
+      (let [e (thrown #(srce/plugin! r {:name :x :apply (fn [_ _] nil) :update 42}))]
+        (is (= :srce/bad-plugin (:type (ex-data e))))
+        (is (some #{:update} (:problems (ex-data e))))))
     (testing "an unresolved keyword source"
       (is (= :srce/bad-source (thrown-type #(srce/plugin! r :nope)))))
     (testing "the resolver is the caller's"
@@ -736,11 +740,9 @@
     (srce/plugin! r {:name :probe/dependent
                      :inject {:probe nil}
                      :apply (fn [_ _] (swap! applied inc) nil)})
-    (srce/settle! r)
     (let [before (srce/fiber-info provider)]
       (is (= 1 @applied))
       (srce/update! provider {:n 2})
-      (srce/settle! r)
       (let [after (srce/fiber-info provider)]
         (is (= (:uid before) (:uid after)) "same fiber, same uid")
         (is (= [{:n 2 :resolved true}] @seen) "the hook gets the resolved config")
@@ -783,6 +785,24 @@
       (is (true? @second-ran) "the remaining disposers still ran"))
     (is (= {:disposed 0 :failed []} (srce/dispose! f)) "a second dispose is a no-op")))
 
+(deftest a-dispose-inside-a-disposer-reports-into-the-outer-run
+  (let [[r] (kernel)
+        inner (srce/plugin! r {:name :probe/inner
+                               :apply (fn [c _]
+                                        (srce/effect c (fn [] (fn [] (throw (ex-info "inner" {}))))
+                                                     :probe/inner)
+                                        nil)})
+        outer (srce/plugin! r {:name :probe/outer
+                               :apply (fn [c _]
+                                        (srce/effect c (fn [] (fn [] (srce/dispose! inner)))
+                                                     :probe/outer)
+                                        nil)})]
+    (let [{:keys [disposed failed]} (srce/dispose! outer)]
+      (is (= 1 disposed))
+      (is (= [:probe/inner] (mapv :label failed))
+          "the nested run's failure is the outer call's to report"))
+    (is (= {:disposed 0 :failed []} (srce/dispose! inner)) "already disposed")))
+
 (deftest aggregate-disposals-report-per-fiber-failures
   (let [[r] (kernel)
         ok (srce/plugin! r {:name :probe/ok :apply (fn [_ _] nil)})
@@ -811,5 +831,5 @@
                      :apply (fn [_ _] (swap! applied inc) nil)})
     (is (= 0 @applied) "nothing provides :grown yet")
     (srce/update! provider :value)
-    (is (= 1 @applied) "a provider-set change reloads the dependent")
+    (is (= 1 @applied) "the update's own drain reloads the dependent")
     (is (= :value (srce/get r :grown)))))

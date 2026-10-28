@@ -337,7 +337,10 @@
 
    Answers `{:rounds n :churn? bool}` for the passes *this* call ran; a call
    that loses the pass to another thread runs none and answers
-   `{:rounds 0 :churn? false}` — its change is that owner's, not lost."
+   `{:rounds 0 :churn? false}` — its change is that owner's, not lost. Churn is
+   the round budget running out with changes pending, and a mutator's own drain
+   is usually the call that hits it: an explicit `settle!` after a mount
+   answers `:churn? false` even when the mount churned."
   [ctx]
   (let [{:keys [pass changes]} (:kernel ctx)]
     (loop [rounds 0 churn? false]
@@ -452,7 +455,9 @@
 
    Answers `{:disposed n :failed [{:label … :error …}]}` — n is 0 for a fiber
    that was already disposed, and a throwing disposer is logged and listed
-   without stopping the rest."
+   without stopping the rest. A dispose performed by one of FIBER's disposers
+   reports into this call's run (`unwind-effects!`) and answers an empty list
+   itself."
   [fiber]
   (let [{:keys [ctx]} @fiber]
     (run-owned!
@@ -460,16 +465,16 @@
      (fn []
        (if (= :disposed (:state @fiber))
          {:disposed 0 :failed []}
-         (let [fctx (:ctx @fiber)]
-           (set-state! fiber :disposed)
-           (let [failed (unload! fiber)]
-             (swap! (:mounted (:kernel ctx))
-                    (fn [v] (filterv #(not (identical? % fiber)) v)))
-             (when-let [parent (:parent fctx)]
-               (swap! (:children parent)
-                      (fn [v] (filterv #(not (identical? % fctx)) v))))
-             (drop-runtime! ctx fiber)
-             {:disposed 1 :failed failed})))))))
+         (let [fctx (:ctx @fiber)
+               _ (set-state! fiber :disposed)
+               failed (unload! fiber)]
+           (swap! (:mounted (:kernel ctx))
+                  (fn [v] (filterv #(not (identical? % fiber)) v)))
+           (when-let [parent (:parent fctx)]
+             (swap! (:children parent)
+                    (fn [v] (filterv #(not (identical? % fctx)) v))))
+           (drop-runtime! ctx fiber)
+           {:disposed 1 :failed failed}))))))
 
 (defn- tally
   "The aggregate of DISPOSALS: `{:disposed n :failed [...]}`."
@@ -491,6 +496,19 @@
        (dispose! fiber)
        (plugin! (:parent mount-ctx) source config)))))
 
+(defn- update-hook
+  "FIBER's `:update` hook, or a throw naming why it cannot be updated in place."
+  [{:keys [plugin state]}]
+  (when-not (= :active state)
+    (throw (ex-info "cannot update an inactive fiber"
+                    {:type :srce/inactive-update
+                     :name (:name plugin)
+                     :state state})))
+  (or (:update plugin)
+      (throw (ex-info (str "plugin " (pr-str (:name plugin))
+                           " has no :update; a config change it cannot absorb is restart!")
+                      {:type :srce/no-update :name (:name plugin)}))))
+
 (defn update!
   "Change FIBER's config in place. FIBER must be :active (`:srce/inactive-update`)
    and its plugin must declare `:update` (`:srce/no-update` otherwise) — a
@@ -509,17 +527,8 @@
    Like every other mutator, the hook runs with the pass held and the drain
    runs once at the end."
   [fiber new-config]
-  (let [{:keys [ctx plugin state]} @fiber
-        _ (when-not (= :active state)
-            (throw (ex-info "cannot update an inactive fiber"
-                            {:type :srce/inactive-update
-                             :name (:name plugin)
-                             :state state})))
-        hook (:update plugin)
-        _ (when-not hook
-            (throw (ex-info (str "plugin " (pr-str (:name plugin))
-                                 " has no :update; a config change it cannot absorb is restart!")
-                            {:type :srce/no-update :name (:name plugin)})))
+  (let [{:keys [ctx plugin] :as record} @fiber
+        hook (update-hook record)
         config (if-let [validate (:config plugin)]
                  (validate new-config)
                  new-config)]
