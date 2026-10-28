@@ -106,7 +106,8 @@ kmet/app/
 │                         registries and the prompt builder
 ├── event_bus.clj, events.clj, projections.clj — the event stream
 ├── config.clj, config_schema.clj — settings and their schema
-├── world.clj           — the process world load (extensions, themes, flags)
+├── world.clj           — the process world: `load!` (catalogs, config, themes,
+│                         CLI flags) and the deferred `:world` row that mounts it
 ├── root.clj            — the one process-root atom and the publish rule
 ├── front_end.clj       — the front end's published surface
 ├── inspect.clj         — `/units` and the ctx-tree dump

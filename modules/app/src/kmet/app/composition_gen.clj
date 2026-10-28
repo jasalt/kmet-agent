@@ -64,17 +64,24 @@
 (defn- name-list [names]
   (str/join ", " (map (comp code name) (sort-by name names))))
 
+(defn- row-flags
+  "The row's non-composition keys, in the order a reader should care about them:
+   `mode` is the row the entry runs, `defer` is the row a generic boot leaves for
+   its owner."
+  [row]
+  (str/join " " (cond-> [] (:mode row) (conj "mode") (:defer row) (conj "defer"))))
+
 (defn- row-line [row]
   (str "| " (code (:id row))
        " | " (code (:plugin row))
        " | " (name-list (keys (:inject row)))
        " | " (name-list (:provide row))
        " | " (cell (when-let [c (:config row)] (pr-str c)))
-       " | " (if (:mode row) "mode" "")
+       " | " (row-flags row)
        " |"))
 
 (defn- row-table [rows]
-  (str "| row | plugin | injects | provides | config | mode |\n"
+  (str "| row | plugin | injects | provides | config | flags |\n"
        "|---|---|---|---|---|---|\n"
        (str/join "\n" (map row-line rows))
        "\n\n"))

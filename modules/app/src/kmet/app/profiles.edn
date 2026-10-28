@@ -12,7 +12,14 @@
 ;; anything; a plain run boots it (kmet.app.runtime).
 {:bundles
  {:bundle/minimal
-  {:rows [;; The extension host: it binds the process-wide services it may not
+  {:rows [;; The process world: provider catalogs, the config, the themes and the
+          ;; extension CLI flags — what a run stands on that is not an agent's.
+          ;; `:defer` keeps it out of a generic boot (a diagnostic mount and a
+          ;; test's boot never read the machine's settings); the entry mounts it
+          ;; with the invocation before the mode, and reads the `:world` service
+          ;; it provides (kmet.app.world, kmet.app.core/run-mode).
+          {:id :world :plugin kmet.app.world/plugin :defer true}
+          ;; The extension host: it binds the process-wide services it may not
           ;; require (its own tag registry, the ctx an :inject mounts under) so
           ;; a run's hooks resolve. No service key: the binding is the effect.
           ;; No resource registries either — installing an extension is still kmet1's,

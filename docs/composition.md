@@ -19,20 +19,21 @@ its layers; this page is what the build ships.
 
 ### `:bundle/gated`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
 | `:permissions` | `kmet.app.permissions/permissions` |  | `permissions` | {:policy :ask-all} |  |
 
 ### `:bundle/headless`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
 | `:ui` | `kmet.ui.headless/plugin` |  | `ui` |  |  |
 
 ### `:bundle/minimal`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -58,7 +59,7 @@ its layers; this page is what the build ships.
 
 ### `:bundle/terminal`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
 | `:ui` | `kmet.ui.tui/provider-plugin` |  | `approvals`, `ui` |  |  |
 
@@ -66,8 +67,9 @@ its layers; this page is what the build ships.
 
 ### `:print`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -95,8 +97,9 @@ its layers; this page is what the build ships.
 
 ### `:rpc`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -124,8 +127,9 @@ its layers; this page is what the build ships.
 
 ### `:rpc-ask`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -154,8 +158,9 @@ its layers; this page is what the build ships.
 
 ### `:server`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -183,8 +188,9 @@ its layers; this page is what the build ships.
 
 ### `:tui`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |
@@ -211,8 +217,9 @@ its layers; this page is what the build ships.
 
 ### `:tui-ask`
 
-| row | plugin | injects | provides | config | mode |
+| row | plugin | injects | provides | config | flags |
 |---|---|---|---|---|---|
+| `:world` | `kmet.app.world/plugin` |  | `world` |  | defer |
 | `:extensions` | `kmet.app.extensions/plugin` |  |  |  |  |
 | `:events` | `kmet.app.events/plugin` |  | `events` |  |  |
 | `:tools` | `kmet.app.tools/plugin` |  | `tools` |  |  |

@@ -3,21 +3,35 @@
    layer over them, the config, the themes, and the extension CLI flags.
    Extensions are composition rows and load when they mount, not here.
 
-   An entry loads it **once**, after the composition that hosts the registries
-   is mounted and before a mode mounts, so every profile has the themes and
-   catalogs kmet1's `-main` gives every mode. The order inside is
-   load-bearing: the provider catalogs and models.edn come first, so the model
-   patterns the run resolves afterwards see both the built-ins and the user's
-   providers; the themes follow (a composition's `:ext/…` rows loaded their
-   extensions earlier, when the composition mounted); and the CLI flags are
-   last, because their registrations are the ones the parse collected."
+   The world is a **row** — `:world` in `:bundle/minimal` — and it is
+   `:defer`: a generic boot leaves it out, because a diagnostic mount
+   (`--dump-state`) and a test's boot must not read the machine's settings, and
+   because the only caller that can mount it is the entry. It has the
+   invocation, and a mode must mount *after* the load. So
+   `kmet.app.core/run-mode` holds the row back, mounts it with
+   `{:invocation opts}` as its config, and reads the `:world` service the row
+   provides (`{:config <the loaded config>}`) to hand the mode the world the
+   composition loaded.
+
+   The order inside the load is load-bearing: the provider catalogs and
+   models.edn come first, so the model patterns the run resolves afterwards see
+   both the built-ins and the user's providers; the config follows (it publishes
+   the composition as the process root); the themes come next (a composition's
+   `:ext/…` rows loaded their extensions earlier, when the composition mounted);
+   and the CLI flags are last, because their registrations are the ones the
+   parse collected.
+
+   The row mounts at the **root**, never on an agent's ctx: the world is the
+   process's, so a preset that names a bundle carrying this row is refused
+   instead of loading a second world inside one agent."
   (:require [kmet.app.config :as cfg]
             [kmet.app.extensions.core :as extensions]
             [kmet.app.packages :as packages]
             [kmet.ai.image-models :as image-models]
             [kmet.ai.models :as models]
             [kmet.app.root :as root]
-            [kmet.libs.theme :as theme]))
+            [kmet.libs.theme :as theme]
+            [kmet.srce.core :as srce]))
 
 (defn load!
   "Load the process world and return the config.
@@ -50,3 +64,41 @@
      ;; extensions/get-flag (pi: registerFlag + getFlag).
      (extensions/set-cli-flags! (:ext-flags opts))
      config)))
+
+;; ── the row ───────────────────────────────────────────────────────────────
+
+(defn- root-mount
+  "The root ctx CTX is mounted under, or a throw when it is not: the world is
+   the process's, so it mounts at the root — a run's composition, a test's boot
+   — and never under an agent, which is what a preset naming a bundle that
+   carries this row would otherwise do."
+  [ctx]
+  (let [mounted-under (:parent ctx)]
+    (if (nil? (:parent mounted-under))
+      mounted-under
+      (throw (ex-info (str "the :world row mounts at the root, not under "
+                           (pr-str (:name mounted-under))
+                           " — the process world is the composition's, so a"
+                           " preset cannot mount it")
+                      {:type :kmet.app/world-not-root
+                       :mount (:name ctx)
+                       :under (:name mounted-under)})))))
+
+(defn- serve
+  "The `:world` row's apply: load the process world into the root CTX is
+   mounted under, and provide what it loaded as `:world`.
+
+   The row's `:config` carries the invocation the entry parsed
+   (`{:invocation opts}`) — the extension `--flags` the load installs come from
+   there. A world row a composition mounts by hand has no invocation, and loads
+   with none."
+  [ctx config]
+  (let [root-ctx (root-mount ctx)
+        loaded (load! (:invocation config) root-ctx)]
+    (srce/provide! ctx :world {:config loaded} {:in root-ctx})
+    nil))
+
+(srce/defplugin plugin
+  {:name :world
+   :provide #{:world}
+   :apply serve})

@@ -17,7 +17,7 @@
      {:id :permissions :remove true}                   ; drop the row
      {:id :tool/ls :plugin … :after :tool/read}         ; insert (unknown id)
 
-   Two row keys are not composition data:
+   Four row keys are not composition data:
 
    - `:mode true` marks the row `kmet.app.core` runs as the profile's mode,
      handing it the command line (`new-app.md` § Landing 5a). It travels with
@@ -34,6 +34,13 @@
      mode creates its agent through `:agents`, whose factory takes no session
      option yet, and the entry point refuses those flags by name there rather
      than silently starting the fresh session the flag exists to prevent.
+   - `:defer true` says a generic boot must not mount the row: only its owner
+     can, once it has what the row waits for. The process world
+     (`kmet.app.world`) is the one today — the entry mounts it with the
+     invocation, and a diagnostic or test boot must not read the machine's
+     settings. `kmet.app.runtime/boot` leaves such rows in `:deferred`, and the
+     row marker travels with the row so a patch that replaces the plugin keeps
+     the timing.
 
    Config *values* deep-merge; composition does not — a bundle's rows are
    appended as they are, and later layers patch by id. A patch that names an

@@ -37,7 +37,10 @@ Each line names the row id, the namespace that provides it, what the row
 injects from other rows, what it provides, and its config. `--dump-state`
 answers the other question — what a boot actually built: it boots the same
 rows and prints the ctx tree, with each fiber's state, what it provides and
-what it is waiting for.
+what it is waiting for. A row that declares `:defer` (`:world`, the process
+world the entry mounts for a run) is not mounted by a dump — a dump must not
+read your settings — so the tree is a row shorter, and a trailing
+`deferred: …` line names what was held back.
 
 ## Patching a composition
 
@@ -112,7 +115,8 @@ shadows a bundled one.
 Settings no longer enable an extension: `:extensions` paths and package
 sources are discovery, and the retired `:bundled-extensions` key does not
 decide what loads. The row must mount after the `:extensions` host row (the
-first row of `:bundle/minimal`, which an appended layer already follows);
+first row `:bundle/minimal` actually mounts — the deferred `:world` row above
+it is the entry's, not the boot's — so an appended layer already follows);
 disposing the row unloads the extension, and `/reload` reloads each mounted
 row's extension with the same config (a changed composition needs a restart).
 
@@ -183,4 +187,5 @@ passing more than one is a usage error rather than a silent pick.
 
 A profile whose mode row a layer removed is not an error: the boot mounts the
 remaining rows, reports what it mounted, and exits, which is how you inspect a
-composition without running an agent.
+composition without running an agent (and without loading the process world,
+which only a run needs).

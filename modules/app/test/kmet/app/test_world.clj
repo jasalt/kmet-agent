@@ -57,6 +57,53 @@
       (finally
         (root/restore-root! prev)))))
 
+(t/deftest the-world-is-a-row-that-loads-into-its-root-and-provides-it
+  ;; The world is a plugin like any other: mounting it loads the process world
+  ;; into the ctx it is mounted under and provides what it loaded, which is how
+  ;; the entry (and only the entry) gets the config it hands the mode.
+  (let [prev (root/reset-root!)
+        calls (atom [])]
+    (try
+      (with-redefs [models/load-catalogs! (constantly nil)
+                    image-models/load-image-catalogs! (constantly nil)
+                    models/load-models-config! (constantly nil)
+                    models/get-model-config-error (constantly nil)
+                    cfg/init! (fn [] (swap! calls conj :config) {:model "x"})
+                    packages/resolve-theme-paths (constantly [])
+                    theme/load-theme-paths! (constantly nil)
+                    extensions/get-flag (constantly nil)
+                    extensions/set-cli-flags! #(swap! calls conj [:flags %])]
+        (let [ctx (srce/root {:name :app})]
+          (try
+            (let [fiber (srce/plugin! ctx world/plugin
+                                      {:invocation {:ext-flags {"probe" "1"}}})]
+              (t/is (= :active (:state @fiber)))
+              (t/is (= {:config {:model "x"}} (srce/get ctx :world))
+                    "the row provides what the load answered, on the root")
+              (t/is (identical? ctx (root/ctx))
+                    "and the load published that root as the process tree")
+              (t/is (= [[:flags {"probe" "1"}]] (filter vector? @calls))
+                    "the row's config is where the invocation's flags come from"))
+            (finally (srce/dispose-subtree! ctx)))))
+      (finally (root/restore-root! prev)))))
+
+(t/deftest the-world-row-refuses-a-mount-under-an-agent
+  ;; A preset names a bundle, and `:bundle/minimal` carries this row. The world
+  ;; is the process's, so mounting it under an agent's ctx must fail loudly
+  ;; rather than load a second process world inside one agent.
+  (let [prev (root/reset-root!)]
+    (try
+      (let [ctx (srce/root {:name :app})
+            agent (srce/extend ctx {:name :agent})
+            fiber (srce/plugin! agent world/plugin nil)]
+        (try
+          (t/is (= :failed (:state @fiber)) "the row does not mount")
+          (t/is (= :kmet.app/world-not-root (:type (ex-data (:error @fiber))))
+                "and says why, naming the boundary")
+          (t/is (nil? (srce/get ctx :world)) "nothing was provided")
+          (finally (srce/dispose-subtree! ctx))))
+      (finally (root/restore-root! prev)))))
+
 (t/deftest the-first-published-root-wins
   (let [prev (root/reset-root!)
         ours (srce/root {:name :app})

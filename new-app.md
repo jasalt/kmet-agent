@@ -475,6 +475,7 @@ rewrite.
 
 | Service | Contents | Today |
 |---|---|---|
+| `:world` | the process world a run stands on: provider catalogs + `models.edn`, the config, the themes, the extension CLI flags | **landed** (`kmet.app.world`): the `:world` row provides what `load!` answered as `{:config …}`, is `:defer` (a generic boot never reads the machine's settings), and the entry mounts it with the invocation before the mode |
 | `:llm` `:models` | provider call, model registry, auth status | `:llm` **landed** (`kmet.app.llm`: one `send-message` operation the loop and the compaction summarizer resolve through the agent's ctx, the `:llm` row providing `kmet.ai.llm`); `:models`/`:config`/`:auth` stay libraries — the catalog is files, a provider is `register-model-provider!`, and both are read before a ctx exists |
 | `:tools` `:commands` `:prompts` `:skills` | registries: name → value, per-context | `kmet.app.registry` + one row per registry (`kmet.app.tools`, `kmet.app.registries`); modes are rows, not a registry |
 | `:agents` | live handles: `create!` / `resume!` / `dispose!` / `get` / `list` / `roots`, plus the control surface a front end drives — `send!` / `followup!` / `steer!` / `inject!` / `cancel!` / `when-idle` / `status` / `inbox` (the handle's queued messages, read through `:projections`). A handle owns one agent, its session and its child context, and it is the **capability** that may tear it down; `get` returns the bare agent. The catalog is the seam, not the whole surface: the rest of a front end's ops (`set-model!`, the session lifecycle, compaction, steering modes, `clear-queues!`) are measured from the TUI's own call sites and land at landing 8 (§ "The remaining plan") | **landed** (`kmet.app.agents`, 4c-iii-b): the registry, the child ctx lifetime and the factory seam — what an agent *is* stays the factory's, and no factory mounts until 7a (`kmet.app.loop`'s `Engine` becomes the handle), and the front end's ops until 8 |
@@ -4933,16 +4934,17 @@ sections above record how), and the two statuses below say so explicitly.
 ## Everything is a plugin: the five remaining landings
 
 The composition can already replace the loop, tools, sessions, model access, the
-four modes, the UI, the permission policy, approvals, the prompt builder, the
-event bus and the extension host — every one of them a row, and the generated
-list is [`docs/composition.md`](docs/composition.md). § Service catalog above is
-the target table; what follows audits what is **not** a row at HEAD — now only
-that catalog's `:models`, `:config` and `:auth` rows, which stay libraries on
-purpose (the model catalog is files, credentials are read before a ctx exists).
+process world, the four modes, the UI, the permission policy, approvals, the
+prompt builder, the event bus and the extension host — every one of them a row,
+and the generated list is [`docs/composition.md`](docs/composition.md). § Service
+catalog above is the target table; what follows audits what is **not** a row at
+HEAD — now only that catalog's `:models`, `:config` and `:auth` rows, which stay
+libraries on purpose (the model catalog is files, credentials are read before a
+ctx exists).
 
 | # | Landing | State | Decides |
 |---|---|---|---|
-| 1 | `:compaction`, `:world`, loop stages | **landed**, except `:world` | whether `:world` becomes a deferred row at all — it is boot work today, as dsh's `packages/boot` is |
+| 1 | `:compaction`, `:world`, loop stages | **landed** | `:world` as boot work or as a row — decided by the row: `:defer`, mounted by the entry with the invocation |
 | 2 | `:llm` | **landed** | per-agent vs per-call — decided per call: the selection already rides the call |
 | 3 | extension-contributed `:rows` | **landed** | the extension's rows, not the run's — decided by the kernel's bind-once rule |
 | 4 | `:toolExecutor` | open | native as default, PTC as a bundle; worth doing when a second executor exists |
@@ -4979,17 +4981,33 @@ ignoring it. Unlike the stages, the contract is its own namespace
 inside the implementation: that file is 700 lines of compaction logic with four
 callers in three namespaces, so the seam is the namespace that names it.
 
-**Open: the process world, and it is mis-scoped as a row.** `run-mode` calls
-`(world/load! opts (:ctx booted))` to install provider catalogs, `models.edn`,
-themes, keybindings and the CLI flags. That is boot work — dsh keeps it in a
-`packages/boot` package for the same reason — and two facts make it more than a
-row: it must not run on the paths that only inspect (`--dump-config` never
-boots; `--dump-state` boots a composition and asserts a quiet stderr), and it
-needs the invocation, which a row is not given. A `:world` row therefore has to
-be deferred like the mode row (the boot's `{:defer …}` plus `mount-deferred!`,
-with the invocation reachable as ctx meta), and `boot-and-report` has to decide
-whether a profile with no mode loads the world at all. Worth doing only with
-that deferred path in the same change.
+**Landed: the process world, as a deferred row.** `:world` is a row in
+`:bundle/minimal` (`kmet.app.world/plugin`) and it provides the `:world`
+service — `{:config …}`, what the load answered. Two facts shaped it. First, it
+must not run on the paths that only inspect (`--dump-config` never boots;
+`--dump-state` boots a composition and asserts a quiet stderr), and a test that
+boots the composition for its rows must not read the developer's settings.
+Second, it needs the invocation, and only the entry has that. So a row declares
+**`:defer`**, and `runtime/boot` treats that as its default deferral rule: the
+row is composed but not mounted, and comes back in `:deferred`. The entry's run
+path (`run-mode`) then mounts it with `{:invocation opts}` as the row's config —
+its `apply` calls `world/load!` through the var, so the tests that stub the load
+still intercept it — and reads `(:config (srce/get ctx :world))` to build the
+mode's input. `mount-deferred!` grew the pick predicate that makes "the world
+first, then the mode" expressible; there are three mounts in order now: the
+composition's rows, the world with the invocation, the mode whose `serve`
+starts the run.
+
+What the deferral settles at the edges: `--dump-state` mounts every row
+**except** the `:defer` ones and prints a trailing `deferred: :world` line, so
+the tree explains why it is a row shorter than `--dump-config`; a profile with
+no mode row (`boot-and-report`) boots without a world, because a boot with
+nothing to run has nothing to read the machine's settings for, and the report
+names the `deferred` row; and a run whose composition patched the row out
+refuses by name (`:kmet.app/no-world`) instead of starting with no catalogs or
+settings. The row mounts at the root only (`:kmet.app/world-not-root`):
+`:bundle/minimal` is nameable as a preset, and a process world inside one agent
+is not a world.
 
 Gate: `--dump-config` names the new rows (and `test-core`'s row counts move
 with the composition), a stage with no row mounted reads its builtin — the

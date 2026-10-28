@@ -35,6 +35,21 @@
   "A plugin whose dependency nothing provides: a row that renders as `:pending`."
   {:name :app/pending :inject {:nothing nil} :apply (fn [_ _] nil)})
 
+(def probe-mode-input
+  "What the probe mode row was given: the entry's `mode-input` map, recorded so
+   a test can read the world and the invocation the mode ran on."
+  (atom nil))
+
+(def probe-mode
+  "A mode row that runs without a terminal or a model: it records the config
+   the entry hands it and reports an exit, which is all a mode must do."
+  {:name :mode/probe
+   :apply (fn [_ config]
+            (reset! probe-mode-input config)
+            (when-let [report (:on-result config)]
+              (future (report {:exit 0})))
+            nil)})
+
 (defn- scratch-patch!
   "Write CONTENT to a patch file under target/ (which /tmp-less hosts have)
    and return the path."
@@ -190,6 +205,50 @@
           (is (= 0 code))
           (is (= [true "flash"] @listed)
               "the filtered table printed after the load, with no mode to mount")))
+      (finally (io/delete-file path true)))))
+
+(deftest the-entry-hands-the-invocation-to-the-world-row
+  ;; The world row cannot read the command line: the entry merges the parsed
+  ;; invocation into its config (`{:invocation opts}`), which is where the
+  ;; extension `--flags` the load installs come from — and the reason the row is
+  ;; deferred, since only the entry has them.
+  (let [seen (atom nil)]
+    (with-redefs [world/load! (fn [opts _ctx] (reset! seen opts) {:model "x"})
+                  maintenance/list-models (fn [_] nil)]
+      (let [{:keys [code]} (support/run-main ["--list-models" "--probe" "1"])]
+        (is (zero? code))
+        (is (= {"probe" "1"} (:ext-flags @seen))
+            "the parsed extension flags reach the world load")))))
+
+(deftest a-run-refuses-a-composition-with-no-world-row
+  ;; The world is a row, so a patch can remove it — and then a run has no
+  ;; provider catalogs, settings or themes. The refusal names the row instead of
+  ;; failing at the first model request with nothing to say.
+  (let [path (scratch-patch! "{:rows [] :patch [{:id :world :remove true}]}\n")]
+    (try
+      (let [{:keys [code out err]} (support/run-main ["--patch" path "--list-models"])]
+        (is (= 1 code))
+        (is (= "" out) "nothing runs, so nothing is printed")
+        (is (str/includes? err "mounts no :world row")))
+      (finally (io/delete-file path true)))))
+
+(deftest the-mode-runs-on-the-world-the-row-loaded
+  ;; The mode's input carries the world the world row loaded, not a second load:
+  ;; a front end runs on the composition's world. The probe mode records what it
+  ;; was handed, so a run is observable without a terminal or a model.
+  (let [path (scratch-patch!
+              (str "{:rows [{:id :mode-probe :plugin kmet.app.test-core/probe-mode"
+                   " :mode true}]"
+                   " :patch [{:id :mode-tui :remove true}]}\n"))]
+    (try
+      (reset! probe-mode-input nil)
+      (with-redefs [world/load! (fn [_ _] {:model "probe"})]
+        (let [{:keys [code]} (support/run-main ["--patch" path "hi"])]
+          (is (zero? code) "the probe mode reports the run's exit")
+          (is (= {:model "probe"} (:config @probe-mode-input))
+              "the mode's config is the world the world row loaded")
+          (is (= "hi" (:prompt @probe-mode-input))
+              "and the invocation's input rides the same map")))
       (finally (io/delete-file path true)))))
 
 (deftest parse-args-collects-extension-flags
@@ -351,12 +410,15 @@
 (deftest dump-config-prints-the-built-in-composition
   (let [{:keys [code out]} (support/run-main ["--dump-config"])]
     (is (zero? code))
-    (is (str/starts-with? out "profile :tui rows=23 patches=1")
-        (str "the bundle: the extension host, the bus, the four registries, the"
-             " prompt builder, the session log and its storage, the projections,"
-             " the agent registry, the loop's two stage rows, the loop driver,"
-             " the five tool rows, and the terminal provider that replaces the"
-             " approval seam"))
+    (is (str/starts-with? out "profile :tui rows=24 patches=1")
+        (str "the bundle: the process world, the extension host, the bus, the"
+             " four registries, the prompt builder, the session log and its"
+             " storage, the projections, the agent registry, the loop's two"
+             " stage rows, the loop driver, the five tool rows, and the"
+             " terminal provider that replaces the approval seam"))
+    (is (str/includes? out ":world")
+        "the process world is a row like any other")
+    (is (str/includes? out "provide=[:world]"))
     (is (str/includes? out ":events"))
     (is (str/includes? out ":sessions"))
     (is (str/includes? out "inject={:sessionPersistence nil}")
@@ -374,7 +436,7 @@
     (try
       (let [{:keys [code out]} (support/run-main ["--dump-config" "--patch" path])]
         (is (zero? code))
-        (is (str/starts-with? out "profile :tui rows=24 patches=2"))
+        (is (str/starts-with? out "profile :tui rows=25 patches=2"))
         (is (str/includes? out ":app/sample"))
         (is (str/includes? out "inject={:tools nil}"))
         (is (str/includes? out "config={:a 1, :b {:c 2}}")
@@ -406,7 +468,7 @@
       (with-redefs [cfg/patch-paths (fn [] [global local])]
         (let [{:keys [code out]} (support/run-main ["--dump-config"])]
           (is (zero? code))
-          (is (str/starts-with? out "profile :tui rows=24 patches=2")
+          (is (str/starts-with? out "profile :tui rows=25 patches=2")
               "the global layer inserts the row; the project layer patches it")
           (is (str/includes? out "config={:a 2}")
               "the project layer applies over the global one"))
@@ -433,7 +495,7 @@
         (let [{:keys [code out]} (support/run-main ["--dump-default-config"
                                                     "--patch" path])]
           (is (zero? code) "neither the ambient layer nor --patch is read")
-          (is (str/starts-with? out "profile :tui rows=23 patches=1"))))
+          (is (str/starts-with? out "profile :tui rows=24 patches=1"))))
       (finally (io/delete-file path true)))))
 
 (deftest dump-state-prints-the-booted-tree
@@ -442,9 +504,12 @@
     (is (str/starts-with? out "[:app]")
         "the root frame, at the origin of every unit path")
     (is (str/includes? out "children=23")
-        "the twenty-two bundle rows, then the TUI's mode row — mounted, not run")
+        (str "the twenty-two bundle rows the world is deferred out of, then the"
+             " TUI's mode row — mounted, not run"))
     (is (str/includes? out ":active"))
     (is (str/includes? out "provides=[commands]"))
+    (is (str/includes? out "deferred: :world")
+        "the row a dump holds back is named, so the tree explains the count")
     (is (str/ends-with? out "\n"))
     (is (= "" err) "a dump boots and disposes; it reports nothing else")))
 
@@ -501,11 +566,13 @@
       (let [{:keys [code err]} (support/run-main ["--patch" path "hello"])]
         (is (= 1 code))
         (is (str/includes? err
-                           (str "booted 22 plugin rows (22 fibers, services: agents"
-                                " approvals commands compaction events llm loop-guard"
-                                " projections prompts retry-policy sessionPersistence"
-                                " sessions skills system-prompt tools ui)"))
-            "the boot is the point: a run with no mode still proves the rows mount")
+                           (str "booted 22 plugin rows (22 fibers, 1 deferred: :world, services:"
+                                " agents approvals commands compaction events llm"
+                                " loop-guard projections prompts retry-policy"
+                                " sessionPersistence sessions skills system-prompt"
+                                " tools ui)"))
+            "the boot is the point: a run with no mode still proves the rows mount,
+             and names the row it held back")
         (is (str/includes? err "profile tui has no runnable mode")
             "the profile is named, and the row that would have run it")
         (is (str/includes? err "--profile print") "and so is a profile that runs")

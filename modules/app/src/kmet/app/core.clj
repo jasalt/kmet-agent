@@ -13,15 +13,17 @@
    answer — what is `:pending` and on what, what failed and with which error.
 
    A profile with a **mode row** runs it: the row is marked `:mode true`, and
-   the entry point boots the world rows with that one deferred, loads the process
-   world into the mounted tree, then mounts the mode with the invocation's
-   input (the prompt, where it reports its exit, and the loaded config). The
-   mode owns its output and runs on its own thread; `main` waits for the exit
-   and disposes the composition it booted. A mode mounts last because its
-   `serve` starts the run, and the run must see the extensions and themes the
-   world load installs. Print mode is the first (`kmet.app.modes.print`);
-   a profile without a mode row still boots, reports what it mounted, and
-   exits, which is what proves the rest of the rows mount.
+   the entry point boots the composition with that row and the process world
+   (`:world`, marked `:defer`) held back, mounts the world with the invocation,
+   then mounts the mode with the invocation's input (the prompt, where it
+   reports its exit, and the world it loaded). The mode owns its output and runs
+   on its own thread; `main` waits for the exit and disposes the composition it
+   booted. A mode mounts last because its `serve` starts the run, and the run
+   must see the extensions and themes the world load installs. Print mode is the
+   first (`kmet.app.modes.print`); a profile without a mode row still boots,
+   reports what it mounted, and exits, which is what proves the rest of the rows
+   mount — and loads no world, because a boot with nothing to run has nothing to
+   read the machine's settings for.
 
    Three flags are maintenance rather than a run, and their order is part of
    their contract: `--debug` before any load (so the catalog trail is in the
@@ -48,9 +50,9 @@
             [kmet.app.catalog :as catalog]
             [kmet.app.inspect :as inspect]
             [kmet.app.invocation :as invocation]
-            [kmet.app.world :as world]
             [kmet.app.profile :as profile]
-            [kmet.app.runtime :as runtime]))
+            [kmet.app.runtime :as runtime]
+            [kmet.srce.core :as srce]))
 
 ;; ── argument parsing ──────────────────────────────────────────────────────
 
@@ -336,18 +338,30 @@
   (let [{:keys [rows patches profile]} (compose-config opts)]
     (profile/render profile {:rows rows :patches patches})))
 
+(defn- deferred-note
+  "One line naming the rows a dump held back, or `\"\"`. `--dump-state` does
+   not mount a `:defer` row — the process world is the entry's to mount, and a
+   dump must not read the machine's settings — so the tree is smaller than
+   `--dump-config` lists, and this line is why."
+  [deferred]
+  (if (empty? deferred)
+    ""
+    (str "deferred: " (str/join " " (map #(pr-str (:id %)) deferred))
+         " (a run mounts it with the invocation; a dump does not)\n")))
+
 (defn- dump-state
-  "The `--dump-state` text: the booted root's unit tree. The booted view needs a
-   boot, so this is the one flag that mounts the composition — and disposes it
-   again, so the host binding and the published registry are the ones it found
-   and a dump leaves no tree behind. The boot is a diagnostic one: a row
-   that stays `:pending` or ends `:failed` is a line in the tree (with what it
-   waits for, or why it failed) instead of a boot error, because that tree is
-   the answer to the question the flag asks."
+  "The `--dump-state` text: the booted root's unit tree, and the rows the boot
+   held back. The booted view needs a boot, so this is the one flag that mounts
+   the composition — and disposes it again, so the host binding and the
+   published registry are the ones it found and a dump leaves no tree behind.
+   The boot is a diagnostic one: a row that stays `:pending` or ends `:failed`
+   is a line in the tree (with what it waits for, or why it failed) instead of a
+   boot error, because that tree is the answer to the question the flag asks."
   [opts]
   (let [booted (runtime/boot (compose-config opts) {:diagnose? true})]
     (try
-      (str (inspect/units (:ctx booted)) "\n")
+      (str (inspect/units (:ctx booted)) "\n"
+           (deferred-note (:deferred booted)))
       (finally
         (runtime/shutdown! booted)))))
 
@@ -436,13 +450,18 @@
   1)
 
 (defn- boot-summary
-  "One line naming what the boot mounted: the rows, their fibers, and the
+  "One line naming what the boot mounted: the rows, their fibers, the rows it
+   held back (a `:defer` row is composed, but only its owner mounts it), and the
    service names they provide."
-  [{:keys [fibers rows]}]
-  (let [services (->> fibers (mapcat (comp :provides deref)) distinct sort (map name))]
+  [{:keys [fibers rows deferred]}]
+  (let [services (->> fibers (mapcat (comp :provides deref)) distinct sort (map name))
+        held (when (seq deferred)
+               (str (count deferred) " deferred: "
+                    (str/join " " (map #(pr-str (:id %)) deferred)) ", "))]
     (str "booted " rows " plugin row" (when (not= 1 rows) "s")
          " (" (count fibers) " fiber" (when (not= 1 (count fibers)) "s")
-         ", services: " (if (seq services) (str/join " " services) "none") ")")))
+         ", " (or held "")
+         "services: " (if (seq services) (str/join " " services) "none") ")")))
 
 (defn- mode-row
   "The composed row a profile marked as its mode, or nil."
@@ -477,22 +496,45 @@
     ;; a profile with no prompt to give hands the mode no prompt at all
     (not (str/blank? prompt)) (assoc :prompt prompt)))
 
+(defn- world-config
+  "The config the composition's `:world` row loaded, or a configuration error:
+   a run on a composition that patched the row out has no provider catalogs,
+   settings or themes to stand on, and starting it anyway would fail at the
+   first model request with nothing to say."
+  [ctx]
+  (if-let [loaded (srce/get ctx :world)]
+    (:config loaded)
+    (throw (ex-info (str "the composition mounts no :world row — a run loads its"
+                         " provider catalogs, settings and themes through it"
+                         " ({:id :world :plugin kmet.app.world/plugin}), and a"
+                         " patch removed this one")
+                    {:type :kmet.app/no-world}))))
+
 (defn- run-mode
-  "Boot COMPOSED's world rows, load the process world into that tree, then mount
-   MODE — the row `mode-row` found — with the invocation's input, wait for it
-   to report, and return its exit code. The mode mounts last, not with the
-   world: its `serve` starts the run, and the run must see the extensions,
-   themes and catalogs the load installs. The model patterns resolve after the
-   load for the same reason — an extension provider is one the catalog does not
-   have until then. `--list-models` returns from here after the load and before
-   the mount, so MODE may be nil (a profile that patched its mode row out). The
-   mode owns what it prints; the entry point owns the process, the boot, the
-   load and the teardown."
+  "Boot COMPOSED's rows, load the process world through the deferred `:world`
+   row, then mount MODE — the row `mode-row` found — with the invocation's
+   input, wait for it to report, and return its exit code.
+
+   Three mounts, in this order, and each step is a contract: the composition's
+   rows (with the world and the mode held back), the world — `world/load!`
+   installs the provider catalogs, settings and themes a run stands on, and the
+   row provides what it loaded as `:world` — and then the mode, whose `serve`
+   starts the run, so the run must see the world the load installed. The model
+   patterns resolve after the load for the same reason: an extension provider
+   is a catalog entry only then. `--list-models` returns after the load and
+   before the mode mount, so MODE may be nil (a profile that patched its mode
+   row out). The mode owns what it prints; the entry point owns the process,
+   the boot, the load and the teardown."
   [composed mode opts prompt]
   (let [result (promise)
-        booted (runtime/boot composed {:defer #(= (:id mode) (:id %))})]
+        mode? #(= (:id mode) (:id %))
+        booted (runtime/boot composed {:defer #(or (true? (:defer %)) (mode? %))})]
     (try
-      (let [config (world/load! opts (:ctx booted))
+      (let [booted (runtime/mount-deferred!
+                    booted
+                    #(true? (:defer %))
+                    (fn [row] (update row :config merge {:invocation opts})))
+            config (world-config (:ctx booted))
             opts (invocation/resolve-overrides opts)]
         (if (:list-models opts)
           ;; after the load: the table includes the providers the catalogs and
@@ -501,7 +543,8 @@
                                          (:list-models opts)))
               0)
           (let [input (mode-input opts config prompt #(deliver result %))]
-            (runtime/mount-deferred! booted (fn [row] (update row :config merge input)))
+            (runtime/mount-deferred! booted mode?
+                                     (fn [row] (update row :config merge input)))
             (:exit (deref result) 1))))
       (finally
         (runtime/shutdown! booted)))))
@@ -520,7 +563,10 @@
   "The path a profile without a mode row takes: boot the composition a run would
    mount, report what it mounted, dispose it, and say that this profile has no
    runnable mode yet. The boot is the point — it is what proves a profile's rows
-   actually mount, without a turn to run."
+   actually mount, without a turn to run.
+
+   The process world stays deferred: a boot with nothing to run has nothing to
+   read the machine's settings for, and the report names the row it held back."
   [composed profile args]
   (let [booted (runtime/boot composed)]
     (try
@@ -637,10 +683,10 @@
   "What a process start does before it exits: ARGS through `main`; `-main` adds
    the exit code, so a test drives the entry without forking.
 
-   The model catalog is not loaded here — it is part of the process world
-   (`run-mode`), after the boot that mounts its registries. The maintenance
-   flags follow that split: `-d` and `--generate-models` before the load,
-   `--list-models` after it."
+   The model catalog is not loaded here — it is part of the process world,
+   which `run-mode` mounts as the `:world` row after the composition's other
+   rows are up. The maintenance flags follow that split: `-d` and
+   `--generate-models` before the load, `--list-models` after it."
   [args]
   (main args))
 

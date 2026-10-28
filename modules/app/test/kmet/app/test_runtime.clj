@@ -131,6 +131,29 @@
                                                       :apply (fn [_ _] nil)}}]})))
       "a boot that is meant to run still fails hard"))
 
+(deftest boot-holds-back-the-rows-that-declare-it
+  ;; A `:defer` row is composed but not mounted: only its owner has what it
+  ;; waits for (`:world` waits for the entry's invocation), and a boot that is
+  ;; meant to inspect must not read the machine's settings on the way past.
+  (let [booted (boot-events)]
+    (try
+      (is (= [] (:deferred booted)) "a composition with no deferral mounts everything")
+      (finally (runtime/shutdown! booted))))
+  (let [noop (fn [name] {:name name :apply (fn [_ _] nil)})
+        booted (runtime/boot {:rows [{:id :held :defer true :plugin (noop :held)}
+                                     {:id :mounted :plugin (noop :mounted)}]})]
+    (try
+      (is (= [:held] (mapv :id (:deferred booted))))
+      (is (= 1 (:rows booted)) "the row is not mounted, so it is not one of the boot's")
+      (is (= [:mounted] (mapv (comp :name deref) (:fibers booted))))
+      (testing "and its owner mounts it from the deferred list"
+        (let [booted (runtime/mount-deferred! booted #(= :held (:id %)) identity)]
+          (is (= [] (:deferred booted)))
+          (is (= 2 (:rows booted)))
+          (is (= [:mounted :held] (mapv (comp :name deref) (:fibers booted)))
+              "it mounts after what the boot mounted, in deferred order")))
+      (finally (runtime/shutdown! booted)))))
+
 ;; ── the submission point ──────────────────────────────────────────────────
 
 (deftest a-submission-from-another-thread-waits-for-the-boundary

@@ -229,6 +229,14 @@
                         {:type :kmet.app/event-conflict :conflicts conflicts}))))
     failed))
 
+(defn- deferred-row?
+  "Is ROW one a boot leaves for its owner? A row declares `:defer` when only
+   someone outside the composition can mount it — the process world waits for
+   the entry, which is the only caller with the invocation, and a diagnostic or
+   test boot must not read the machine's settings on the way past."
+  [row]
+  (true? (:defer row)))
+
 (defn boot
   "Mount COMPOSED's rows under a fresh root ctx and return `{:ctx :fibers
    :rows n :deferred […] :failed […]}`. Rows mount in composition order and
@@ -236,11 +244,10 @@
    declare one event differently, or boot throws `:kmet.app/boot-failed` naming
    the rows and their waiting-for, or the events they disagree about.
 
-   `{:defer (fn [row])}` holds back the rows it matches: they are not mounted
-   and come back in `:deferred` for `mount-deferred!`. The entry uses it for
-   the mode row, whose `serve` starts the run: everything else mounts and
-   settles first, the entry loads the process world into that tree, and only
-   then does the mode mount.
+   A row that declares `:defer` is not mounted: it comes back in `:deferred`
+   for `mount-deferred!` (`deferred-row?`). `{:defer (fn [row])}` replaces that
+   rule: the entry also holds back the mode row, whose `serve` starts the run,
+   so everything else mounts and settles first.
 
    `{:diagnose? true}` returns the same map with the mounted-but-inactive rows
    in `:failed` instead of throwing: a diagnostic that cannot show the tree
@@ -255,7 +262,7 @@
   ([composed] (boot composed nil))
   ([{:keys [rows]} {:keys [ctx-meta diagnose? defer]}]
    (let [ctx (srce/root (merge {queue-key (atom []) :name :app} ctx-meta))
-         defer? (or defer (constantly false))
+         defer? (or defer deferred-row?)
          deferred (filterv defer? rows)
          mounted (into [] (remove defer?) rows)
          fibers (mount-rows! ctx mounted)
@@ -265,25 +272,33 @@
 
 (defn mount-deferred!
   "Mount the rows BOOT deferred, TRANSFORM applied to each first, and settle.
-   Returns BOOT with the rows moved into `:fibers` (and `:deferred` empty), so
+   Returns BOOT with the rows moved into `:fibers` (and out of `:deferred`), so
    a later `shutdown!` disposes them with the rest.
 
-   The transform is where the entry merges the invocation into the mode's
-   config — the values the world load had to install before the mode could be
-   told them (a `--model` an extension provider names). Throws like `boot` when
-   a row does not become active."
-  [{:keys [ctx fibers deferred] :as booted} transform]
-  (if (empty? deferred)
-    booted
-    (let [rows (mapv transform deferred)
-          mounted (mount-rows! ctx rows)
-          _ (srce/settle! ctx)
-          all-fibers (into (vec fibers) mounted)]
-      (check-mounts! ctx rows mounted all-fibers false)
-      (assoc booted
-             :fibers all-fibers
-             :rows (+ (:rows booted) (count rows))
-             :deferred []))))
+   `(mount-deferred! BOOTED PICK? TRANSFORM)` mounts only the deferred rows
+   PICK? matches and leaves the rest for a later call: the entry mounts the
+   world first, because what the load installs is what the mode's input carries,
+   and only then the mode.
+
+   The transform is where the entry merges the invocation into a row's config —
+   the values the boot had to install before the row could be told them (a
+   `--model` an extension provider names). Throws like `boot` when a row does
+   not become active."
+  ([booted transform] (mount-deferred! booted (constantly true) transform))
+  ([{:keys [ctx fibers deferred] :as booted} pick? transform]
+   (let [chosen (filterv pick? deferred)]
+     (if (empty? chosen)
+       booted
+       (let [remaining (filterv (complement pick?) deferred)
+             rows (mapv transform chosen)
+             mounted (mount-rows! ctx rows)
+             _ (srce/settle! ctx)
+             all-fibers (into (vec fibers) mounted)]
+         (check-mounts! ctx rows mounted all-fibers false)
+         (assoc booted
+                :fibers all-fibers
+                :rows (+ (:rows booted) (count rows))
+                :deferred remaining))))))
 
 (defn shutdown!
   "Dispose everything `boot` mounted, children first; the ctx is finished."

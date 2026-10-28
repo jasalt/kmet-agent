@@ -140,5 +140,6 @@ a session to outlive its socket keeps the session id and resumes it
 (`switch-session`, or the registry's resume-by-id); the server adds no second
 store.
 
-`--profile server --dump-state` mounts the whole composition with the mode row
-inert: a diagnostic boot opens no socket and proves the rows compose.
+`--profile server --dump-state` mounts the composition's rows with the mode
+row inert and the deferred `:world` row named rather than mounted: a diagnostic
+boot opens no socket and reads no settings, and still proves the rows compose.
