@@ -6,6 +6,7 @@
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
    [clojure.string :as str]
+   [kmet.ai.models :as models]
    [kmet.ai.api.shared :refer [anthropic-thinking bash-execution-text copilot-dynamic-headers endpoint-url image-block? on-payload request-headers tool->anthropic-schema effective-total-timeout-ms headers-timeout-ms transport-error-message usage-with-cost]]))
 
 (def default-anthropic-version "2023-06-01")
@@ -200,7 +201,7 @@
    (merge {"anthropic-version" default-anthropic-version
            "Content-Type" "application/json"}
           (anthropic-auth-headers (:id provider-record) api-key)
-          (when (= :github-copilot (:provider model-record))
+          (when (= :github-copilot (models/provider-family model-record))
             (copilot-dynamic-headers messages)))
    model-record provider-record api-key session-id))
 

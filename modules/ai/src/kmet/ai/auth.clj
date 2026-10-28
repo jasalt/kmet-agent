@@ -2,9 +2,12 @@
   "Provider credential resolution (pi: packages/ai credential-store +
    env-api-keys.ts, adapted to EDN).
 
-   auth.edn shape: {provider {:key \"...\"}} — kmet-internal (pi's auth.json
-   shape not required for parity). Loaded at startup (config/load-config);
-   /login and /logout write it under a file lock.
+   auth.edn shape: {provider-or-account-alias {:key \"...\"}} —
+   kmet-internal (pi's auth.json shape not required for parity). Account
+   aliases are provider ids declared in models.edn :accounts (see
+   kmet.ai.model-config), so one provider can hold several credentials.
+   Loaded at startup (config/load-config); /login and /logout write it under
+   a file lock.
 
    Resolution order (pi composeApiKeyAuth.resolve): auth.edn credential →
    models.edn/extension :api-key config value (registered via

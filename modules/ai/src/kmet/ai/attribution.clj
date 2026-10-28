@@ -7,7 +7,8 @@
    headers. pi gates the default attribution on install telemetry (default
    true); kmet has no telemetry, so the headers are always sent and the
    gate is dropped. OpenCode session headers are not gated in pi either."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [kmet.ai.models :as models]))
 
 (def ^:private openrouter-host "openrouter.ai")
 (def ^:private nvidia-nim-host "integrate.api.nvidia.com")
@@ -26,20 +27,20 @@
   "pi isOpenRouterModel: provider id :openrouter, or the base-url contains
    'openrouter.ai' (pi uses a substring check here, not a hostname match)."
   [model]
-  (or (= :openrouter (:provider model))
+  (or (= :openrouter (models/provider-family model))
       (str/includes? (or (:base-url model) "") openrouter-host)))
 
 (defn- is-nvidia-nim-model?
   "pi isNvidiaNimModel: provider :nvidia or hostname integrate.api.nvidia.com."
   [model]
-  (or (= :nvidia (:provider model))
+  (or (= :nvidia (models/provider-family model))
       (= nvidia-nim-host (host-of (:base-url model)))))
 
 (defn- is-cloudflare-model?
   "pi isCloudflareModel: provider cloudflare-workers-ai / cloudflare-ai-gateway
    or hostname api.cloudflare.com / gateway.ai.cloudflare.com."
   [model]
-  (or (contains? #{:cloudflare-workers-ai :cloudflare-ai-gateway} (:provider model))
+  (or (contains? #{:cloudflare-workers-ai :cloudflare-ai-gateway} (models/provider-family model))
       (contains? #{cloudflare-api-host cloudflare-ai-gateway-host}
                  (host-of (:base-url model)))))
 
@@ -68,7 +69,7 @@
    Nil without a session id."
   [model session-id]
   (when session-id
-    (when (or (contains? #{:opencode :opencode-go} (:provider model))
+    (when (or (contains? #{:opencode :opencode-go} (models/provider-family model))
               (= opencode-host (host-of (:base-url model))))
       {"x-opencode-session" session-id
        "x-opencode-client" "kmet"})))

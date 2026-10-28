@@ -269,8 +269,10 @@
    messages and degrade everything else — feeding another model's
    chain-of-thought back as if it were the target's own derails DeepSeek-class
    thinking models into re-running their last tool call after a mid-session
-   /model switch). Tested directly by test_llm, hence public."
-  [messages & [provider model-id]]
+   /model switch). BASE-PROVIDER (an account alias's base) drives the
+   provider-specific tool-call id normalization; provenance stays PROVIDER.
+   Tested directly by test_llm, hence public."
+  [messages & [provider model-id base-provider]]
   (into []
         (keep (fn [m]
                 (let [role (name (:role m))
@@ -284,7 +286,8 @@
                     "tool"
                     {:role "tool"
                      :tool_call_id (normalize-openai-tool-call-id
-                                    (-> m :content first :tool_use_id) provider)
+                                    (-> m :content first :tool_use_id)
+                                    (or base-provider provider))
                      :content (tool-result-content m)}
                     "assistant"
                     (let [text (content-text (:content m))
@@ -294,7 +297,8 @@
                                 has-tc
                                 (assoc :tool_calls
                                        (mapv (fn [tc]
-                                               {:id (normalize-openai-tool-call-id (:id tc) provider)
+                                               {:id (normalize-openai-tool-call-id
+                                                     (:id tc) (or base-provider provider))
                                                 :type "function"
                                                 :function {:name (:name tc)
                                                            :arguments (json/generate-string
@@ -326,8 +330,10 @@
    provider+model (see openai-messages — cross-model CoT is never replayed);
    everything else gets FILL (default \"\"). FILL must be non-empty for
    endpoints that turn the field into a thinking block and reject an empty
-   one (the stealth models: compat :reasoning-content-fill)."
-  [messages & [provider model-id fill]]
+   one (the stealth models: compat :reasoning-content-fill).
+   BASE-PROVIDER (an account alias's base) drives tool-call id
+   normalization; provenance stays PROVIDER."
+  [messages & [provider model-id fill base-provider]]
   (into []
         (keep (fn [m]
                 (let [role (name (:role m))
@@ -345,7 +351,8 @@
                     "tool"
                     {:role "tool"
                      :tool_call_id (normalize-openai-tool-call-id
-                                    (-> m :content first :tool_use_id) provider)
+                                    (-> m :content first :tool_use_id)
+                                    (or base-provider provider))
                      :content (tool-result-content m)}
                     "assistant"
                     (let [text (content-text (:content m))
@@ -354,7 +361,8 @@
                                 (seq text) (assoc :content text)
                                 has-tc (assoc :tool_calls
                                               (mapv (fn [tc]
-                                                      {:id (normalize-openai-tool-call-id (:id tc) provider)
+                                                      {:id (normalize-openai-tool-call-id
+                                                            (:id tc) (or base-provider provider))
                                                        :type "function"
                                                        :function {:name (:name tc)
                                                                   :arguments (json/generate-string
@@ -462,8 +470,8 @@
    implementation (zaiToolStream, deferredToolsMode,
    supportsOpenAIGrammarTools) are not ported. Unlike pi, URL matching is
    case-insensitive across all providers."
-  [{:keys [provider id base-url]}]
-  (let [provider (some-> provider name)
+  [{:keys [provider base-provider id base-url]}]
+  (let [provider (some-> (or base-provider provider) name)
         url (str/lower-case (or base-url ""))
         id-str (or id "")
         zai? (zai-provider? provider url)

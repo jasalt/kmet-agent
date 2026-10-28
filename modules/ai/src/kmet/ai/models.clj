@@ -6,7 +6,12 @@
    dispatch, thinking, max tokens, cost) derives from the resolved Model,
    never from ad-hoc provider switches. Providers are data — an EDN blob
    registered in an atom — which is what later makes extension
-   registerProvider trivial (pi: MutableModels.setProvider)."
+   registerProvider trivial (pi: MutableModels.setProvider).
+
+   Account aliases (models.edn :accounts) are registered here as providers
+   too: an alias copies its base provider's models with :provider set to the
+   alias id and :base-provider set to the base, so selection resolves per
+   account while wire shaping and attribution still see the base provider."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -38,6 +43,7 @@
                   sampling-params ;; optional map merged verbatim into openai-completions request bodies
                   headers       ;; optional static headers map (copilot)
                   compat        ;; map, api-specific; see models.md
+                  base-provider ;; keyword: the catalog provider an account alias mirrors
                   ])
 
 (defrecord Provider [id          ;; keyword
@@ -52,7 +58,18 @@
                      auth-header ;; bool: send Authorization: Bearer <key> (models.edn)
                      configured-headers ;; raw provider-level config headers (models.edn)
                      oauth       ;; OAuthAuth record (Phase 10; github-copilot)
+                     base-provider ;; keyword: set on account aliases (see model-config :accounts)
                      ])
+
+(defn provider-family
+  "The catalog provider a Provider/Model record belongs to: an account
+   alias's base provider, or its own provider id. Keywords pass through.
+   Wire and attribution checks use this so an alias keeps its base provider's
+   request shaping; provenance stamps keep using the alias id itself."
+  [record-or-id]
+  (if (keyword? record-or-id)
+    record-or-id
+    (or (:base-provider record-or-id) (:provider record-or-id) (:id record-or-id))))
 
 ;; ─── Cost (pi: models.ts calculateCost, minus cacheWrite1h) ─────────────────
 
@@ -469,6 +486,94 @@
           (swap! composition-errors assoc provider-id (ex-message e))
           (when base (register-provider! base)))))))
 
+(defn- compose-account-provider
+  "Compose an account alias from the provider it mirrors: identical models
+   and provider-level request config, its own raw :api-key (from the account
+   entry), and no env-var fallback — the base provider's env vars
+   authenticate the base account, not the alias."
+  [alias-id config]
+  (let [base-id (or (model-config/account-base alias-id config)
+                    (throw (ex-info (str "Account " (name alias-id) " has no provider")
+                                    {:type :model-config-invalid})))
+        base (get-provider base-id)]
+    (when-not base
+      (throw (ex-info (str "Account " (name alias-id) " mirrors unknown provider "
+                           (name base-id))
+                      {:type :model-config-invalid})))
+    (when (:base-provider base)
+      (throw (ex-info (str "Account " (name alias-id) " mirrors another account alias "
+                           (name base-id))
+                      {:type :model-config-invalid})))
+    (-> base
+        (assoc :id alias-id
+               :base-provider base-id
+               :name (or (:name config)
+                         (str (or (:name base) (name base-id))
+                              " (" (model-config/account-label alias-id) ")"))
+               :api-key (:api-key config)
+               :models (mapv (fn [m]
+                               (map->Model (assoc m
+                                                  :provider alias-id
+                                                  :base-provider base-id)))
+                             (:models base)))
+        (dissoc :env-vars)
+        map->Provider)))
+
+(defn- recompose-account-provider!
+  "Compose one account alias, recording a composition error (and dropping
+   the alias) when its base is missing or invalid."
+  [alias-id config]
+  (let [alias-id (keyword alias-id)]
+    (try
+      (register-provider! (compose-account-provider alias-id config))
+      (swap! composition-errors dissoc alias-id)
+      (catch Exception e
+        (unregister-provider! alias-id)
+        (swap! composition-errors assoc alias-id (ex-message e))))))
+
+(defn- base-provider-ids
+  "Every provider id composed from a base layer (builtin, models.edn or
+   extension), before account aliases are added."
+  []
+  (into (sorted-set)
+        (concat (keys @builtins-atom)
+                (model-config/get-provider-ids)
+                (keys @extension-providers)
+                (keys @native-extension-providers))))
+
+(defn- recompose-account-providers!
+  "Compose every declared account alias. An alias id that collides with a
+   base provider id is a composition error (the base wins)."
+  []
+  (let [base-ids (base-provider-ids)]
+    (doseq [[alias-id config] (model-config/get-accounts)]
+      (let [alias-id (keyword alias-id)]
+        (if (contains? base-ids alias-id)
+          (swap! composition-errors assoc alias-id
+                 (str "Account alias id \"" (name alias-id)
+                      "\" collides with a provider id"))
+          (recompose-account-provider! alias-id config))))))
+
+(defn- recompose-accounts-of!
+  "Refresh the aliases that mirror BASE-ID after its own composition
+   changed (extension registration/unregistration)."
+  [base-id]
+  (doseq [[alias-id config] (model-config/get-accounts)
+          :let [alias-id (keyword alias-id)]
+          :when (= base-id (model-config/account-base alias-id config))]
+    (recompose-account-provider! alias-id config)))
+
+(defn- recompose-all!
+  "Clear the registry and compose every base provider followed by the
+   account aliases (load-models-config! and extension clearing)."
+  []
+  (clear-providers!)
+  (reset! composition-errors {})
+  (doseq [pid (base-provider-ids)]
+    (recompose-provider! pid))
+  (recompose-account-providers!)
+  @providers-atom)
+
 (defn- merge-defined
   "pi: re-registration merges defined values over the previous registration
    and preserves undefined (nil) ones."
@@ -500,6 +605,7 @@
     (swap! extension-providers assoc provider-id effective)
     (swap! native-extension-providers dissoc provider-id)
     (recompose-provider! provider-id)
+    (recompose-accounts-of! provider-id)
     effective))
 
 (defn unregister-provider-config!
@@ -511,6 +617,7 @@
     (swap! extension-providers dissoc provider-id)
     (swap! native-extension-providers dissoc provider-id)
     (recompose-provider! provider-id)
+    (recompose-accounts-of! provider-id)
     nil))
 
 (defn register-native-provider!
@@ -525,6 +632,7 @@
   (swap! extension-providers dissoc (:id provider))
   (swap! native-extension-providers assoc (:id provider) provider)
   (recompose-provider! (:id provider))
+  (recompose-accounts-of! (:id provider))
   provider)
 
 (defn clear-extension-providers!
@@ -533,8 +641,7 @@
   []
   (reset! extension-providers {})
   (reset! native-extension-providers {})
-  (doseq [pid (keys @providers-atom)]
-    (recompose-provider! pid))
+  (recompose-all!)
   nil)
 
 (defn get-registered-provider-config
@@ -579,9 +686,15 @@
   (let [stored (get-in (auth/get-credentials) [provider-id])
         provider (get-provider provider-id)
         configured (when provider
-                     (composer/configured-request-auth-status
-                      (model-config/get-provider provider-id)
-                      (get @extension-providers provider-id)))]
+                     (or (composer/configured-request-auth-status
+                          (model-config/get-provider provider-id)
+                          (get @extension-providers provider-id))
+                         ;; an account alias keeps its :api-key in the
+                         ;; composed provider, not in a models.edn provider
+                         ;; entry
+                         (when (:base-provider provider)
+                           (composer/configured-request-auth-status
+                            {:api-key (:api-key provider)} nil))))]
     (cond
       ;; a stored oauth credential needs a registered OAuthAuth, like
       ;; auth/configured? (pi checkAuth); without one it is not configured
@@ -642,16 +755,7 @@
   ([agent-dir]
    (load-catalogs! agent-dir)
    (model-config/load-config! agent-dir)
-   (clear-providers!)
-   (reset! composition-errors {})
-   (let [ids (into (sorted-set)
-                   (concat (keys @builtins-atom)
-                           (model-config/get-provider-ids)
-                           (keys @extension-providers)
-                           (keys @native-extension-providers)))]
-     (doseq [pid ids]
-       (recompose-provider! pid)))
-   @providers-atom))
+   (recompose-all!)))
 
 (defn get-model-config-error
   "models.edn load + composition error string (pi ModelRuntime.getError):

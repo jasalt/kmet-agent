@@ -3,7 +3,10 @@
    discovery, auth-type selection, API-key and OAuth login (pi:
    getLoginProviderOptions / showLoginAuthTypeSelector / showLoginDialog /
    showApiKeyLoginDialog / OAuthSelectorComponent). The command handlers
-   are registered by kmet.ui.tui.interactive.builtins."
+   are registered by kmet.ui.tui.interactive.builtins. A `/login base#label`
+   reference for an undeclared account declares it in models.edn (the
+   account-alias format from kmet.ai.model-config) and then runs the base
+   provider's normal login flow."
   (:require [clojure.string :as str]
             [kmet.tui.core :as tui]
             [kmet.libs.fuzzy :as fuzzy]
@@ -12,6 +15,7 @@
             [kmet.ui.tui.dock :as dock]
             [kmet.ui.tui.login-dialog :as login-dialog]
             [kmet.ai.auth :as auth]
+            [kmet.ai.model-config :as model-config]
             [kmet.ai.models :as models]
             [kmet.ui.tui.interactive.state :as state]))
 
@@ -185,10 +189,20 @@
 ;;    / findLoginProviderOptions / handleLoginCommand) ────────────────────────
 
 (defn- api-key-login-path?
-  "True when the provider offers an api-key login (env vars, models.edn
-   configured key, or :auth-header) — openai-codex is oauth-only."
+  "True when the provider (or the catalog provider an account alias mirrors)
+   offers an api-key login (env vars, models.edn configured key, or
+   :auth-header) — openai-codex is oauth-only."
   [p]
-  (or (seq (:env-vars p)) (:api-key p) (:auth-header p)))
+  (let [base (when-let [base-id (:base-provider p)]
+               (models/get-provider base-id))]
+    (or (seq (:env-vars p)) (:api-key p) (:auth-header p)
+        (boolean (and base
+                      (or (seq (:env-vars base)) (:api-key base) (:auth-header base)))))))
+
+(defn- provider-login-available?
+  "True when PROVIDER offers at least one login method (oauth or api-key)."
+  [p]
+  (boolean (or (:oauth p) (api-key-login-path? p))))
 
 (defn- login-provider-options
   "pi getLoginProviderOptions: one entry per offered auth type per provider,
@@ -355,25 +369,112 @@
                :description (if (= name id) type-desc (str name " · " type-desc))})
             filtered))))
 
+(defn- start-login-options!
+  "Start the login flow for REF using its exact-match options: one option
+   starts directly, both auth types open the method selector, and no match
+   opens the provider selector pre-filtered with REF."
+  [cs ref]
+  (let [options (find-login-provider-options ref)]
+    (cond
+      (= 1 (count options))
+      (start-provider-login! cs (first options))
+
+      (and (pos? (count options))
+           (= 1 (count (distinct (map :id options)))))
+      (show-login-auth-type-selector! cs options)
+
+      :else
+      (show-login-provider-selector! cs nil ref))))
+
+(defn- create-account-provider!
+  "Declare ALIAS-ID as an account of BASE in the user's models.edn, reload
+   the provider registry, and return the composed alias Provider. Reports a
+   warning and returns nil on failure."
+  [cs alias-id base]
+  (try
+    (model-config/add-account! alias-id {:provider (:id base)})
+    (models/load-models-config!)
+    (if-let [p (models/get-provider alias-id)]
+      (do
+        (chat-history/chat-history-add-message!
+         (:chat-history cs)
+         {:role :assistant
+          :content (str "Created account alias " (name alias-id) " (" (:name p) ").")})
+        p)
+      (do
+        (chat-history/show-warning!
+         (:chat-history cs)
+         (str "Failed to compose account alias " (name alias-id) ": "
+              (or (models/get-model-config-error) "unknown error")))
+        nil))
+    (catch Exception e
+      (chat-history/show-warning! (:chat-history cs)
+                                  (str "Failed to create account alias "
+                                       (name alias-id) ": " (ex-message e)))
+      nil)))
+
+(defn- handle-account-login!
+  "`/login base#label`: log in to an existing account alias, or declare it in
+   models.edn first and then run the base provider's normal login flow."
+  [cs alias-id base-id]
+  (let [alias (models/get-provider alias-id)
+        base (models/get-provider base-id)]
+    (cond
+      alias
+      (start-login-options! cs (name alias-id))
+
+      (namespace alias-id)
+      (chat-history/show-warning! (:chat-history cs)
+                                  (str "Account alias "
+                                       (subs (str alias-id) 1)
+                                       " must not contain '/' (it separates provider and model)."))
+
+      (model-config/get-account alias-id)
+      (chat-history/show-warning!
+       (:chat-history cs)
+       (str "Account alias " (name alias-id) " is declared but not registered: "
+            (or (models/get-model-config-error) "unknown error")))
+
+      (nil? base)
+      (chat-history/show-warning! (:chat-history cs)
+                                  (str "Unknown provider \"" (name base-id)
+                                       "\" for account alias " (name alias-id) "."))
+
+      (:base-provider base)
+      (chat-history/show-warning! (:chat-history cs)
+                                  (str "Cannot create " (name alias-id) ": "
+                                       (name base-id) " is itself an account alias."))
+
+      (not (provider-login-available? base))
+      (chat-history/show-warning!
+       (:chat-history cs)
+       (str "Provider \"" (name base-id) "\" has no login methods. Declare the alias "
+            "with an :api-key in models.edn instead."))
+
+      :else
+      (when-let [p (create-account-provider! cs alias-id base)]
+        (start-login-options! cs (name (:id p)))))))
+
 (defn handle-login-command!
   "pi handleLoginCommand: bare /login opens the auth-type selector; a
    reference resolves by exact id/name (case-insensitive) — one hit starts
    directly, several hits on one provider open its method selector, and no
-   hit opens the provider selector pre-filtered with the typed text."
+   hit opens the provider selector pre-filtered with the typed text. A
+   `base#label` reference for an undeclared account creates the account in
+   models.edn first (the alias convention from model-config)."
   [cs provider-ref]
-  (if (str/blank? provider-ref)
-    (show-login-auth-type-selector! cs)
-    (let [options (find-login-provider-options provider-ref)]
-      (cond
-        (= 1 (count options))
-        (start-provider-login! cs (first options))
+  (let [ref (str/trim (str provider-ref))]
+    (cond
+      (str/blank? ref)
+      (show-login-auth-type-selector! cs)
 
-        (and (pos? (count options))
-             (= 1 (count (distinct (map :id options)))))
-        (show-login-auth-type-selector! cs options)
+      (models/get-provider (keyword ref))
+      (start-login-options! cs ref)
 
-        :else
-        (show-login-provider-selector! cs nil provider-ref)))))
+      :else
+      (if-let [{:keys [id provider]} (model-config/parse-account-ref ref)]
+        (handle-account-login! cs id provider)
+        (start-login-options! cs ref)))))
 
 (defn handle-logout-command!
   "pi showOAuthSelector(\"logout\"): the searchable selector over the stored

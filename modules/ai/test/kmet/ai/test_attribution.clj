@@ -7,8 +7,9 @@
             [kmet.ai.attribution :as attr]))
 
 (defn- model
-  [& {:keys [provider base-url]}]
-  {:provider provider :base-url (or base-url "https://api.example.com/v1")})
+  [& {:keys [provider base-url base-provider]}]
+  {:provider provider :base-provider base-provider
+   :base-url (or base-url "https://api.example.com/v1")})
 
 ;; ─── Default attribution (pi getDefaultAttributionHeaders) ─────────────────
 
@@ -100,3 +101,20 @@
     (let [r (attr/merge-provider-attribution-headers
              (model :provider :openrouter) nil nil)]
       (t/is (= "https://github.com/markokocic/kmet" (get r "HTTP-Referer"))))))
+
+;; ─── Account aliases keep their base provider's attribution ────────────────
+
+(t/deftest test-account-alias-attribution
+  (t/is (= {"HTTP-Referer" "https://github.com/markokocic/kmet"
+            "X-OpenRouter-Title" "kmet"
+            "X-OpenRouter-Categories" "cli-agent"}
+           (attr/merge-provider-attribution-headers
+            (model :provider :openrouter#work :base-provider :openrouter
+                   :base-url "https://openrouter.example/v1")
+            nil))
+        "an alias with a non-openrouter URL still gets openrouter attribution")
+  (t/is (= {"x-opencode-session" "sess-1" "x-opencode-client" "kmet"}
+           (attr/merge-provider-attribution-headers
+            (model :provider :opencode#work :base-provider :opencode
+                   :base-url "https://api.example.com")
+            "sess-1"))))

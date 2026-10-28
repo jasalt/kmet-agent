@@ -622,7 +622,7 @@
    (register-builtin-command!
     {:name "login"
      :description "Configure provider authentication"
-     :argument-hint "<provider>"
+     :argument-hint "<provider|provider#alias>"
      :get-argument-completions auth/login-argument-completions
      :handler (fn [cs args] (auth/handle-login-command! cs args))})
    (register-builtin-command!

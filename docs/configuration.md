@@ -88,6 +88,27 @@ wire compatibility (thinking format, max-tokens field, reasoning
 round-trip) auto-detects from the provider id and base URL; explicit
 `:compat` entries in models.edn override the detected defaults.
 
+### Accounts
+
+`models.edn` can declare account aliases under `:accounts` so a provider is
+usable with more than one credential:
+
+```clojure
+{:accounts {:github-copilot#work {}          ; base inferred from base#label
+            :deepseek#work       {:name "DeepSeek (work)"
+                                  :api-key "$DEEPSEEK_WORK_API_KEY"}
+            :copilot-enterprise  {:provider :github-copilot}}}
+```
+
+An entry mirrors the provider named by `:provider`, or by the part before
+`#` in the alias id. Alias ids are plain provider ids (no `/`, which is the
+provider/model separator in model references). `:name` overrides the display name (default:
+`Base name (label)`), and `:api-key` is the same raw config value a provider
+entry accepts (`"literal"`, `"$ENV_VAR"`, or `"!command"`). Credentials
+entered with `/login` are stored per alias in `auth.edn`. `/login base#label`
+adds a missing account declaration to the global `models.edn`; see the
+[providers guide](providers.md#multiple-accounts).
+
 ## System prompts
 
 The system prompt (pi-compatible) is built from: the default (or `:system-prompt`)

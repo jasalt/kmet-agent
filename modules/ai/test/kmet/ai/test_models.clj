@@ -5,6 +5,7 @@
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.ai.models :as m]
+            [kmet.ai.model-config :as model-config]
             [kmet.ai.auth :as auth]
             [kmet.ai.oauth :as oauth]
             [kmet.libs.dynamic-value :as dynamic-value]))
@@ -792,4 +793,81 @@
           (t/is (contains? providers :deepseek) "bundled catalogs win")))
       (finally
         (fs/delete-tree dir)
+        (m/load-catalogs!)))))
+
+;; ─── Account aliases (models.edn :accounts) ────────────────────────────────
+
+(t/deftest test-account-aliases
+  (m/load-catalogs!)
+  (let [tmp (str (fs/absolutize (fs/file "target" (str "test-accounts-" (System/currentTimeMillis)))))
+        path (str tmp "/models.edn")]
+    (fs/create-dirs tmp)
+    (try
+      (spit path (str "{:accounts {:deepseek#work {:api-key \"sk-work\"}\n"
+                      "            :github-copilot#home {}\n"
+                      "            :nope#x {}\n"
+                      "            :deepseek#a {:provider :deepseek}\n"
+                      "            :deepseek#a#b {:provider :deepseek#a}\n"
+                      "            :deepseek {:provider :deepseek}}}\n"))
+      (let [agent-dir (str tmp "/agent")]
+        (fs/create-dirs agent-dir)
+        (fs/copy path (str agent-dir "/models.edn"))
+        (with-redefs [fs/cwd (fn [] tmp)]
+          (m/load-models-config! agent-dir)))
+      (t/testing "an alias is a first-class provider mirroring its base"
+        (let [p (m/get-provider :deepseek#work)
+              model (m/get-model :deepseek#work "deepseek-flash")]
+          (t/is (some? p))
+          (t/is (= :deepseek (:base-provider p)))
+          (t/is (= "DeepSeek (work)" (:name p)))
+          (t/is (nil? (:env-vars p)) "base env vars are not inherited")
+          (t/is (some? model))
+          (t/is (= :deepseek#work (:provider model)))
+          (t/is (= :deepseek (:base-provider model)))
+          (t/is (= :deepseek (m/provider-family model)))
+          (t/is (= :deepseek (:provider (m/get-model :deepseek "deepseek-flash")))
+                "the base provider is untouched")))
+      (t/testing "each account resolves its own credential"
+        (with-redefs [auth/getenv (fn [_] nil)
+                      dynamic-value/getenv (fn [_] nil)]
+          (t/is (= "sk-work" (auth/resolve-api-key :deepseek#work)))
+          (t/is (= {:configured true :source :models-json-key}
+                   (m/get-provider-auth-status :deepseek#work)))
+          (t/is (false? (auth/configured? :deepseek)))
+          (t/is (false? (auth/configured? :github-copilot#home)))))
+      (t/testing "base env vars do not authenticate an alias"
+        (with-redefs [auth/getenv (fn [k] (when (= k "COPILOT_GITHUB_TOKEN") "env-token"))
+                      dynamic-value/getenv (fn [_] nil)]
+          (t/is (true? (auth/configured? :github-copilot)))
+          (t/is (false? (auth/configured? :github-copilot#home)))))
+      (t/testing "an oauth alias filters models by its own credential"
+        (with-redefs [auth/getenv (fn [_] nil)
+                      auth/auth-atom (atom {:github-copilot#home
+                                            {:type :oauth :access "a" :refresh "r"
+                                             :expires (+ (System/currentTimeMillis) 3600000)
+                                             :available-model-ids ["claude-haiku-4.5"]}})]
+          (t/is (true? (auth/configured? :github-copilot#home)))
+          (t/is (= ["claude-haiku-4.5"]
+                   (mapv :id (m/get-available :github-copilot#home))))
+          (t/is (false? (auth/configured? :github-copilot)))))
+      (t/testing "unknown bases, alias-of-alias and id collisions are errors"
+        (let [err (m/get-model-config-error)]
+          (t/is (str/includes? err "nope#x"))
+          (t/is (str/includes? err "mirrors another account alias"))
+          (t/is (str/includes? err "collides with a provider id")))
+        (t/is (nil? (m/get-provider :nope#x)))
+        (t/is (nil? (m/get-provider :deepseek#a#b)))
+        (t/is (some? (m/get-provider :deepseek)))
+        (t/is (nil? (:base-provider (m/get-provider :deepseek)))))
+      (t/testing "removing the declaration removes the alias on reload"
+        (spit path "{:providers {}}\n")
+        (fs/copy path (str tmp "/agent/models.edn") {:replace-existing true})
+        (with-redefs [fs/cwd (fn [] tmp)]
+          (m/load-models-config! (str tmp "/agent")))
+        (t/is (nil? (m/get-provider :deepseek#work))))
+      (finally
+        ;; clear the loaded accounts before the temp dir disappears
+        (with-redefs [fs/cwd (fn [] (str tmp "/project"))]
+          (model-config/load-config! (str tmp "/empty")))
+        (fs/delete-tree tmp)
         (m/load-catalogs!)))))

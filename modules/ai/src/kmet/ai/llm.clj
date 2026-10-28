@@ -84,7 +84,8 @@
      :provider    — provider keyword (:opencode-go, :opencode, :deepseek,
                     :github-copilot, :openai, :xai, :openai-codex,
                     :azure-openai-responses, :mistral, :google-vertex,
-                    :amazon-bedrock, ...)
+                    :amazon-bedrock, ...) or an account alias declared in
+                    models.edn :accounts (e.g. :github-copilot#work)
      :model       — model id string, resolved against the provider's catalog
      :api-type    — wire api override (:openai-completions,
                     :openai-responses, :openai-codex-responses,

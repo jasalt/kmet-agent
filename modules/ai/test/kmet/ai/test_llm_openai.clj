@@ -682,7 +682,16 @@
                {:id "claude-sonnet-4.6" :provider :anthropic :api :anthropic-messages}
                {:id :anthropic :name "Anthropic"} "sk-test" nil
                [{:role :user :content [{:type :text :text "hi"}]}])]
-        (t/is (nil? (get h "X-Initiator")))))))
+        (t/is (nil? (get h "X-Initiator")))))
+    (t/testing "an account alias keeps its base provider's copilot shaping"
+      (let [alias (assoc model :provider :github-copilot#work
+                         :base-provider :github-copilot)
+            h (@#'completions/openai-request-headers
+               alias (assoc provider :id :github-copilot#work) "sk-test" nil
+               [{:role :user :content [{:type :text :text "hi"}]}])]
+        (t/is (= :github-copilot (m/provider-family alias)))
+        (t/is (= "user" (get h "X-Initiator")))
+        (t/is (= "conversation-edits" (get h "Openai-Intent")))))))
 
 (t/deftest test-llm-responses-tool-result-placeholder
   (let [model (responses-model {:input [:text]})]

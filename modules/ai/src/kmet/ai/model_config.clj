@@ -12,14 +12,20 @@
    Validation is a manual walker (no TypeBox) producing path-style messages
    ('providers.my-provider.models[0].cost: expected number'), collected
    rather than thrown. Unknown keys pass (pi's TypeBox schemas allow
-   additional properties)."
+   additional properties).
+
+   :accounts declares account aliases — provider ids that mirror a catalog
+   provider so one provider can be used with several credentials. An entry
+   is {:provider <base> :name <label> :api-key <key>}; a `base#label` id may
+   omit :provider. models/load-models-config! composes each alias into its
+   own Provider record; credentials stay in auth.edn under the alias id."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [babashka.fs :as fs]
             [kmet.ai.auth :as auth]
             [kmet.libs.edn-store :as eds]))
 
-(defonce config-atom (atom {:providers {} :error nil}))
+(defonce config-atom (atom {:providers {} :accounts {} :error nil}))
 
 ;; ─── Schema validation (pi validateModelsConfig, manual walker) ────────────
 
@@ -241,22 +247,84 @@
       (vector? (:models m))
       (validate-models path (:models m)))))
 
+(declare account-base)
+
 (defn validate-config
   "Manual schema validation of a models.edn map (pi validateModelsConfig).
    Returns a vector of path-style error strings
    (\"providers.my-provider.models[0].cost: expected number\"); empty when
-   valid."
+   valid. A file may declare providers, accounts, or both."
   [config]
   (if-not (map? config)
     ["root: expected object"]
-    (let [providers (:providers config)]
-      (if-not (map? providers)
-        ["providers: expected object"]
-        (reduce (fn [errors [pid m]]
-                  (if-not (map? m)
-                    (conj errors (str "providers." (name pid) ": expected map"))
-                    (validate-provider errors (str "providers." (name pid)) m)))
-                [] providers)))))
+    (let [providers (:providers config)
+          accounts (:accounts config)]
+      (cond-> []
+        (and (nil? providers) (nil? accounts)) (conj "providers: expected object")
+        (and (some? providers) (not (map? providers))) (conj "providers: expected object")
+        (and (some? accounts) (not (map? accounts))) (conj "accounts: expected object")
+        (map? providers)
+        (into (reduce (fn [errors [pid m]]
+                        (if-not (map? m)
+                          (conj errors (str "providers." (name pid) ": expected map"))
+                          (validate-provider errors (str "providers." (name pid)) m)))
+                      [] providers))
+        (map? accounts)
+        (into (reduce (fn [errors [aid m]]
+                        (let [path (str "accounts." (if (keyword? aid) (subs (str aid) 1) (str aid)))]
+                          (cond
+                            (not (or (keyword? aid) (string? aid)))
+                            (conj errors (str path ": provider id must be a keyword or string"))
+
+                            (or (and (keyword? aid) (namespace aid))
+                                (and (string? aid) (str/includes? aid "/")))
+                            (conj errors (str path ": account alias id must not contain '/'"))
+
+                            (not (map? m))
+                            (conj errors (str path ": expected map"))
+
+                            :else
+                            (let [errors (-> errors
+                                             (when-present m :provider (str path ".provider")
+                                                           api-value? "expected keyword or string")
+                                             (when-present m :name (str path ".name")
+                                                           valid-string? "expected non-empty string")
+                                             (when-present m :api-key (str path ".api-key")
+                                                           valid-string? "expected non-empty string"))]
+                              (if (account-base aid m)
+                                errors
+                                (conj errors (str path ".provider: required unless the account id has the form base#label")))))))
+                      [] accounts))))))
+
+;; ─── Account aliases ───────────────────────────────────────────────────────
+
+(defn account-base
+  "The base provider an account entry mirrors: its explicit :provider, else
+   the part before '#' in an id like github-copilot#work. Nil when neither."
+  [alias-id account]
+  (if-let [p (:provider account)]
+    (keyword p)
+    (let [s (name alias-id)
+          i (str/index-of s "#")]
+      (when (and i (pos? i) (< (inc i) (count s)))
+        (keyword (subs s 0 i))))))
+
+(defn account-label
+  "The short label of an account alias id: the part after '#', else the id."
+  [alias-id]
+  (let [s (name alias-id)
+        i (str/index-of s "#")]
+    (if i (subs s (inc i)) s)))
+
+(defn parse-account-ref
+  "Parse a /login reference of the form `base#label` into
+   {:id :provider}; nil when REF does not have both halves."
+  [ref]
+  (let [s (str/trim (str ref))
+        i (str/index-of s "#")]
+    (when (and i (pos? i) (< (inc i) (count s)))
+      {:id (keyword s)
+       :provider (keyword (subs s 0 i))})))
 
 ;; ─── File loading (pi ModelConfig.load) ────────────────────────────────────
 
@@ -293,29 +361,40 @@
   [providers]
   (into {} (map (fn [[k v]] [(keyword k) v])) providers))
 
+(defn- normalize-account-ids
+  "models.edn account keys may be keywords or strings; normalize them to
+   keywords like provider ids. An explicit :provider normalizes too."
+  [accounts]
+  (into {}
+        (map (fn [[k v]]
+               [(keyword k) (cond-> v (:provider v) (update :provider keyword))]))
+        accounts))
+
 (defn load-config
   "One immutable load of models.edn (global + project merged, project wins —
    pi loads only the global file). Returns {:providers {provider-id config}
-   :error str-or-nil}; a parse or schema failure yields :error with empty
-   :providers (the registry keeps the built-ins). AGENT-DIR pins the global
-   file's scope dir (KMET_CODING_AGENT_DIR sandboxing); nil resolves via
-   cfg/get-agent-dir."
+   :accounts {alias-id config} :error str-or-nil}; a parse or schema failure
+   yields :error with empty maps (the registry keeps the built-ins).
+   AGENT-DIR pins the global file's scope dir (KMET_CODING_AGENT_DIR
+   sandboxing); nil resolves via cfg/get-agent-dir."
   ([] (load-config nil))
   ([agent-dir]
    (let [paths (models-edn-paths agent-dir)
          results (mapv load-config-file paths)
          errors (keep :error results)]
      (if (seq errors)
-       {:providers {} :error (str/join "\n\n" errors)}
+       {:providers {} :accounts {} :error (str/join "\n\n" errors)}
        (if (not-any? (fn [{:keys [data error]}] (or data error)) results)
-         {:providers {} :error nil}
+         {:providers {} :accounts {} :error nil}
          (let [config (reduce (fn [acc {:keys [data]}] (eds/deep-merge acc data)) {} results)]
            (if-let [errors (seq (validate-config config))]
              {:providers {}
+              :accounts {}
               :error (str "Invalid models.edn schema:\n"
                           (str/join "\n" (map #(str "  - " %) errors))
                           "\n\nFile: " (str/join ", " paths))}
              {:providers (normalize-provider-ids (or (:providers config) {}))
+              :accounts (normalize-account-ids (or (:accounts config) {}))
               :error nil})))))))
 
 (defn load-config!
@@ -342,6 +421,51 @@
   "Provider ids defined in models.edn."
   []
   (keys (:providers @config-atom)))
+
+(defn get-accounts
+  "The loaded models.edn account-alias map (empty when none or on load error)."
+  []
+  (:accounts @config-atom))
+
+(defn get-account
+  "models.edn account config for ALIAS-ID, or nil."
+  [alias-id]
+  (get (:accounts @config-atom) alias-id))
+
+(defn get-account-ids
+  "Account alias ids defined in models.edn."
+  []
+  (keys (:accounts @config-atom)))
+
+(defn add-account!
+  "Declare ALIAS-ID in the user's models.edn under :accounts. ACCOUNT is the
+   account config (e.g. {:provider :github-copilot}); an existing entry for
+   ALIAS-ID is replaced. Refuses to touch a models.edn that is not a valid
+   EDN map, so a broken file can never be erased. Only the global file is
+   written (the project .kmet/models.edn stays hand-managed). Returns the
+   file path. AGENT-DIR pins the global scope dir; nil resolves via
+   cfg/get-agent-dir."
+  ([alias-id account] (add-account! alias-id account nil))
+  ([alias-id account agent-dir]
+   (let [path (first (models-edn-paths agent-dir))
+         text (when (fs/exists? path)
+                (try (slurp path) (catch Exception _ nil)))
+         blank? (and text (str/blank? text))
+         base (cond
+                (nil? text) nil
+                blank? {}
+                :else (eds/safe-parse-edn-map text))]
+     (when (and text (not blank?) (nil? base))
+       (throw (ex-info "models.edn is not a valid EDN map; not rewriting it"
+                       {:type :model-config-invalid :file path})))
+     (when (and base (not (or (nil? (:accounts base)) (map? (:accounts base)))))
+       (throw (ex-info ":accounts in models.edn is not a map"
+                       {:type :model-config-invalid :file path})))
+     ;; Write the whole top-level :accounts map: save-edn-setting!'s line
+     ;; surgery preserves comments when the key is appended or on one line.
+     (eds/save-edn-setting! path [:accounts]
+                            (assoc (or (:accounts base) {}) (keyword alias-id) account))
+     path)))
 
 (defn get-error
   "models.edn load error string (parse/schema), nil when clean."

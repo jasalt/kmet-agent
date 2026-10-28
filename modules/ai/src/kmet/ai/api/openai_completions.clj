@@ -4,6 +4,7 @@
    [kmet.libs.json :as json]
    [kmet.ai.http :as ai-http]
    [kmet.ai.api.sse :as sse]
+   [kmet.ai.models :as models]
    [kmet.ai.api.shared :refer [copilot-dynamic-headers endpoint-url max-tokens-key openai-messages openai-messages-with-reasoning openai-thinking-params resolved-openai-compat on-payload request-headers responses-events-handler tool->openai-schema effective-total-timeout-ms headers-timeout-ms transport-error-message]]))
 
 (defn openai-payload
@@ -29,8 +30,10 @@
                              compat)
         messages (if requires-reasoning?
                    (openai-messages-with-reasoning messages (:provider model-record) model-id
-                                                   (:reasoning-content-fill compat))
-                   (openai-messages messages (:provider model-record) model-id))]
+                                                   (:reasoning-content-fill compat)
+                                                   (:base-provider model-record))
+                   (openai-messages messages (:provider model-record) model-id
+                                    (:base-provider model-record)))]
     (cond-> {:model model-id
              ;; provider+model-id flow to the converters as the replay target:
              ;; a message's thinking echoes back as reasoning_content only
@@ -55,7 +58,7 @@
   (request-headers
    (merge {"Authorization" (str "Bearer " api-key)
            "Content-Type" "application/json"}
-          (when (= :github-copilot (:provider model-record))
+          (when (= :github-copilot (models/provider-family model-record))
             (copilot-dynamic-headers messages)))
    model-record provider-record api-key session-id))
 

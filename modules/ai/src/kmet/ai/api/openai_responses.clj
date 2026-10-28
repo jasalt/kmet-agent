@@ -103,7 +103,7 @@
                         (for [tc (:tool-calls m)]
                           (let [[call-id item-id] (str/split (str (:id tc)) #"\|")
                                 item-id (responses-function-call-item-id
-                                         (:provider model) item-id)]
+                                         (models/provider-family model) item-id)]
                             (cond-> {:type "function_call"
                                      :call_id (normalize-id-part call-id)
                                      :name (:name tc)
@@ -165,7 +165,7 @@
   [model session-id]
   (when session-id
     (let [fmt (or (:session-affinity-format (:compat model))
-                  (if (or (= :openrouter (:provider model))
+                  (if (or (= :openrouter (models/provider-family model))
                           (str/includes? (:base-url model) "openrouter.ai"))
                     :openrouter
                     :openai))]
@@ -213,7 +213,7 @@
       (:max-tokens model-record) (assoc :max_output_tokens (max (:max-tokens model-record) 16))
       reasoning (assoc :reasoning reasoning)
       (or effort-reasoning
-          (and (= :xai (:provider model-record)) (:reasoning model-record)))
+          (and (= :xai (models/provider-family model-record)) (:reasoning model-record)))
       (assoc :include ["reasoning.encrypted_content"])
       (and caching? session-id) (assoc :prompt_cache_key (clamp-prompt-cache-key session-id))
       ;; pi getCompat: supportsLongCacheRetention defaults to true when absent
@@ -230,7 +230,7 @@
   [model-record session-id retention messages]
   (merge (when (not= :none retention)
            (responses-affinity-headers model-record session-id))
-         (when (= :github-copilot (:provider model-record))
+         (when (= :github-copilot (models/provider-family model-record))
            (copilot-dynamic-headers messages))))
 
 (defn responses-request-headers

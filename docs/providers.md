@@ -69,6 +69,49 @@ flows include:
 If a provider offers no OAuth flow, use its API-key environment variable or
 `/login` credential entry.
 
+## Multiple accounts
+
+An account alias is a provider id that mirrors a catalog provider, so one
+provider can be used with several credentials. Declare aliases in
+`~/.kmet/agent/models.edn` (or a project `.kmet/models.edn`) under `:accounts`:
+
+```clojure
+{:accounts {:github-copilot#work {}          ; base inferred from base#label
+            :github-copilot#home {}
+            :deepseek#work       {:name "DeepSeek (work)"
+                                  :api-key "$DEEPSEEK_WORK_API_KEY"}
+            :copilot-enterprise  {:provider :github-copilot
+                                  :name "Copilot (enterprise)"}}}
+```
+
+Each alias becomes its own provider: it keeps the base provider's models,
+base URL, headers, and OAuth flow, but has its own credential in `auth.edn`
+and its own `:api-key` when one is declared. Alias ids are plain provider
+ids — use `base#label`, not a namespaced keyword, because `/` separates the
+provider and model in model references. Base-provider environment
+variables do not authenticate an alias — log in with `/login base#label`,
+enter the key when prompted, or give the alias its own `:api-key`.
+
+`/login base#label` creates the declaration when it is missing (merging into
+`~/.kmet/agent/models.edn`) and then starts the base provider's normal login
+flow. The declaration stays if the login is cancelled, so retrying only needs
+`/login base#label` again.
+
+Use an alias anywhere a provider id is accepted:
+
+```sh
+bb start --provider github-copilot#work --model <model-id>
+```
+
+```
+/model github-copilot#work/<model-id>
+/logout                              # lists each account separately
+```
+
+OAuth tokens are stored and refreshed per alias, so several Copilot, Codex,
+or Claude accounts stay independent. `--list-models` lists the alias like any
+other provider.
+
 ## OpenDesign Cloud
 
 `open-design` is a subscription gateway (Go/Plus/Pro/Max — the free plan has
