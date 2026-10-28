@@ -166,7 +166,12 @@
 
    While it exists the declaration is app-wide — the registry is the
    composition's `:events` service — so a preset adds vocabulary to the app for
-   as long as its agent lives. Returns nil."
+   as long as its agent lives.
+
+   The declaration is the **mount path's** job, not the plugin's: a fiber
+   mounted by something else (`srce/restart!`, a hand-rolled `srce/plugin!`)
+   must be declared by that caller, or its events dispatch as undeclared.
+   Returns nil."
   [fibers]
   (doseq [fiber fibers
           :let [{:keys [name state events uid]} (srce/fiber-info fiber)]
