@@ -476,7 +476,15 @@
   (testing "no inner calls → no summary line"
     (let [lines (plain (r/render-run-code-result "x" false th 60 true 1000 2000 nil {}) 60)]
       (is (not-any? #(str/includes? % "tool call") lines))
+      (is (not-any? #(str/includes? % "image") lines))
       (is (not-any? #(str/includes? % "Took") lines))))
+  (testing "attached images get a count line"
+    (let [one (plain (r/render-run-code-result "x" false th 60 true 1000 2000 nil
+                                               {:details {:images 1}}) 60)
+          two (plain (r/render-run-code-result "x" false th 60 true 1000 2000 nil
+                                               {:details {:images 2}}) 60)]
+      (is (some #(str/includes? % "1 image attached") one))
+      (is (some #(str/includes? % "2 images attached") two))))
   (testing "truncation warns like bash"
     (let [trunc {:truncated-by :lines :shown-lines 2 :total-lines 99}
           lines (plain (r/render-run-code-result "a\nb" false th 80 true 1000 2000 trunc {}) 80)]

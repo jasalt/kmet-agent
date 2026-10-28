@@ -470,9 +470,14 @@ Full extension API surface (pi `core/extensions/types.ts`) — one remaining gap
 - **Per-path file-mutation queue** — pi's `write`/`edit` serialize mutations of
   the same file through `withFileMutationQueue` (different files still run in
   parallel), so two same-file writes cannot interleave in a parallel batch.
-  kmet has no counterpart: `write`/`edit` declare no `:execution-mode`, so two
-  same-file mutations in one parallel batch (loop or `run_code`) race. Not
-  ported; the `run_code` admission lane only orders tools that declare
+  **Ported** as `kmet.app.tools.mutation/with-file-lock`: both tools take the
+  lock for the file's real path around their read-modify-write, so a parallel
+  loop batch or `run_code` fan-out cannot interleave two mutations of one
+  file. kmet goes two steps past pi: `read` takes the same lock (so a read
+  cannot observe a write's truncated half), and the wait polls the run's
+  cancel signal (so a cancelled run does not park a worker on another call's
+  write). `write`/`edit` stay parallel-classified (different files overlap),
+  and the `run_code` admission lane additionally orders tools that declare
   `:sequential`.
 - **Changelog / update surface** — pi has per-package CHANGELOGs, `/changelog`,
   and `collapseChangelog`; kmet has none.

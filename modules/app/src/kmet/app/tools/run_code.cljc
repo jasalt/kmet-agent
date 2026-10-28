@@ -45,6 +45,22 @@
   (let [q (quot ms 1000)]
     (if (= ms (* q 1000)) q (/ ms 1000.0))))
 
+(def ^:private max-image-bytes
+  "Cap on one emitted image's base64 payload — the provider-side ceiling for
+   a single image request, so an oversized image fails inside the script
+   instead of at the API."
+  (* 4 1024 1024))
+
+(def ^:private max-image-file-bytes
+  "Cap on the raw bytes read from an emit-image path. Base64 expands 4/3, so
+   3/4 of MAX-IMAGE-BYTES is the largest file that stays under it. Checked
+   before the read, so a huge file is refused without loading it."
+  (quot (* 3 max-image-bytes) 4))
+
+(def ^:private max-images
+  "Cap on images attached to one run_code result."
+  8)
+
 (def ^:private tool-max-output-bytes bash-out/DEFAULT-MAX-BYTES)
 (def ^:private tool-max-output-lines bash-out/DEFAULT-MAX-LINES)
 
@@ -426,12 +442,75 @@
       (on-update {:content s :is-partial true}))
     nil))
 
+(defn- image-arg
+  "Normalize one emit-image argument to the wire image block
+   `{:data <base64> :mime-type <str>}`: a supported image file path (resolved
+   against the runtime cwd) or such a block as a map (an MCP image result, for
+   example), whose type must be one a provider accepts — a script-built block
+   must not be able to fail a later turn at the API. A path is refused by
+   MAX-IMAGE-FILE-BYTES before it is read, so a huge file never loads. Throws
+   for anything else, so a mistyped path fails the script loudly instead of
+   attaching nothing."
+  [cwd x]
+  (cond
+    (map? x)
+    (let [{:keys [data mime-type]} x]
+      (cond
+        (not (and (string? data) (string? mime-type) (seq data)))
+        (throw (ex-info "emit-image expects {:data <base64> :mime-type <str>}"
+                        {:type :run-code/bad-image}))
+
+        (not (contains? read-tool/supported-image-mime-types mime-type))
+        (throw (ex-info (str "emit-image: unsupported image type " mime-type
+                             " (supported: "
+                             (str/join ", " (sort read-tool/supported-image-mime-types))
+                             ")")
+                        {:type :run-code/bad-image :mime-type mime-type}))
+
+        :else {:data data :mime-type mime-type}))
+
+    (string? x)
+    (let [path (path-in-cwd cwd x)
+          size (try (fs/size path) (catch Throwable _ nil))]
+      (when (and size (> size max-image-file-bytes))
+        (throw (ex-info (str "emit-image: " x " is "
+                             (bash-out/format-size size) " — the cap is "
+                             (bash-out/format-size max-image-file-bytes))
+                        {:type :run-code/image-too-large :path x})))
+      (let [bytes (try (fs/read-all-bytes path) (catch Throwable _ nil))]
+        (or (and bytes (read-tool/image-block bytes))
+            (throw (ex-info (str "emit-image: not a supported image file: " x)
+                            {:type :run-code/bad-image :path x})))))
+
+    :else
+    (throw (ex-info "emit-image expects a path or a {:data :mime-type} block"
+                    {:type :run-code/bad-image :value (str (type x))}))))
+
+(defn- emit-image!
+  "Append one image to the call's reported :images and return nil — the image
+   counterpart of emit. X is a supported image file path (resolved against
+   the runtime cwd) or a wire block {:data :mime-type}. MAX-IMAGE-BYTES of
+   base64 per image and MAX-IMAGES per call bound the payload: the blocks
+   travel to the provider with the result."
+  [{:keys [images]} cwd x]
+  (let [block (image-arg cwd x)]
+    (when (> (count (:data block)) max-image-bytes)
+      (throw (ex-info (str "emit-image: image exceeds "
+                           (bash-out/format-size max-image-bytes) " of base64")
+                      {:type :run-code/image-too-large})))
+    (when (>= (count @images) max-images)
+      (throw (ex-info (str "emit-image: at most " max-images " images per call")
+                      {:type :run-code/too-many-images})))
+    (swap! images conj block)
+    nil))
+
 (defn- sandbox-fns [cwd writers emit-state]
   {'cwd (fn [] cwd)
    'env (fn [k] (System/getenv (str k)))
    'now (fn [] (System/currentTimeMillis))
    'sleep (fn [ms] (Thread/sleep (long ms)))
    'emit (fn [v] (emit! emit-state v))
+   'emit-image (fn [x] (emit-image! emit-state cwd x))
    ;; a derefable result on a daemon thread (babashka/jolt futures are
    ;; daemon-backed; SCI's own future is unavailable in a value-shared ctx).
    ;; The writers are re-bound: a future does not convey SCI's var bindings
@@ -662,7 +741,8 @@
               'babashka.process process
               'sandbox (sandbox-fns cwd writers emit-state)
               'tools (merge (discovery-fns surface) bridge)
-              'user {'emit (fn [v] (emit! emit-state v))}}
+              'user {'emit (fn [v] (emit! emit-state v))
+                     'emit-image (fn [x] (emit-image! emit-state cwd x))}}
        ;; the cwd-defaulting sh is preloaded bare alongside the aliases
        (contains? process 'sh) (assoc-in ['user 'sh] (get process 'sh))))))
 
@@ -724,13 +804,125 @@
       (dotimes [_ bridge-worker-count] (start-bridge-worker! q))
       q)))
 
+;; ─── Submission order ─────────────────────────────────────────────────────
+;;
+;; A script's inner calls START in submission order (dsh parity, see
+;; run_code.md § T1 bridge): calls to parallel tools overlap, while a call to
+;; a :sequential tool — the same field kmet.app.loop runs its own batches
+;; by — waits until everything submitted before it has settled and then runs
+;; alone, so a later call cannot overtake it. No built-in tool declares
+;; :sequential (pi's built-ins don't either; mutations are serialized per
+;; path inside write/edit, which kmet does through kmet.app.tools.mutation), so
+;; the barrier is an extension/contributed-tool capability: a script that
+;; needs ordered effects from a parallel tool awaits it. The lane decides
+;; start order only: the shared pool still bounds how many tool calls run at
+;; once.
+
+(defonce ^:private lane-queue (java.util.concurrent.LinkedBlockingQueue.))
+
+(defn- drain-lane
+  "Start every entry LANE may start now: a run of parallel entries, or one
+   exclusive entry alone once every call already in flight has settled. A
+   cancelled run ignores both the barrier and the in-flight count — its
+   remaining calls settle as cancelled at admission without executing, so
+   honoring the count would only pin this run's state on a call that never
+   settles. Returns [LANE STARTED], the entries' effective :exclusive? flag
+   (a cancelled run downgrades an exclusive entry to a counted one)."
+  [lane cancelled?]
+  (if (and (:exclusive? lane) (not cancelled?))
+    [lane []]
+    (loop [lane lane started []]
+      (let [entry (first (:queue lane))]
+        (cond
+          (nil? entry)
+          [lane started]
+
+          (and (:exclusive? entry) (not cancelled?))
+          (if (pos? (:pending lane))
+            [lane started]
+            [(-> lane (update :queue subvec 1) (assoc :exclusive? true))
+             (conj started entry)])
+
+          :else
+          (recur (-> lane (update :queue subvec 1) (update :pending inc))
+                 (conj started (assoc entry :exclusive? false))))))))
+
+(defn- start-lane-entry!
+  "Run one admitted entry on the shared bridge pool; settling reports back to
+   the lane so its next entry may start. The pool worker conveys no dynamic
+   bindings — the entry's closure carries everything the call needs."
+  [lane-id entry]
+  (.offer @bridge-queue
+          (fn []
+            (try
+              ((:run entry))
+              (finally
+                (.offer lane-queue {:kind :settled
+                                    :lane-id lane-id
+                                    :exclusive? (:exclusive? entry)}))))))
+
+(defn- dispatch-lane-item
+  "Apply one lane-queue item — a :submit or a :settled — then start whatever
+   the lanes now allow. Landing on one dispatcher thread is what makes a
+   lane's order private and lock-free."
+  [lanes {:keys [kind lane-id entry exclusive? signal]}]
+  (let [lane (or (get lanes lane-id)
+                 {:queue [] :pending 0 :exclusive? false :signal signal})
+        lane (if (= :submit kind)
+               (update lane :queue conj entry)
+               ;; only a parallel entry was counted in :pending; an exclusive
+               ;; one held the lane itself
+               (if exclusive?
+                 (assoc lane :exclusive? false)
+                 (update lane :pending #(max 0 (dec %)))))
+        cancelled? (boolean (when-let [s (:signal lane)] @s))
+        [lane started] (drain-lane lane cancelled?)]
+    (doseq [entry started] (start-lane-entry! lane-id entry))
+    (if (and (empty? (:queue lane))
+             (or cancelled?
+                 (and (zero? (:pending lane)) (not (:exclusive? lane)))))
+      ;; nothing left to remember for this run — the promise set the script
+      ;; holds is the only remaining trace of its calls. A cancelled run
+      ;; forgets its lane even with a call still in flight: that call can
+      ;; never gate anything again.
+      (dissoc lanes lane-id)
+      (assoc lanes lane-id lane))))
+
+(defonce ^:private lane-dispatcher
+  ;; One process-wide dispatcher (started on the first submission). It never
+  ;; blocks on a lane: an entry whose turn has not come stays queued until a
+  ;; settling task posts :settled, so a script waiting on a barrier cannot
+  ;; stall another run's submissions, and a hung tool stalls only its own
+  ;; lane.
+  (delay
+    (concurrent/spawn
+     (fn []
+       (loop [lanes {}]
+         (let [item (.take lane-queue)]
+           (recur (try
+                    (dispatch-lane-item lanes item)
+                    (catch Throwable t
+                      (debug/log "run_code lane dispatch failed: " t)
+                      lanes)))))))))
+
+(defn- submit-ordered!
+  "Submit ENTRY ({:exclusive? bool :run fn}) to LANE-ID; the dispatcher starts
+   it when its position in the run's submission order allows. SIGNAL is the
+   run's read-only combined cancel view — a lane drops its ordering once it
+   fires."
+  [lane-id signal entry]
+  @lane-dispatcher
+  (.offer lane-queue {:kind :submit :lane-id lane-id :signal signal :entry entry}))
+
 (defn- dispatch!
-  "Gate NAME against the surface, then hand the call to the shared bridge
-   pool and return the promise the script derefs. Unknown/inactive names
-   settle immediately with {:is-error true} and the active list. The pool
-   worker conveys no dynamic bindings, so the bridge passes the run's cancel
-   signal, session env, shell, skill resolver and cwd as the invocation
-   pipeline's :bindings
+  "Gate NAME against the surface, then submit the call to the run's lane and
+   return the promise the script derefs. Unknown/inactive names settle
+   immediately with {:is-error true} and the active list. The lane starts a
+   call in submission order — a call to a :sequential tool waits for the ones
+   before it and runs alone (see the lane above) — and hands it to the shared
+   bridge pool. The pool worker conveys no dynamic bindings, so the bridge
+   passes the run's cancel signal, session env, shell, skill resolver and cwd
+   as the invocation pipeline's :bindings
    (bash reads *cancel-signal* and *shell*; read/write/edit resolve against
    *cwd*). The call
    runs through the shared pipeline (kmet.app.tools.invoke) with the run's
@@ -741,7 +933,7 @@
    before hook ran past the abort — is settled as cancelled and never
    executes: the pool queue cannot fire side effects past the deadline."
   [{:keys [surface execute-tool signal ctx cwd session-env-fn shell skill-resolver hooks
-           assistant-message trace on-update]} name args]
+           assistant-message trace on-update lane]} name args]
   (let [name (tool-name name)
         p (promise)]
     (if-not (contains? surface name)
@@ -756,44 +948,47 @@
                 (swap! trace assoc-in [idx] {:tool name :ok false :error "cancelled"})
                 (catch Throwable _ nil))
               (deliver p {:is-error true
-                          :content (str "run_code cancelled before " name " ran")}))]
-        (.offer @bridge-queue
-                (fn []
+                          :content (str "run_code cancelled before " name " ran")}))
+            run
+            (fn []
+              (if @signal
+                (settle-cancelled!)
+                (let [call {:tool-name name
+                            :args args
+                            :tool-call-id (str "run_code-" idx)
+                            :assistant-message assistant-message}
+                      prep (invoke/prepare-tool-call (assoc call :before-hook (:before hooks)))]
                   (if @signal
                     (settle-cancelled!)
-                    (let [call {:tool-name name
-                                :args args
-                                :tool-call-id (str "run_code-" idx)
-                                :assistant-message assistant-message}
-                          prep (invoke/prepare-tool-call (assoc call :before-hook (:before hooks)))]
-                      (if @signal
-                        (settle-cancelled!)
-                        (let [call (assoc call :args (if (contains? prep :args) (:args prep) args))
-                              executed (if (:block prep)
-                                         (:block prep)
-                                         (invoke/execute-tool-call
-                                          execute-tool
-                                          (assoc call
-                                                 :signal signal
-                                                 :ctx ctx
-                                                 :on-update on-update
-                                                 :tools surface
-                                                 :bindings {:signal signal
-                                                            :session-env-fn session-env-fn
-                                                            :shell shell
-                                                            :skill-resolver skill-resolver
-                                                            :cwd cwd})))
-                              result (invoke/finish-tool-call
-                                      (assoc call :after-hook (:after hooks))
-                                      executed)]
-                          (try
-                            (swap! trace assoc-in [idx]
-                                   (cond-> {:tool name
-                                            :ok (not (:is-error result))}
-                                     (:is-error result)
-                                     (assoc :error (preview (:content result)))))
-                            (catch Throwable _ nil))
-                          (deliver p result)))))))
+                    (let [call (assoc call :args (if (contains? prep :args) (:args prep) args))
+                          executed (if (:block prep)
+                                     (:block prep)
+                                     (invoke/execute-tool-call
+                                      execute-tool
+                                      (assoc call
+                                             :signal signal
+                                             :ctx ctx
+                                             :on-update on-update
+                                             :tools surface
+                                             :bindings {:signal signal
+                                                        :session-env-fn session-env-fn
+                                                        :shell shell
+                                                        :skill-resolver skill-resolver
+                                                        :cwd cwd})))
+                          result (invoke/finish-tool-call
+                                  (assoc call :after-hook (:after hooks))
+                                  executed)]
+                      (try
+                        (swap! trace assoc-in [idx]
+                               (cond-> {:tool name
+                                        :ok (not (:is-error result))}
+                                 (:is-error result)
+                                 (assoc :error (preview (:content result)))))
+                        (catch Throwable _ nil))
+                      (deliver p result))))))]
+        (submit-ordered! lane signal
+                         {:exclusive? (= :sequential (:execution-mode (get surface name)))
+                          :run run})
         p))))
 
 (defn- call-spec
@@ -933,12 +1128,14 @@
 
 (defn- assemble-result
   "Build the tool result from the eval outcome and the emitted output. `emit`
-   is the script's only reported channel — captured stdout/stderr and the
-   final value are intentionally absent. ABORT-REASON wins when set: a script
-   unwound by the interrupt (however it reports, e.g. a catch that rethrows)
-   cannot outlive its deadline. TIMEOUT-MS nil = no deadline (bash parity) and
-   the result's :timeout is nil; ELAPSED-MS is the measured wall clock."
-  [{:keys [res emitted timeout-ms trace abort-reason elapsed-ms
+   is the script's only reported text channel — captured stdout/stderr and the
+   final value are intentionally absent — while emitted images travel beside
+   it as the result's :images (the transcript's count line reads
+   :details :images). ABORT-REASON wins when set: a script unwound by the
+   interrupt (however it reports, e.g. a catch that rethrows) cannot outlive
+   its deadline. TIMEOUT-MS nil = no deadline (bash parity) and the result's
+   :timeout is nil; ELAPSED-MS is the measured wall clock."
+  [{:keys [res emitted images timeout-ms trace abort-reason elapsed-ms
            output-bytes output-lines capture-bytes]}]
   (let [status (or abort-reason (:status res))
         error-text (case status
@@ -963,8 +1160,10 @@
              :details (cond-> {:timeout (some-> timeout-ms ms->sec)
                                :elapsed-ms elapsed-ms}
                         (not= :ok status) (assoc :error status)
-                        (seq calls) (assoc :calls calls))}
-      truncation (assoc :truncation truncation))))
+                        (seq calls) (assoc :calls calls)
+                        (seq images) (assoc :images (count images)))}
+      truncation (assoc :truncation truncation)
+      (seq images) (assoc :images images))))
 
 (declare run-code*)
 
@@ -1026,13 +1225,16 @@
         abort (atom nil)
         cancelled (combined-signal signal abort)
         writers (atom nil)
-        ;; the script's only reported output channel
+        ;; the script's reported output channels: emitted text and images
         emitted (atom [])
         emitted-bytes (atom 0)
+        images (atom [])
         deadline (when timeout-ms (+ started-at timeout-ms))
         trace (atom [])
+        lane (gensym "run_code-lane-")
         emit-state {:emitted emitted
                     :emitted-bytes emitted-bytes
+                    :images images
                     :on-update on-update
                     :abort abort
                     :capture-limit (:capture-bytes limits)}
@@ -1048,7 +1250,8 @@
                             :hooks hooks
                             :assistant-message assistant-message
                             :on-update on-update
-                            :trace trace})
+                            :trace trace
+                            :lane lane})
         fork-ctx (sandbox-context (context-namespaces surface cwd bridge writers emit-state)
                                   (interrupt-fn abort signal deadline))
         capture (start-capture on-update abort (:capture-bytes limits))
@@ -1073,6 +1276,7 @@
       (let [res (or @result {:status (or @abort :timeout)})]
         (assemble-result {:res res
                           :emitted @emitted
+                          :images @images
                           :timeout-ms timeout-ms
                           :output-bytes (:bytes limits)
                           :output-lines (:lines limits)
@@ -1087,7 +1291,8 @@
 (def ^:private description
   (str "Run a Clojure script with the active tools bridged in: one call can do a whole task — data work, loops over many files, chained or fanned-out tool calls — while every inner result stays out of the conversation. Only values you pass to (emit value) come back — stdout/stderr and the final value are discarded.\n\n"
        "Use it for general scripting and multi-step work — parse/transform/generate data, scan or filter many files with fs/slurp/sh, run a search→read→verify chain, or fan out N tool calls and reduce them. Use bash for one small command and read for one file.\n\n"
-       "Tools: (tools/call \"name\" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe \"name\"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.\n\n"
+       "Tools: (tools/call \"name\" args) returns a promise — start independent calls before derefing. Batch with (tools/await-all (tools/call-many [{:name ... :args ...} ...])); discover with (tools/list) and (tools/describe \"name\"). Results are {:content :is-error :details :truncation :images}; branch on :is-error. Calls start in submission order, and a tool marked sequential waits for the calls before it and runs alone. (emit value) returns nil and may be called as often as needed — the emitted values are returned in order.\n\n"
+       "Images: (emit-image \"shot.png\") attaches an image to the result — a supported image file (up to 3 MiB) or an {:data <base64> :mime-type <str>} block; at most 8 images.\n\n"
        "Sandbox: Clojure; on babashka a full babashka surface, on the JVM the java.lang/java.io/java.util subset. Require clojure.*/babashka.* namespaces or the bundled libs (rewrite-clj, cljfmt, edamame, parinferish); System/java.io.*/Throwable resolve on babashka and the JVM (Jolt's SCI exposes no class table). Aliases: fs, str/set/edn/walk, json, p, sh, tools, sandbox. :timeout is seconds (0/omitted = none). Output is capped at 16 KiB/2000 lines; :max-output-bytes raises it to 50 KiB."))
 
 (defn title
@@ -1118,7 +1323,8 @@
    :prompt-guidelines
    ["Use run_code for general scripting and multi-step work — transforming or generating data, scanning/filtering many files, or a search/read/verify chain — instead of chaining bash cat/head/rg. Use bash for one small command and read for one file."
     "Call tools from inside the script: inner results never enter the conversation, and only what you pass to (emit value) does. Start independent calls before derefing them; use tools/call-many + tools/await-all for batches and (deref p ms ::timeout) to bound one."
-    "Emit only curated output — the values you computed, counts, matches, a short summary — not raw file/search output. println and the final value are discarded."]
+    "Emit only curated output — the values you computed, counts, matches, a short summary — not raw file/search output. println and the final value are discarded."
+    "When the answer is an image (a screenshot, a chart, a rendered page), attach it with (emit-image path) rather than describing it."]
    :params {:code {:type :string :description "Clojure program body to run"}
             :timeout {:type :number
                       :description (str "Timeout in seconds — like bash's :timeout: omit or 0 "

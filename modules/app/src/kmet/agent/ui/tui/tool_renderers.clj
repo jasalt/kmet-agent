@@ -1029,33 +1029,44 @@
    :calls): the tool work the run_code call did is otherwise invisible in the
    transcript. Failed/incomplete entries are counted."
   [context theme]
-  (let [calls (seq (get-in context [:details :calls]))]
-    (when calls
-      (let [counts (frequencies (map :tool calls))
-            summary (str/join ", "
-                              (map (fn [n]
-                                     (let [c (get counts n)]
-                                       (if (> c 1) (str n " ×" c) n)))
-                                   (sort (keys counts))))
-            failed (count (remove :ok calls))
-            total (count calls)]
-        [[:spacer {:lines 1}]
-         (tool-text
-          (theme/fg theme :muted
-                    (str total " tool call" (when (> total 1) "s")
-                         ": " summary
-                         (when (pos? failed) (str ", " failed " failed")))))]))))
+  (when-let [calls (seq (get-in context [:details :calls]))]
+    (let [counts (frequencies (map :tool calls))
+          summary (str/join ", "
+                            (map (fn [n]
+                                   (let [c (get counts n)]
+                                     (if (> c 1) (str n " ×" c) n)))
+                                 (sort (keys counts))))
+          failed (count (remove :ok calls))
+          total (count calls)]
+      [[:spacer {:lines 1}]
+       (tool-text
+        (theme/fg theme :muted
+                  (str total " tool call" (when (> total 1) "s")
+                       ": " summary
+                       (when (pos? failed) (str ", " failed " failed")))))])))
+
+(defn- run-code-images-node
+  "One muted line counting the images the script attached (details :images).
+   The blocks reach the model with the result, not the transcript, so the
+   count is the only trace the transcript keeps."
+  [context theme]
+  (let [n (get-in context [:details :images])]
+    (when (and (number? n) (pos? n))
+      [[:spacer {:lines 1}]
+       (tool-text (theme/fg theme :muted
+                            (str n " image" (when (> n 1) "s") " attached")))])))
 
 (defn render-run-code-result
   "Result body for the run_code tool: the shell-style body (output preview,
-   truncation warning) plus the inner-call summary line. The elapsed/took
-   state line — the tool's own measured time when the result carries it —
-   is the tool component's tail line (state-result-nodes)."
+   truncation warning) plus the inner-call summary and attached-image count
+   lines. The elapsed/took state line — the tool's own measured time when the
+   result carries it — is the tool component's tail line (state-result-nodes)."
   [content _is-error theme width expanded? _started-at ended-at truncation context]
   (h/compile-tree
    (into [:container {}]
          (concat (output-result-nodes content theme width expanded? ended-at truncation)
-                 (run-code-calls-nodes context theme)))))
+                 (run-code-calls-nodes context theme)
+                 (run-code-images-node context theme)))))
 
 ;; ─── Default renderers (fallback when no custom or built-in) ──────────────
 

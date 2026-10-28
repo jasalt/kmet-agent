@@ -7,6 +7,7 @@
             [clojure.java.io :as io]
             [babashka.fs :as fs]
             [kmet.app.tools.bash-output :as bash-out]
+            [kmet.app.tools.mutation :as mutation]
             [kmet.app.tools.registry :as registry]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
@@ -186,6 +187,12 @@
           (when planes
             (and (= planes 1) (contains? #{1 4 8 16 24 32} bpp))))))))
 
+(def supported-image-mime-types
+  "The image types a provider-facing image block may carry — exactly what the
+   sniffer below can return, so a script-built block cannot send a type the
+   API will reject a whole turn over."
+  #{"image/jpeg" "image/png" "image/gif" "image/webp" "image/bmp"})
+
 (defn- detect-supported-image-mime-type
   "Pi: detectSupportedImageMimeType — sniff magic bytes."
   [^bytes buf]
@@ -216,6 +223,15 @@
     "image/bmp"
 
     :else nil))
+
+(defn image-block
+  "The wire image block `{:data <base64> :mime-type <str>}` for BUF when it is
+   a supported image, nil otherwise (pi: detectSupportedImageMimeType plus
+   base64). The read tool and run_code's emit-image share it, so a script and
+   a direct read accept exactly the same images."
+  [^bytes buf]
+  (when-let [mime-type (and buf (detect-supported-image-mime-type buf))]
+    {:data (.encodeToString (Base64/getEncoder) buf) :mime-type mime-type}))
 
 ;; ─── Tool implementation ───────────────────────────────────────────────────
 
@@ -259,8 +275,10 @@
 (defn execute
   "Read file contents with optional offset/limit (1-indexed, pi: read.ts).
    For image files, returns the image data in :images and a text
-   description in :content. Truncated text reads return :truncation."
-  [{:keys [path file_path offset limit]}]
+   description in :content. Truncated text reads return :truncation. The
+   filesystem read takes the file's mutation lock, so it cannot observe a
+   concurrent write's truncated half."
+  [{:keys [path file_path offset limit]} _on-update signal _ctx]
   (let [raw-path (or path file_path)]
     (try
       (if (or (nil? raw-path) (and (string? raw-path) (str/blank? raw-path)))
@@ -280,15 +298,15 @@
               ;; <available_skills> loads through read directly.
               skill-text (when-not on-disk? (resolve-skill-text (str raw-path)))
               all-bytes (cond skill-text (.getBytes ^String skill-text "UTF-8")
-                              on-disk? (fs/read-all-bytes f))]
+                              on-disk? (mutation/with-file-lock abs-path signal
+                                         #(fs/read-all-bytes f)))]
           (if (nil? all-bytes)
             {:content (str "File not found: " raw-path) :is-error true}
-            (let [mime-type (detect-supported-image-mime-type all-bytes)]
-              (if mime-type
+            (let [image (image-block all-bytes)]
+              (if image
                 ;; Image file — return base64 (pi: processImage would resize; we return raw)
-                (let [base64-data (.encodeToString (Base64/getEncoder) all-bytes)]
-                  {:content (str "Read image file [" mime-type "]")
-                   :images [{:data base64-data :mime-type mime-type}]})
+                {:content (str "Read image file [" (:mime-type image) "]")
+                 :images [image]}
                 ;; Text file — decode as UTF-8 (pi: buffer.toString('utf-8'))
                 (let [text-content (String. all-bytes StandardCharsets/UTF_8)
                       ;; Pi: allLines = textContent.split("\n") — keeps trailing empty
@@ -361,6 +379,8 @@
             :offset {:type :number :description "Line number to start reading from (1-indexed)" :optional? true}
             :limit  {:type :number :description "Maximum number of lines to read" :optional? true}}
    :execute execute
+   ;; the cancel signal is the third execute argument (see execute)
+   :contextual? true
    :title title))
 
 (srce/defplugin plugin

@@ -40,6 +40,72 @@
     (fs/create-dirs dir)
     dir))
 
+(defn- with-cwd-dir
+  "Run F with a fresh temp dir as the runtime cwd (tool-util/*cwd*), then
+   delete it."
+  [f]
+  (let [dir (temp-dir)]
+    (try (binding [tool-util/*cwd* dir] (f dir))
+         (finally (fs/delete-tree dir)))))
+
+(t/deftest test-run-code-emit-image
+  ;; images travel beside the emitted text as the result's :images, from a
+  ;; supported file path or an MCP-shaped block
+  (with-cwd-dir
+    (fn [dir]
+      (spit (str dir "/shot.gif") "GIF89a")
+      (let [r (run "(emit :shot) (emit-image \"shot.gif\")")]
+        (t/is (not (:is-error r)) (:content r))
+        (t/is (= ":shot" (:content r)) "text and images stay separate channels")
+        (t/is (= [{:data "R0lGODlh" :mime-type "image/gif"}] (:images r)))
+        (t/is (= 1 (get-in r [:details :images]))))))
+  (let [r (run "(sandbox/emit-image {:data \"R0lGODlh\" :mime-type \"image/gif\"})")]
+    (t/is (not (:is-error r)) (:content r))
+    (t/is (= "(no output)" (:content r)))
+    (t/is (= [{:data "R0lGODlh" :mime-type "image/gif"}] (:images r))))
+  (let [r (run "(emit-image {:type :image :data \"AA==\" :mime-type \"image/png\"})")]
+    (t/is (= [{:data "AA==" :mime-type "image/png"}] (:images r))
+          "an MCP image block passes through")))
+
+(t/deftest test-run-code-emit-image-errors
+  ;; a mistyped path fails the script loudly instead of attaching nothing
+  (with-cwd-dir
+    (fn [dir]
+      (spit (str dir "/plain.txt") "not an image")
+      (let [r (run "(emit-image \"missing.png\")")]
+        (t/is (:is-error r))
+        (t/is (str/includes? (:content r) "not a supported image file"))
+        (t/is (nil? (:images r))))
+      (let [r (run "(emit-image \"plain.txt\")")]
+        (t/is (:is-error r) (:content r))
+        (t/is (nil? (:images r))))))
+  (let [r (run "(emit-image {:data 42})")]
+    (t/is (:is-error r))
+    (t/is (str/includes? (:content r) ":data <base64>")))
+  (let [r (run "(emit-image {:data \"AA==\" :mime-type \"image/svg+xml\"})")]
+    (t/is (:is-error r) (:content r))
+    (t/is (str/includes? (:content r) "unsupported image type"))
+    (t/is (nil? (:images r)))
+    (t/is (str/includes? (:content r) "image/png") "the error lists the accepted types"))
+  (t/is (:is-error (run "(emit-image 42)"))))
+
+(t/deftest test-run-code-emit-image-file-cap
+  ;; the raw-byte cap is checked before the read: a file too large to become a
+  ;; 5 MiB base64 payload is refused without being loaded
+  (with-cwd-dir
+    (fn [dir]
+      (fs/write-bytes (str dir "/huge.gif") (byte-array (inc (* 4 1024 1024))))
+      (let [r (run "(emit-image \"huge.gif\")")]
+        (t/is (:is-error r) (:content r))
+        (t/is (str/includes? (:content r) "the cap is"))
+        (t/is (nil? (:images r)))))))
+
+(t/deftest test-run-code-emit-image-count-bound
+  ;; at most 8 images per call: the ninth throw aborts the script
+  (let [r (run "(dotimes [i 9] (emit-image {:data \"AA==\" :mime-type \"image/png\"}))")]
+    (t/is (:is-error r) (:content r))
+    (t/is (str/includes? (:content r) "at most 8 images"))))
+
 (t/deftest test-run-code-emit-is-the-only-output
   (let [r (run "(emit (+ 1 2))")]
     (t/is (not (:is-error r)))
@@ -204,15 +270,13 @@
     (t/is (= ":ok" (:content r)))))
 
 (t/deftest test-run-code-slurp-follows-runtime-cwd
-  (let [dir (temp-dir)]
-    (try
+  (with-cwd-dir
+    (fn [dir]
       (spit (str dir "/hello.txt") "from-cwd")
-      (binding [tool-util/*cwd* dir]
-        (let [r (run (str "(emit [(slurp \"hello.txt\") (= (sandbox/cwd) " (pr-str dir) ")])"))]
-          (t/is (not (:is-error r)) (:content r))
-          (t/is (str/includes? (:content r) "from-cwd"))
-          (t/is (str/includes? (:content r) "true"))))
-      (finally (fs/delete-tree dir)))))
+      (let [r (run (str "(emit [(slurp \"hello.txt\") (= (sandbox/cwd) " (pr-str dir) ")])"))]
+        (t/is (not (:is-error r)) (:content r))
+        (t/is (str/includes? (:content r) "from-cwd"))
+        (t/is (str/includes? (:content r) "true"))))))
 
 (t/deftest test-run-code-stderr-not-reported
   (let [r (run "(binding [*out* *err*] (println \"oops\")) (emit :done)")]
@@ -432,6 +496,83 @@
         (t/is (not (fs/exists? marker))
               "the killed child never touched the marker"))
       (finally (fs/delete-tree dir)))))
+
+(t/deftest ^:slow test-run-code-sequential-call-runs-alone
+  ;; dsh parity: a call to a :sequential tool waits for everything submitted
+  ;; before it and runs alone, so a script cannot reorder its effects — the
+  ;; parallel read after it starts only once it settles
+  (let [log (atom [])]
+    (with-custom-tool {:name "run-code-test-par"
+                       :label "Parallel"
+                       :description "A parallel-safe tool"
+                       :execute (fn [args]
+                                  (swap! log conj [:start (:id args)])
+                                  (Thread/sleep 30)
+                                  (swap! log conj [:end (:id args)])
+                                  {:content "ok"})}
+      (fn []
+        (with-custom-tool {:name "run-code-test-excl"
+                           :label "Exclusive"
+                           :description "A sequential tool"
+                           :execution-mode :sequential
+                           :execute (fn [args]
+                                      (swap! log conj [:start (:id args)])
+                                      (Thread/sleep 30)
+                                      (swap! log conj [:end (:id args)])
+                                      {:content "ok"})}
+          (fn []
+            (let [r (run (str "(let [a (tools/call \"run-code-test-par\" {:id :a})"
+                              "      e (tools/call \"run-code-test-excl\" {:id :e})"
+                              "      b (tools/call \"run-code-test-par\" {:id :b})]"
+                              "  @a @e @b"
+                              "  (emit :done))"))]
+              (t/is (not (:is-error r)) (:content r))
+              (t/is (= ":done" (:content r)))
+              (let [order @log]
+                (t/is (= [:start :a] (first order)) "the first call starts first")
+                (t/is (< (.indexOf order [:end :a]) (.indexOf order [:start :e]))
+                      "the exclusive call waits for the call before it")
+                (t/is (< (.indexOf order [:end :e]) (.indexOf order [:start :b]))
+                      "a later call waits for the exclusive one")))))))))
+
+(t/deftest ^:slow test-run-code-sequential-calls-keep-submission-order
+  (let [log (atom [])]
+    (with-custom-tool {:name "run-code-test-excl"
+                       :label "Exclusive"
+                       :description "A sequential tool"
+                       :execution-mode :sequential
+                       :execute (fn [args]
+                                  (swap! log conj [:start (:id args)])
+                                  (Thread/sleep 20)
+                                  (swap! log conj [:end (:id args)])
+                                  {:content "ok"})}
+      (fn []
+        (let [r (run (str "(let [a (tools/call \"run-code-test-excl\" {:id 1})"
+                          "      b (tools/call \"run-code-test-excl\" {:id 2})]"
+                          "  @a @b (emit :done))"))]
+          (t/is (= ":done" (:content r)) (:content r))
+          (t/is (= [[:start 1] [:end 1] [:start 2] [:end 2]] @log)
+                "exclusive calls start in submission order, one at a time"))))))
+
+(t/deftest ^:slow test-run-code-parallel-calls-still-overlap
+  ;; the lane must not serialize parallel tools: both calls are in flight
+  ;; before either settles
+  (let [log (atom [])]
+    (with-custom-tool {:name "run-code-test-par"
+                       :label "Parallel"
+                       :description "A parallel-safe tool"
+                       :execute (fn [args]
+                                  (swap! log conj [:start (:id args)])
+                                  (Thread/sleep 100)
+                                  (swap! log conj [:end (:id args)])
+                                  {:content "ok"})}
+      (fn []
+        (let [r (run (str "(let [a (tools/call \"run-code-test-par\" {:id :a})"
+                          "      b (tools/call \"run-code-test-par\" {:id :b})]"
+                          "  @a @b (emit :done))"))]
+          (t/is (= ":done" (:content r)) (:content r))
+          (t/is (= #{[:start :a] [:start :b]} (set (take 2 @log)))
+                "both calls start before either settles"))))))
 
 (t/deftest test-run-code-gate
   (let [r (run "(emit @(tools/call \"no-such-tool\" {}))")]

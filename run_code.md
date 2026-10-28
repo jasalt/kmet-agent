@@ -38,12 +38,28 @@ bundled extension set (`kmet.app.extensions.libs` — `rewrite-clj.*`,
 requires the same shared copies extension contexts get. kmet's own
 namespaces stay blocked (the boundary error below), and jolt's SCI exposes no
 class table, so classes remain bb-only. The fixed capability table below is
-superseded for the bb host. Output is **`emit`-only**: `(emit value)` (also
+superseded for the bb host. Output is **`emit`-only text**: `(emit value)` (also
 `(sandbox/emit value)`, and a bare `emit` in the script namespace) is the
 single reported channel; stdout, stderr and the final value are captured (and
 still bound the run) but never enter the result. The capture files no longer
 feed the result — they exist to swallow host printing and enforce the 1 MiB
 budget.
+
+**Borrowed from dsh and pi: submission order and image output.** Every inner
+call used to be offered to the pool on submission, so a tool could start
+before a call submitted earlier; and an image a script produced could only be
+described. The bridge now has a per-call admission lane (dsh
+`tool-executor-ptc`): calls start in submission order, and a `:sequential`
+tool waits for the calls before it and runs alone. **None of kmet's built-ins
+declares `:sequential`** (pi's don't either — mutations are serialized per
+path inside `write`/`edit`, which kmet now does too through
+`kmet.app.tools.mutation`, with reads sharing the lock), so the barrier serves
+extensions and contributed
+tools: the universal guarantee is start order, and a script that needs a
+parallel tool's effect awaits it.
+`(emit-image path-or-block)` fills the result's `:images` (pi codemode's
+`image()`, through read's own sniffer and the wire path a tool result's
+images already take).
 
 **Native Jolt evaluator now unblocked.** `jolt.loader/eval-in` landed
 upstream after v0.8.14, closing the gap the loader investigation below
@@ -534,7 +550,8 @@ Decisions from the design pass, so implementation doesn't re-derive them.
 (tools/list) (tools/describe "name")    ; discovery; synchronous bridge-local reads
 (sandbox/cwd) (sandbox/env k)           ; runtime cwd; env vars
 (sandbox/now) (sandbox/sleep ms)        ; time
-(emit value) (sandbox/emit value)       ; THE reported output; returns nil
+(emit value) (sandbox/emit value)       ; THE reported text output; returns nil
+(emit-image path-or-block)              ; attach an image to the result; returns nil
 (sandbox/spawn f)                       ; host future (derefable)
 ```
 
@@ -545,11 +562,22 @@ The namespace is `tools` (mcpScript's surface, so T2's skill snippets survive);
 cwd-defaulting `babashka.process/sh`) — so a script is body-only for the
 common vocabulary; the host's `clojure.*`/`babashka.*` namespaces are also
 require-able (full-babashka revision above). `emit` is the script's only
-reported output: `(emit value)` prints strings raw and other data `pr-str` (a
+reported text output: `(emit value)` prints strings raw and other data `pr-str` (a
 Clojure sandbox reports Clojure data; T2 formats MCP envelopes itself) and
 returns `nil`. stdout/stderr and the final value are captured for the output
 budget but never reported, so a script that wants the model to see something
-must emit it.
+must emit it. `emit-image` is the second channel: a supported image file path
+(resolved against the runtime cwd) or an `{:data <base64> :mime-type}` block
+(an MCP image result, for example) becomes the result's `:images` — the blocks
+the wire already lifts off a tool result (`kmet.ai.api.shared/tool-result-content`),
+so an image a script produced reaches the model the way a `read` of that file
+would. Bounded at 4 MiB of base64 (a file up to 3 MiB) per image and 8
+images per call; the
+accept-list is `read`'s own sniffer (`kmet.app.tools.read/image-block`), so a
+script and a direct read accept exactly the same files, and a script-built
+block's `:mime-type` must be one of those types
+(`read/supported-image-mime-types`) — the API would otherwise reject a whole
+later turn over a block the script invented.
 
 - **Call fns return promises.** The call returns immediately with a promise
   that settles with the verbatim result map; the script derefs when it needs
@@ -590,17 +618,38 @@ must emit it.
 - Result map settled **verbatim**: `{:content :is-error :details :truncation
   :images}`. Scripts branch on `:is-error` instead of catching; do not unwrap
   `:content` (it can be a block vector) or hide `:details` (exit codes, diff,
-  full-output path).
-- **Always async.** The bridge never runs a tool's `:execute` on the
-  interpreter thread: each call queues a task on the shared bridge worker pool
-  (16 daemon workers, started lazily; concurrency is bounded, overflow waits
-  FIFO) and returns a promise the script derefs when it wants the value.
-  In-flight calls don't block dispatch — scripts fire calls, do local work (fs
-  scans) meanwhile, then deref — and the run `:signal` reaches the inner call,
-  so Escape cancels it. A script that fans out far more calls than workers and
-  derefs them in reverse waits for the queue ahead of it; bridge submissions
-  cannot nest (run_code is excluded from the surface), so the pool cannot
-  deadlock on itself.
+  full-output path). An inner result's `:images` are the *script's* to handle —
+  they never travel to the model implicitly; the result's own `:images` come
+  from `emit-image` alone (with a count in `:details :images` for the
+  transcript's line).
+- **Always async, in submission order.** The bridge never runs a tool's
+  `:execute` on the interpreter thread: each call queues a task on the shared
+  bridge worker pool (16 daemon workers, started lazily; concurrency is
+  bounded, overflow waits FIFO) and returns a promise the script derefs when
+  it wants the value. In-flight calls don't block dispatch — scripts fire
+  calls, do local work (fs scans) meanwhile, then deref — and the run
+  `:signal` reaches the inner call, so Escape cancels it. A script that fans
+  out far more calls than workers and derefs them in reverse waits for the
+  queue ahead of it; bridge submissions cannot nest (run_code is excluded
+  from the surface), so the pool cannot deadlock on itself.
+
+  Before the pool there is a per-call **admission lane** (dsh
+  `tool-executor-ptc` parity): calls start in submission order, parallel tools
+  overlap, and a call to a `:sequential` tool — the same `:execution-mode` the
+  loop's own batches honour (`kmet.app.loop.tool-exec`) — waits until
+  everything submitted before it has settled and then runs alone. Two
+  consequences worth stating plainly: submission order decides *start* order
+  for every call (so a call cannot begin before one submitted earlier), and
+  ordering of *completion* is guaranteed only for tools that declare
+  `:sequential`. kmet's own read/write/edit/bash do not (neither do pi's), so
+  a script that needs a write's effect before the next call awaits it. The
+  lane is one process-wide dispatcher thread over per-lane state (no locks,
+  no per-call threads): it never blocks on a lane, so a script parked behind
+  a barrier cannot stall another run's submissions, and a hung tool stalls
+  only its own lane — once the run cancels, the lane drops its ordering and
+  forgets itself, so a call that never settles cannot pin the run's state. It
+  decides start order only; the pool still bounds concurrency, and
+  contributed tools default to parallel (no `:execution-mode`).
 - **Settlement.** Every dispatched promise settles when its tool returns —
   success or `{:is-error true}`; a tool that observes the cancel signal (bash
   does) settles on cancel. The one non-settling case is a tool implementation
@@ -679,7 +728,7 @@ jolt pin): value-shared `babashka.*` namespaces work in a context with **no
 | cwd/env | `(sandbox/cwd)` (the runtime cwd), `(sandbox/env k)` | SCI has no `System/getenv`. slurp/spit/file-seq and sh/shell/process resolve relative paths against the runtime cwd like the tools; **babashka.fs stays process-relative** (no wrapper can safely guess which args are paths) — build paths from `(sandbox/cwd)` |
 | time | `(sandbox/now)` / `(sandbox/sleep ms)` | any polling or scan-timeout loop needs them |
 | reader features | the host's own feature (`:bb` or `:jolt`) | kmet's convention — `:clj` matches both hosts and is not exposed |
-| output | `emit`-only: `(emit value)` / `(sandbox/emit value)` / the bare `emit` is the single reported channel; stdout/stderr and the final value are captured but never reported | the emitted buffer is bounded by the 1 MiB capture budget; `*out*`/`*err*` are bound to temp files so host printing is swallowed and a runaway print still aborts at `:output-limit`. The emitted body is capped with `bash-executor/truncate-tail` (default 16 KiB / 2000 lines; `:max-output-bytes` raises the byte cap up to the shared 50 KiB tool cap) |
+| output | `emit`-only text plus `emit-image`: `(emit value)` / `(sandbox/emit value)` / the bare `emit` is the single reported text channel; stdout/stderr and the final value are captured but never reported. `(emit-image path-or-block)` fills the result's `:images` (4 MiB of base64 — a file up to 3 MiB — per image, 8 per call) | the emitted buffer is bounded by the 1 MiB capture budget; `*out*`/`*err*` are bound to temp files so host printing is swallowed and a runaway print still aborts at `:output-limit`. The emitted body is capped with `bash-executor/truncate-tail` (default 16 KiB / 2000 lines; `:max-output-bytes` raises the byte cap up to the shared 50 KiB tool cap) |
 
 Excluded deliberately (superseded in part by the full-babashka revision above:
 bb now gets the host class table, so class access is no longer excluded there):
@@ -788,7 +837,8 @@ The plan above is now the record of what landed:
    (seconds, nil = no deadline) and the measured total `:elapsed-ms` in
    `:details` — wall clock for the whole call, so it includes that grace and
    the capture drain, not just script runtime.
-6. ✅ **Output** — `emit`-only. `(emit value)` / `(sandbox/emit value)` / the
+6. ✅ **Output** — `emit` for text and `emit-image` for images. `(emit value)` /
+   `(sandbox/emit value)` / the
    bare `emit` append to a per-call buffer and are the only reported output;
    stdout, stderr and the final value are captured but never enter the
    result. `*out*`/`*err*` are still bound to temp files and one monitor
@@ -969,4 +1019,10 @@ pipeline both callers use:
   model (the retired `script.clj` subprocess runtime and its tool surface
   are the T2 convergence target that landed).
 - pi: `~/src/cvstree/pi/packages/coding-agent/docs/rpc.md` (stdio RPC mode) and
-  `packages/protocol` (transport-neutral CBOR, remote sessions).
+  `packages/protocol` (transport-neutral CBOR, remote sessions);
+  `packages/codemode/README.md` — `image()` and the output-item model behind
+  `emit-image`.
+- dsh: `~/src/cvstree/deepseek-harness/packages/core/tool-executor-ptc/README.md`
+  and `.agents/notes/implemented/feature/2026-06-15-ptc.md` — the
+  submission-order dispatch queue (`maxParallelSubCalls`, exclusive calls as
+  barriers) the bridge's admission lane follows.

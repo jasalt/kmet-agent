@@ -8,6 +8,12 @@
             [babashka.fs :as fs]
             [kmet.app.tools.read :as read]))
 
+(defn- read-call
+  "Invoke the read tool the way the registry does — the contextual arity,
+   with no run signal and no extension ctx."
+  [args]
+  (read/execute args nil nil nil))
+
 (deftest a-bound-resolver-serves-an-extension-locator
   (testing "the <location> in <available_skills> reads through the run's
             resolver, since an extension skill has no filesystem path"
@@ -15,7 +21,7 @@
               (fn [p]
                 (when (= p "my-ext:skills/foo/SKILL.md")
                   "# SKILL\nbody"))]
-      (let [result (read/execute {:path "my-ext:skills/foo/SKILL.md"})]
+      (let [result (read-call {:path "my-ext:skills/foo/SKILL.md"})]
         (is (= "# SKILL\nbody" (:content result)))
         (is (not (:is-error result)))))))
 
@@ -24,14 +30,14 @@
             resolver's job (see kmet.app.skills/skill-content-for-path)"
     (let [seen (atom nil)]
       (binding [read/*skill-resolver* (fn [p] (reset! seen p) nil)]
-        (read/execute {:path "my-ext:skills/foo/SKILL.md"})
+        (read-call {:path "my-ext:skills/foo/SKILL.md"})
         (is (= "my-ext:skills/foo/SKILL.md" @seen))))))
 
 (deftest no-resolver-is-not-an-error
   (testing "without a binding — outside a run — the locator is not a file, and
             that is the ordinary not-found answer, not a crash"
     (is (nil? read/*skill-resolver*))
-    (let [result (read/execute {:path "my-ext:skills/foo/SKILL.md"})]
+    (let [result (read-call {:path "my-ext:skills/foo/SKILL.md"})]
       (is (:is-error result))
       (is (str/includes? (:content result) "File not found")))))
 
@@ -44,7 +50,7 @@
       (spit f "on disk\n")
       (try
         (binding [read/*skill-resolver* (fn [_] (throw (ex-info "asked" {})))]
-          (let [result (read/execute {:path f})]
+          (let [result (read-call {:path f})]
             (is (= "on disk\n" (:content result)))
             (is (not (:is-error result)))))
         (finally (fs/delete-tree dir))))))

@@ -3,6 +3,7 @@
    Pi: write.ts — success message matches pi's wording."
   (:require [clojure.java.io :as io]
             [babashka.fs :as fs]
+            [kmet.app.tools.mutation :as mutation]
             [kmet.app.tools.registry :as registry]
             [kmet.app.tools.tool :as tool]
             [kmet.app.tools.util :as tool-util]
@@ -17,16 +18,25 @@
 
 (defn execute
   "Write content to a file (create or overwrite)."
-  [{:keys [path content]}]
+  [{:keys [path content]} _on-update signal _ctx]
   (try
     ;; relative paths resolve against the runtime cwd (pi: resolveToCwd), not
     ;; the process cwd — a session resumed from another project
-    (let [f (io/file (tool-util/resolve-tool-path path))]
-      ;; Pi: mkdir(dir, {recursive: true}) — skip when the path has no parent
+    (let [resolved (tool-util/resolve-tool-path path)
+          f (io/file resolved)]
+      ;; Pi: mkdir(dir, {recursive: true}) — skip when the path has no parent.
+      ;; Outside the lock on purpose: it prepares the directory, not the file,
+      ;; and create-dirs is idempotent under a concurrent creator.
       (when-let [parent (fs/parent f)]
         (fs/create-dirs parent))
-      (spit f content)
-      {:content (str "Successfully wrote " (count content) " bytes to " path)})
+      ;; one writer per file at a time (pi: withFileMutationQueue), so a
+      ;; parallel batch cannot interleave two writes of the same file
+      (mutation/with-file-lock
+        resolved
+        signal
+        (fn []
+          (spit f content)
+          {:content (str "Successfully wrote " (count content) " bytes to " path)})))
     (catch Exception e
       {:content (str "Error writing to " path ": " (ex-message e)) :is-error true})))
 
@@ -43,6 +53,8 @@
    :params {:path    {:type :string :description "File path to write to (relative or absolute)"}
             :content {:type :string :description "Content to write to the file"}}
    :execute execute
+   ;; the cancel signal is the third execute argument (see execute)
+   :contextual? true
    :title title))
 
 (srce/defplugin plugin
