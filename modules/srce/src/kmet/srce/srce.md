@@ -370,9 +370,14 @@ inject), **`:active`**, **`:failed`** (a throwing `apply` or config), and
 `:disposed` (the record stays for inspection; the uid stays too — nothing
 depends on uid reuse).
 
-The record is an **atom holding a plain map**, and `@fiber` is the inspection
-surface (`new-app.md`, "Inspection") — one `swap!` per transition, so a reader
-never sees a half-updated record. There is no `fiber.store`; the map's own keys
+The record is an **atom holding a plain map** — one `swap!` per transition, so
+a reader never sees a half-updated record. **App code reads it through
+`srce/fiber-info` (one fiber) and `srce/fibers` (the root's mount list, mount
+order)**: `:uid :name :source :config :state :error :inject :events :provides
+:waiting-for :effects :ctx` as a map, so a field the kernel adds stays the
+kernel's, and `/units`, `--dump-state` and a reconciliation read one shape
+instead of destructuring the atom. `@fiber` remains the record itself, for
+tests and the kernel's own code. There is no `fiber.store`; the map's own keys
 are the accessor:
 
 | key | meaning |
@@ -935,7 +940,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 49 contract tests (181 assertions) — one per bullet in §2–§8 that can fail,
+- 52 contract tests (201 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate

@@ -667,3 +667,42 @@
     (is (nil? (srce/get r :x)))
     (is (nil? (srce/log! r :info "silent")))
     (is (= :srce/inactive-effect (thrown-type #(srce/provide! r :y 2))))))
+
+;; ── inspection ────────────────────────────────────────────────────────────
+
+(deftest fiber-info-is-a-plain-snapshot
+  (let [[r] (kernel)
+        f (srce/plugin! r {:name :probe/info
+                           :provide #{:probe}
+                           :apply (fn [c _]
+                                    (srce/provide! c :probe :value)
+                                    (srce/effect c (constantly nil) :probe/effect)
+                                    nil)})]
+    (is (srce/active? f) "a satisfied mount is active immediately")
+    (let [info (srce/fiber-info f)]
+      (is (map? info) "plain data, not the record's atom")
+      (is (= :probe/info (:name info)))
+      (is (= :active (:state info)))
+      (is (= #{:probe} (:provides info)))
+      (is (= (srce/effects f) (:effects info)) "the labels are the kernel's")
+      (is (some #{:probe/effect} (:effects info)))
+      (is (identical? f (srce/mount-fiber (:ctx info))) "the info carries the mount's ctx")
+      (srce/dispose! f)
+      (is (= :active (:state info)) "the projection is a snapshot")
+      (is (not (srce/active? f)))
+      (is (= :disposed (:state (srce/fiber-info f)))))))
+
+(deftest fibers-is-mount-order-and-drops-disposed
+  (let [[r] (kernel)
+        a (srce/plugin! r {:name :probe/a :apply (fn [_ _] nil)})
+        b (srce/plugin! r {:name :probe/b
+                           :inject {:probe/a :optional}
+                           :apply (fn [_ _] nil)})]
+    (is (= [:probe/a :probe/b] (mapv :name (srce/fibers r))))
+    (is (apply < (mapv :uid (srce/fibers r))) "mount order is uid order")
+    (is (= (mapv :name (srce/fibers r))
+           (mapv :name (srce/fibers (srce/extend r {}))))
+        "the mount list is the root's, so a child ctx answers the same one")
+    (srce/dispose! a)
+    (is (= [:probe/b] (mapv :name (srce/fibers r))) "a disposed fiber leaves the list")
+    (is (srce/active? b) "an optional dependency does not hold a mount pending")))

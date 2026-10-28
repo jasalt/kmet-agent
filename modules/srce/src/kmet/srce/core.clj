@@ -89,6 +89,20 @@
   "The effect labels in creation order."
   fiber/effects)
 
+(def fiber-info
+  "FIBER as a plain map (identity, lifecycle, inject/provides/waiting-for, effect
+   labels, its ctx) — what inspection and reconciliation read instead of the
+   record."
+  fiber/fiber-info)
+
+(def fibers
+  "Every mounted fiber of CTX's root as `fiber-info` data, mount order."
+  fiber/fibers)
+
+(def active?
+  "Is FIBER :active?"
+  fiber/active?)
+
 (def plugin-source
   "Resolve a plugin source: a var as-is, a keyword through RESOLVER."
   fiber/plugin-source)

@@ -171,7 +171,7 @@
   [rows fibers]
   (into []
         (keep (fn [[row fiber]]
-                (let [{:keys [state error waiting-for]} @fiber]
+                (let [{:keys [state error waiting-for]} (srce/fiber-info fiber)]
                   (when-not (= :active state)
                     {:id (:id row) :state state :error error
                      :waiting-for (vec (sort waiting-for))}))))
@@ -186,7 +186,7 @@
   [fibers]
   (->> fibers
        (mapcat (fn [fiber]
-                 (let [{:keys [name events]} @fiber]
+                 (let [{:keys [name events]} (srce/fiber-info fiber)]
                    (map (fn [[event spec]] [event name spec]) events))))
        (group-by first)
        (keep (fn [[event decls]]

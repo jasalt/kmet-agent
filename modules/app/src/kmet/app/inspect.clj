@@ -15,10 +15,10 @@
    labels, plus the two facts a store could never show: `waiting-for` on a
    `:pending` fiber and the error on a `:failed` one.
 
-   Every reading is the kernel's — `srce/children`, `srce/effects`, and the fiber
-   record, which is the kernel's own inspection surface — so this namespace adds
-   no kernel API. Nothing here prints a ctx or a value holding one: a ctx is
-   cyclic, and a report names states, counts and service names."
+   Every reading is the kernel's — `srce/children` and `srce/fiber-info` — so
+   this namespace adds no kernel API. Nothing here prints a ctx or a value
+   holding one: a ctx is cyclic, and a report names states, counts and service
+   names."
   (:require [clojure.string :as str]
             [kmet.srce.core :as srce]))
 
@@ -92,28 +92,25 @@
     (if (keyword? label) (subs s 1) s)))
 
 (defn- fiber-details
-  "A fiber line's facts in render order: what it injects, what it provides, its
-   effect labels, then the two states that have one — what a pending fiber
-   waits for and why a failed one failed. Takes the fiber atom, because the
-   effect labels are the kernel's reading (`srce/effects`)."
-  [fiber]
-  (let [{:keys [inject provides waiting-for error]} @fiber
-        labels (srce/effects fiber)]
-    (cond-> []
-      (seq inject)
-      (conj (str "inject=" (bracket (inject-entries inject))))
+  "A fiber's facts in render order, from its `srce/fiber-info` projection: what
+   it injects, what it provides, its effect labels, then the two states that
+   have one — what a pending fiber waits for and why a failed one failed."
+  [{:keys [inject provides effects waiting-for error]}]
+  (cond-> []
+    (seq inject)
+    (conj (str "inject=" (bracket (inject-entries inject))))
 
-      (seq provides)
-      (conj (str "provides=" (bracket (map bare provides))))
+    (seq provides)
+    (conj (str "provides=" (bracket (map bare provides))))
 
-      (seq labels)
-      (conj (str "effects=[" (str/join ", " (map label-text labels)) "]"))
+    (seq effects)
+    (conj (str "effects=[" (str/join ", " (map label-text effects)) "]"))
 
-      (seq waiting-for)
-      (conj (str "waiting-for=" (bracket (map bare waiting-for))))
+    (seq waiting-for)
+    (conj (str "waiting-for=" (bracket (map bare waiting-for))))
 
-      error
-      (conj (str "error=" (pr-str (or (ex-message error) (str error))))))))
+    error
+    (conj (str "error=" (pr-str (or (ex-message error) (str error)))))))
 
 ;; ── lines ─────────────────────────────────────────────────────────────────
 
@@ -127,11 +124,11 @@
 (defn- fiber-line
   "A mount: its path, its state, and the fiber's facts."
   [ctx fiber]
-  (let [{:keys [uid state]} @fiber]
+  (let [{:keys [uid state] :as info} (srce/fiber-info fiber)]
     {:path (path-text (unit-path ctx))
      :kind (str "fiber#" uid)
      :state (str state)
-     :details (fiber-details fiber)}))
+     :details (fiber-details info)}))
 
 (defn- unit-lines
   "CTX's own line — a fiber line when CTX is a mount, a ctx line otherwise —

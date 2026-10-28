@@ -139,6 +139,7 @@ third-party library.
 
 (def fiber (srce/plugin! ctx #'greeter)) ; mount; returns the fiber atom
 (:state @fiber)                          ; => :active
+(:state (srce/fiber-info fiber))         ; the same fact, as plain data
 
 ((srce/get ctx :greeter) "world")        ; => "hello, world"
 
@@ -322,9 +323,13 @@ normalization on its own.
 
 A fiber is an atom holding a plain map. Its state is one of **`:pending`**
 (waiting for inject), **`:active`**, **`:failed`** (a throwing `apply` or
-config) or **`:disposed`**. `@fiber` is the inspection surface: `:name`,
-`:config`, `:state`, `:error`, `:inject`, `:provides`, `:waiting-for`,
-`:effects`, `:parent`, `:ctx`, `:runtime`.
+config) or **`:disposed`**. Code reads it through the kernel's projection:
+`(srce/fiber-info fiber)` returns a map — `:uid :name :source :config :state
+:error :inject :events :provides :waiting-for :effects :ctx` — and
+`(srce/fibers ctx)` does the same for the root's mount list, in mount order,
+which is what an inspection, a front end or a reconciliation walks.
+`(srce/active? fiber)` is the one-state question. The record itself (`@fiber`)
+is the kernel's: it also carries `:parent`, `:runtime`, `:plugin` and `:epoch`.
 
 - A throwing `apply` does **not** throw out of `plugin!`: the fiber becomes
   `:failed`, its partial effects unwind, the names it provided are freed, and

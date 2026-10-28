@@ -1444,8 +1444,8 @@
    often a typo in the list."
   [ext rows fibers]
   (doseq [[{:keys [id]} fiber] (map vector rows fibers)]
-    (when-not (= :active (:state @fiber))
-      (let [{:keys [state error waiting-for]} @fiber]
+    (let [{:keys [state error waiting-for]} (srce/fiber-info fiber)]
+      (when-not (= :active state)
         (throw (ex-info (str "Extension " (:name ext) " row " (pr-str id)
                              " did not mount (" (pr-str state) "): "
                              (or (some-> error ex-message)
@@ -1499,16 +1499,17 @@
                                    (let [api (create-extension-api ext config)]
                                      (reset! (:api ext) api)
                                      ((loader-aware ext (:apply plugin)) fctx api)
-                                     (reset! (:initialized? ext) true)))))]
+                                     (reset! (:initialized? ext) true)))))
+            {:keys [state error ctx]} (srce/fiber-info fiber)]
         (reset! (:fiber ext) fiber)
-        (when (= :failed (:state @fiber))
+        (when (= :failed state)
           (throw (ex-info (str "Extension " (:name ext) " failed: "
-                               (or (ex-message (:error @fiber))
+                               (or (ex-message error)
                                    "its plugin body threw"))
                           {:path path
-                           :cause (:error @fiber)})))
+                           :cause error})))
         ;; the extension's own rows: children of its ctx, disposed with it
-        (reset! (:rows ext) (mount-extension-rows! rows (:ctx @fiber)))
+        (reset! (:rows ext) (mount-extension-rows! rows ctx))
         (check-extension-rows-active! ext rows @(:rows ext))
         fiber))))
 

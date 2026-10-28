@@ -227,8 +227,8 @@ order).
 - **Effect labels are the inspection contract** ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4).
   `(srce/effects fiber)` is what the listing renders, so `:tool/read` and
   `:command/units` are load-bearing; a catch-all label makes the line useless.
-- The accessors are already the kernel's — `srce/children` and `srce/effects` —
-  and the fiber record carries the rest: `:state`, `:error`, the normalized
+- The accessors are the kernel's — `srce/children` and `srce/fiber-info` —
+  and the projection carries the rest: `:state`, `:error`, the normalized
   `:inject`, the names it `:provides` and what it is `:waiting-for`
   ([`srce.md`](modules/srce/src/kmet/srce/srce.md) §4), so the renderer is a
   flag, not a kernel change. No listing code below rank 3. (`srce/services`
@@ -2843,7 +2843,7 @@ factory's scope check, and the session check (each dropped in turn).
 ### Landing 4d settled
 
 **The renderer is a flag; the tree needed a lifetime.** `kmet.app.inspect` reads
-`srce/children`, `srce/effects` and the fiber record and adds no kernel API —
+`srce/children` and the kernel's fiber projection and adds no kernel API —
 but the first run of it in kmet1's process printed six `:agent/*` lines that no
 run owned. `srce/extend` attaches a child to its parent's `:children` and
 nothing ever removed it: a fiber's disposal takes its own mount ctx with it, and

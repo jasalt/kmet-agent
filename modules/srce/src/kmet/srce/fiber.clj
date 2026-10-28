@@ -493,3 +493,25 @@
   "The effect labels in creation order (the reverse of unwinding)."
   [fiber]
   (mapv :label (:effects @fiber)))
+
+(defn fiber-info
+  "FIBER's record as a map: identity, lifecycle, declared and live facts, the
+   effect labels and the mount's child ctx. What app code reads — `fibers` is
+   the same for a whole root — so a record field the kernel adds stays the
+   kernel's. `@fiber` remains the record itself, for tests and kernel code."
+  [fiber]
+  (let [record @fiber]
+    (-> (select-keys record [:uid :name :source :config :state :error :inject
+                             :events :provides :waiting-for :ctx])
+        (assoc :effects (mapv :label (:effects record))))))
+
+(defn fibers
+  "Every mounted fiber of CTX's root as `fiber-info` data, mount order. The
+   kernel's mount list is the root's, so a child ctx answers the same list."
+  [ctx]
+  (mapv fiber-info @(:mounted (:kernel ctx))))
+
+(defn active?
+  "Is FIBER `:active`?"
+  [fiber]
+  (= :active (:state @fiber)))
