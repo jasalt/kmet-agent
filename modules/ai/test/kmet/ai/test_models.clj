@@ -803,12 +803,20 @@
         path (str tmp "/models.edn")]
     (fs/create-dirs tmp)
     (try
-      (spit path (str "{:accounts {:deepseek#work {:api-key \"sk-work\"}\n"
+      (spit path (str "{:providers {:hdr {:name \"Hdr\" :api :openai-completions\n"
+                      "                              :base-url \"https://h/v1\"\n"
+                      "                              :headers {\"Authorization\" \"Bearer $BASE_TOKEN\"\n"
+                      "                                        \"X-Route\" \"eu\"}\n"
+                      "                              :models [{:id \"hm\"\n"
+                      "                                        :headers {\"x-api-key\" \"$BASE_TOKEN\"\n"
+                      "                                                  \"X-Feature\" \"on\"}}]}}\n"
+                      " :accounts {:deepseek#work {:api-key \"sk-work\"}\n"
                       "            :github-copilot#home {}\n"
                       "            :nope#x {}\n"
                       "            :deepseek#a {:provider :deepseek}\n"
                       "            :deepseek#a#b {:provider :deepseek#a}\n"
-                      "            :deepseek {:provider :deepseek}}}\n"))
+                      "            :deepseek {:provider :deepseek}\n"
+                      "            :hdr#work {}}}\n"))
       (let [agent-dir (str tmp "/agent")]
         (fs/create-dirs agent-dir)
         (fs/copy path (str agent-dir "/models.edn"))
@@ -825,8 +833,21 @@
           (t/is (= :deepseek#work (:provider model)))
           (t/is (= :deepseek (:base-provider model)))
           (t/is (= :deepseek (m/provider-family model)))
+          (t/is (= :deepseek (:id (m/family-provider p)))
+                "family-provider resolves an alias record to its base")
+          (t/is (= :deepseek (:id (m/family-provider model))))
           (t/is (= :deepseek (:provider (m/get-model :deepseek "deepseek-flash")))
                 "the base provider is untouched")))
+      (t/testing "an alias inherits non-auth headers only"
+        (let [alias (m/get-provider :hdr#work)
+              base (m/get-provider :hdr)]
+          (t/is (= {"X-Route" "eu"} (:configured-headers alias))
+                "a credential-carrying provider header stays with the base")
+          (t/is (= {"X-Feature" "on"} (:headers (m/get-model :hdr#work "hm")))
+                "a credential-carrying model header stays with the base")
+          (t/is (= {"Authorization" "Bearer $BASE_TOKEN" "X-Route" "eu"}
+                   (:configured-headers base)))
+          (t/is (nil? (:api-key alias)))))
       (t/testing "each account resolves its own credential"
         (with-redefs [auth/getenv (fn [_] nil)
                       dynamic-value/getenv (fn [_] nil)]
@@ -859,6 +880,22 @@
         (t/is (nil? (m/get-provider :deepseek#a#b)))
         (t/is (some? (m/get-provider :deepseek)))
         (t/is (nil? (:base-provider (m/get-provider :deepseek)))))
+      (t/testing "an extension provider shadows an alias id until it unregisters"
+        (m/register-provider-config! :deepseek#work {:base-url "https://ext/v1"
+                                                     :api :openai-completions
+                                                     :models [{:id "ext-model"}]})
+        (t/is (nil? (:base-provider (m/get-provider :deepseek#work)))
+              "the registered provider wins over the alias")
+        (t/is (some? (m/get-model :deepseek#work "ext-model")))
+        (t/is (str/includes? (m/get-model-config-error)
+                             "Provider \"deepseek#work\": Account alias id"))
+        (m/unregister-provider-config! :deepseek#work)
+        (t/is (= :deepseek (:base-provider (m/get-provider :deepseek#work)))
+              "the alias comes back once the shadowing provider is gone")
+        (t/is (nil? (m/get-model :deepseek#work "ext-model")))
+        (t/is (not (str/includes? (or (m/get-model-config-error) "")
+                                  "Provider \"deepseek#work\""))
+              "its collision error is cleared"))
       (t/testing "removing the declaration removes the alias on reload"
         (spit path "{:providers {}}\n")
         (fs/copy path (str tmp "/agent/models.edn") {:replace-existing true})

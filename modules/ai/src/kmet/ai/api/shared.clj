@@ -259,65 +259,78 @@
        (= (:provider m) provider)
        (= (:model m) model-id)))
 
+(defn- message-target
+  "Split a message-conversion target into its provenance provider (the id
+   stamped into recorded messages) and its provider family (the catalog
+   provider whose request shaping applies). TARGET is a Model or Provider
+   record — the normal call, which keeps provenance and family together — or a
+   bare provider keyword for alias-free callers and tests."
+  [target]
+  (if (map? target)
+    {:provider (or (:provider target) (:id target))
+     :family (models/provider-family target)}
+    {:provider target
+     :family target}))
+
 (defn openai-messages
   "Map agent messages to OpenAI chat-completion messages.
    Bash entries become user messages (pi: convertToLlm bashExecution);
-   excluded ones are dropped. PROVIDER and MODEL-ID identify the request's
-   target; an assistant message's :thinking is echoed back as
-   reasoning_content only when the message was produced by that same
-   provider+model (pi: converters replay thinking only for same-model
-   messages and degrade everything else — feeding another model's
-   chain-of-thought back as if it were the target's own derails DeepSeek-class
-   thinking models into re-running their last tool call after a mid-session
-   /model switch). BASE-PROVIDER (an account alias's base) drives the
-   provider-specific tool-call id normalization; provenance stays PROVIDER.
-   Tested directly by test_llm, hence public."
-  [messages & [provider model-id base-provider]]
-  (into []
-        (keep (fn [m]
-                (let [role (name (:role m))
-                      ;; provenance-gated: nil unless this model said it
-                      thinking (when (same-origin? m provider model-id)
-                                 (str/trim (or (:thinking m) "")))]
-                  (case role
-                    "bash"
-                    (when-not (:exclude-from-context? m)
-                      {:role "user" :content (bash-execution-text m)})
-                    "tool"
-                    {:role "tool"
-                     :tool_call_id (normalize-openai-tool-call-id
-                                    (-> m :content first :tool_use_id)
-                                    (or base-provider provider))
-                     :content (tool-result-content m)}
-                    "assistant"
-                    (let [text (content-text (:content m))
-                          has-tc (seq (:tool-calls m))
-                          msg (cond-> {:role "assistant"}
-                                (seq text) (assoc :content text)
-                                has-tc
-                                (assoc :tool_calls
-                                       (mapv (fn [tc]
-                                               {:id (normalize-openai-tool-call-id
-                                                     (:id tc) (or base-provider provider))
-                                                :type "function"
-                                                :function {:name (:name tc)
-                                                           :arguments (json/generate-string
-                                                                       (:arguments tc))}})
-                                             (:tool-calls m))))]
-                      ;; pi: some providers require "either content or
-                      ;; tool_calls, but not none" — skip empty assistant
-                      ;; messages (a turn that ended with only reasoning, or
-                      ;; an aborted response that got no content) instead of
-                      ;; sending content ""
-                      (when (or (seq text) has-tc)
-                        (cond-> msg
-                          (seq thinking) (assoc :reasoning_content thinking))))
-                    ;; custom messages (pi: convertToLlm custom→user)
-                    "custom"
-                    {:role "user" :content (openai-content (:content m))}
-                    {:role role
-                     :content (openai-content (:content m))}))))
-        messages))
+   excluded ones are dropped. TARGET and MODEL-ID identify the request's
+   target (see message-target: an account alias keeps its own provenance id
+   while its base provider's request shaping applies); an assistant message's
+   :thinking is echoed back as reasoning_content only when the message was
+   produced by that same provider+model (pi: converters replay thinking only
+   for same-model messages and degrade everything else — feeding another
+   model's chain-of-thought back as if it were the target's own derails
+   DeepSeek-class thinking models into re-running their last tool call after a
+   mid-session /model switch). Tested directly by test_llm, hence public."
+  [messages & [target model-id]]
+  (let [{:keys [provider family]} (message-target target)]
+    (into []
+          (keep (fn [m]
+                  (let [role (name (:role m))
+                        ;; provenance-gated: nil unless this model said it
+                        thinking (when (same-origin? m provider model-id)
+                                   (str/trim (or (:thinking m) "")))]
+                    (case role
+                      "bash"
+                      (when-not (:exclude-from-context? m)
+                        {:role "user" :content (bash-execution-text m)})
+                      "tool"
+                      {:role "tool"
+                       :tool_call_id (normalize-openai-tool-call-id
+                                      (-> m :content first :tool_use_id)
+                                      family)
+                       :content (tool-result-content m)}
+                      "assistant"
+                      (let [text (content-text (:content m))
+                            has-tc (seq (:tool-calls m))
+                            msg (cond-> {:role "assistant"}
+                                  (seq text) (assoc :content text)
+                                  has-tc
+                                  (assoc :tool_calls
+                                         (mapv (fn [tc]
+                                                 {:id (normalize-openai-tool-call-id
+                                                       (:id tc) family)
+                                                  :type "function"
+                                                  :function {:name (:name tc)
+                                                             :arguments (json/generate-string
+                                                                         (:arguments tc))}})
+                                               (:tool-calls m))))]
+                        ;; pi: some providers require "either content or
+                        ;; tool_calls, but not none" — skip empty assistant
+                        ;; messages (a turn that ended with only reasoning, or
+                        ;; an aborted response that got no content) instead of
+                        ;; sending content ""
+                        (when (or (seq text) has-tc)
+                          (cond-> msg
+                            (seq thinking) (assoc :reasoning_content thinking))))
+                      ;; custom messages (pi: convertToLlm custom→user)
+                      "custom"
+                      {:role "user" :content (openai-content (:content m))}
+                      {:role role
+                       :content (openai-content (:content m))}))))
+          messages)))
 
 (defn openai-messages-with-reasoning
   "Like openai-messages but every kept assistant message carries a
@@ -325,62 +338,61 @@
    require the field on assistant messages even when empty — DeepSeek
    thinking-mode rejects requests that carry tools but omit reasoning_content
    on any assistant message (400 \"must be passed back to the API\").
-   PROVIDER and MODEL-ID identify the request's target; a message's own
-   :thinking is sent back verbatim only when it was produced by that same
-   provider+model (see openai-messages — cross-model CoT is never replayed);
-   everything else gets FILL (default \"\"). FILL must be non-empty for
-   endpoints that turn the field into a thinking block and reject an empty
-   one (the stealth models: compat :reasoning-content-fill).
-   BASE-PROVIDER (an account alias's base) drives tool-call id
-   normalization; provenance stays PROVIDER."
-  [messages & [provider model-id fill base-provider]]
-  (into []
-        (keep (fn [m]
-                (let [role (name (:role m))
-                      ;; provenance-gated: FILL unless this model said it; an
-                      ;; empty same-model thinking also takes the fill (these
-                      ;; endpoints reject a blank reasoning block)
-                      thinking (or (when (same-origin? m provider model-id)
-                                     (not-empty (str/trim (or (:thinking m) ""))))
-                                   fill
-                                   "")]
-                  (case role
-                    "bash"
-                    (when-not (:exclude-from-context? m)
-                      {:role "user" :content (bash-execution-text m)})
-                    "tool"
-                    {:role "tool"
-                     :tool_call_id (normalize-openai-tool-call-id
-                                    (-> m :content first :tool_use_id)
-                                    (or base-provider provider))
-                     :content (tool-result-content m)}
-                    "assistant"
-                    (let [text (content-text (:content m))
-                          has-tc (seq (:tool-calls m))
-                          msg (cond-> {:role "assistant"}
-                                (seq text) (assoc :content text)
-                                has-tc (assoc :tool_calls
-                                              (mapv (fn [tc]
-                                                      {:id (normalize-openai-tool-call-id
-                                                            (:id tc) (or base-provider provider))
-                                                       :type "function"
-                                                       :function {:name (:name tc)
-                                                                  :arguments (json/generate-string
-                                                                              (:arguments tc))}})
-                                                    (:tool-calls m))))]
-                      ;; skip empty assistant messages (pi: providers
-                      ;; require content or tool_calls) — an empty
-                      ;; reasoning_content-only message is rejected too
-                      (when (or (seq text) has-tc)
-                        ;; deepseek thinking mode requires reasoning_content on assistant messages
-                        (assoc msg :reasoning_content thinking)))
-                    ;; custom messages (pi: convertToLlm custom→user)
-                    "custom"
-                    {:role "user"
-                     :content (openai-content (:content m))}
-                    {:role role
-                     :content (openai-content (:content m))})))
-              messages)))
+   TARGET and MODEL-ID identify the request's target (see message-target); a
+   message's own :thinking is sent back verbatim only when it was produced by
+   that same provider+model (see openai-messages — cross-model CoT is never
+   replayed); everything else gets FILL (default \"\"). FILL must be non-empty
+   for endpoints that turn the field into a thinking block and reject an empty
+   one (the stealth models: compat :reasoning-content-fill)."
+  [messages & [target model-id fill]]
+  (let [{:keys [provider family]} (message-target target)]
+    (into []
+          (keep (fn [m]
+                  (let [role (name (:role m))
+                        ;; provenance-gated: FILL unless this model said it; an
+                        ;; empty same-model thinking also takes the fill (these
+                        ;; endpoints reject a blank reasoning block)
+                        thinking (or (when (same-origin? m provider model-id)
+                                       (not-empty (str/trim (or (:thinking m) ""))))
+                                     fill
+                                     "")]
+                    (case role
+                      "bash"
+                      (when-not (:exclude-from-context? m)
+                        {:role "user" :content (bash-execution-text m)})
+                      "tool"
+                      {:role "tool"
+                       :tool_call_id (normalize-openai-tool-call-id
+                                      (-> m :content first :tool_use_id)
+                                      family)
+                       :content (tool-result-content m)}
+                      "assistant"
+                      (let [text (content-text (:content m))
+                            has-tc (seq (:tool-calls m))
+                            msg (cond-> {:role "assistant"}
+                                  (seq text) (assoc :content text)
+                                  has-tc (assoc :tool_calls
+                                                (mapv (fn [tc]
+                                                        {:id (normalize-openai-tool-call-id
+                                                              (:id tc) family)
+                                                         :type "function"
+                                                         :function {:name (:name tc)
+                                                                    :arguments (json/generate-string
+                                                                                (:arguments tc))}})
+                                                      (:tool-calls m))))]
+                        ;; skip empty assistant messages (pi: providers
+                        ;; require content or tool_calls) — an empty
+                        ;; reasoning_content-only message is rejected too
+                        (when (or (seq text) has-tc)
+                          ;; deepseek thinking mode requires reasoning_content on assistant messages
+                          (assoc msg :reasoning_content thinking)))
+                      ;; custom messages (pi: convertToLlm custom→user)
+                      "custom"
+                      {:role "user"
+                       :content (openai-content (:content m))}
+                      {:role role
+                       :content (openai-content (:content m))}))))
+          messages)))
 
 (defn resolve-template-values
   "pi buildChatTemplateValues + resolveChatTemplateKwargValue: resolve the
@@ -455,10 +467,11 @@
 
 (defn detect-openai-compat
   "pi detectCompat (packages/ai/src/api/openai-completions.ts): auto-detected
-   openai-completions compatibility defaults for a model from its provider id
-   and base URL — the base layer wherever the model's explicit :compat leaves
-   a key unset (resolved-openai-compat applies it). Explicit compat entries
-   always override these values.
+   openai-completions compatibility defaults for a model from its provider
+   family (models/provider-family — an account alias keeps its base provider's
+   detection) and base URL — the base layer wherever the model's explicit
+   :compat leaves a key unset (resolved-openai-compat applies it). Explicit
+   compat entries always override these values.
 
    Carries pi's full detected key set for parity; keys without a kmet
    consumer yet (:supports-store, :supports-developer-role,
@@ -470,8 +483,8 @@
    implementation (zaiToolStream, deferredToolsMode,
    supportsOpenAIGrammarTools) are not ported. Unlike pi, URL matching is
    case-insensitive across all providers."
-  [{:keys [provider base-provider id base-url]}]
-  (let [provider (some-> (or base-provider provider) name)
+  [{:keys [id base-url] :as model}]
+  (let [provider (some-> (models/provider-family model) name)
         url (str/lower-case (or base-url ""))
         id-str (or id "")
         zai? (zai-provider? provider url)

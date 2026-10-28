@@ -34,6 +34,30 @@
     (t/is (<= (count assistant-id) 40))
     (t/is (re-matches #"[a-zA-Z0-9_-]+" assistant-id))))
 
+(t/deftest test-llm-openai-account-alias-target
+  (let [long-id (apply str (repeat 60 "a"))
+        model {:id "m1" :provider :openai#work :base-provider :openai}
+        msgs [{:role :assistant :content [] :provider :openai#work :model "m1"
+               :thinking "reasoned"
+               :tool-calls [{:id long-id :name "bash" :arguments {}}]}
+              {:role :tool :content [{:type :tool_result :tool_use_id long-id
+                                      :content "done"}]}]
+        as-record (@#'shared/openai-messages msgs model "m1")
+        as-keyword (@#'shared/openai-messages msgs :openai#work "m1")]
+    (t/is (= {:provider :openai#work :family :openai}
+             (@#'shared/message-target model))
+          "a model record carries its own provenance and family")
+    (t/is (= {:provider :openai#work :family :openai#work}
+             (@#'shared/message-target :openai#work))
+          "a bare provider keyword is its own family")
+    (t/is (= 40 (count (-> as-record first :tool_calls first :id)))
+          "an alias uses its base provider's tool-call id shaping")
+    (t/is (= long-id (-> as-keyword first :tool_calls first :id))
+          "without the record there is no family to consult")
+    (t/is (= 40 (count (-> as-record second :tool_call_id))))
+    (t/is (= "reasoned" (:reasoning_content (first as-record)))
+          "provenance stays the alias id, so its own thinking replays")))
+
 (t/deftest test-llm-anthropic-tool-id-normalization
   (let [id "call_qwen|opaque/tool-id"
         converted (@#'anthropic/anthropic-messages

@@ -11,7 +11,9 @@
    Account aliases (models.edn :accounts) are registered here as providers
    too: an alias copies its base provider's models with :provider set to the
    alias id and :base-provider set to the base, so selection resolves per
-   account while wire shaping and attribution still see the base provider."
+   account while wire shaping and attribution still see the base provider
+   (models/provider-family). It inherits no credential — env vars, :api-key
+   and credential-carrying headers stay with the base account."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -142,6 +144,14 @@
   "Provider record by keyword id, or nil when unknown."
   [id]
   (registry/get-entity providers-atom id))
+
+(defn family-provider
+  "The Provider record whose request config and login methods a Model/Provider
+   record uses: an account alias's base provider, or the provider itself. Nil
+   when the id is unknown. (Keywords pass through provider-family, so a bare id
+   resolves to its own record.)"
+  [record-or-id]
+  (get-provider (provider-family record-or-id)))
 
 (defn get-models
   "All models of one provider (pi: Models.getModels), or of every provider
@@ -486,11 +496,30 @@
           (swap! composition-errors assoc provider-id (ex-message e))
           (when base (register-provider! base)))))))
 
+(defn- credential-header?
+  "True for a header name that carries a credential (Authorization, cookie,
+   *-api-key, *-token, *-secret), case-insensitive."
+  [header-name]
+  (let [n (str/lower-case (str header-name))]
+    (or (contains? #{"authorization" "proxy-authorization" "cookie"} n)
+        (str/includes? n "api-key")
+        (str/ends-with? n "token")
+        (str/ends-with? n "-secret"))))
+
+(defn- without-credential-headers
+  "Drop the credential-carrying entries of a raw header map (nil-safe), so an
+   account alias never inherits the base account's static auth."
+  [headers]
+  (when (map? headers)
+    (into {} (remove (fn [[k _]] (credential-header? k))) headers)))
+
 (defn- compose-account-provider
   "Compose an account alias from the provider it mirrors: identical models
    and provider-level request config, its own raw :api-key (from the account
-   entry), and no env-var fallback — the base provider's env vars
-   authenticate the base account, not the alias."
+   entry), and no inherited credential — the base provider's env vars, static
+   auth headers and model-level auth headers authenticate the base account,
+   not the alias. Non-auth headers (integration ids, betas, gateway routing)
+   are inherited; a `#label` alias is the same provider with another login."
   [alias-id config]
   (let [base-id (or (model-config/account-base alias-id config)
                     (throw (ex-info (str "Account " (name alias-id) " has no provider")
@@ -511,25 +540,15 @@
                          (str (or (:name base) (name base-id))
                               " (" (model-config/account-label alias-id) ")"))
                :api-key (:api-key config)
+               :configured-headers (without-credential-headers (:configured-headers base))
                :models (mapv (fn [m]
-                               (map->Model (assoc m
-                                                  :provider alias-id
-                                                  :base-provider base-id)))
+                               (-> m
+                                   (assoc :provider alias-id :base-provider base-id)
+                                   (update :headers without-credential-headers)
+                                   map->Model))
                              (:models base)))
         (dissoc :env-vars)
         map->Provider)))
-
-(defn- recompose-account-provider!
-  "Compose one account alias, recording a composition error (and dropping
-   the alias) when its base is missing or invalid."
-  [alias-id config]
-  (let [alias-id (keyword alias-id)]
-    (try
-      (register-provider! (compose-account-provider alias-id config))
-      (swap! composition-errors dissoc alias-id)
-      (catch Exception e
-        (unregister-provider! alias-id)
-        (swap! composition-errors assoc alias-id (ex-message e))))))
 
 (defn- base-provider-ids
   "Every provider id composed from a base layer (builtin, models.edn or
@@ -541,26 +560,37 @@
                 (keys @extension-providers)
                 (keys @native-extension-providers))))
 
+(defn- recompose-account-provider!
+  "Compose one account alias, recording a composition error (and dropping the
+   alias) when a real provider already owns its id — the provider wins — or
+   when its base is missing or invalid."
+  [alias-id config]
+  (let [alias-id (keyword alias-id)]
+    (if (contains? (base-provider-ids) alias-id)
+      (swap! composition-errors assoc alias-id
+             (str "Account alias id \"" (name alias-id) "\" collides with a provider id"))
+      (try
+        (register-provider! (compose-account-provider alias-id config))
+        (swap! composition-errors dissoc alias-id)
+        (catch Exception e
+          (unregister-provider! alias-id)
+          (swap! composition-errors assoc alias-id (ex-message e)))))))
+
 (defn- recompose-account-providers!
-  "Compose every declared account alias. An alias id that collides with a
-   base provider id is a composition error (the base wins)."
+  "Compose every declared account alias."
   []
-  (let [base-ids (base-provider-ids)]
-    (doseq [[alias-id config] (model-config/get-accounts)]
-      (let [alias-id (keyword alias-id)]
-        (if (contains? base-ids alias-id)
-          (swap! composition-errors assoc alias-id
-                 (str "Account alias id \"" (name alias-id)
-                      "\" collides with a provider id"))
-          (recompose-account-provider! alias-id config))))))
+  (doseq [[alias-id config] (model-config/get-accounts)]
+    (recompose-account-provider! alias-id config)))
 
 (defn- recompose-accounts-of!
-  "Refresh the aliases that mirror BASE-ID after its own composition
-   changed (extension registration/unregistration)."
+  "Refresh the account aliases affected by BASE-ID's own composition change
+   (extension registration/unregistration): the aliases that mirror it, and an
+   alias whose own id BASE-ID shadows (it comes back when that provider goes)."
   [base-id]
   (doseq [[alias-id config] (model-config/get-accounts)
           :let [alias-id (keyword alias-id)]
-          :when (= base-id (model-config/account-base alias-id config))]
+          :when (or (= base-id alias-id)
+                    (= base-id (model-config/account-base alias-id config)))]
     (recompose-account-provider! alias-id config)))
 
 (defn- recompose-all!

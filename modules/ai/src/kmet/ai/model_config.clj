@@ -247,7 +247,7 @@
       (vector? (:models m))
       (validate-models path (:models m)))))
 
-(declare account-base)
+(declare account-base writable-account-id?)
 
 (defn validate-config
   "Manual schema validation of a models.edn map (pi validateModelsConfig).
@@ -279,6 +279,10 @@
                             (or (and (keyword? aid) (namespace aid))
                                 (and (string? aid) (str/includes? aid "/")))
                             (conj errors (str path ": account alias id must not contain '/'"))
+
+                            (not (writable-account-id? aid))
+                            (conj errors (str path ": account alias id must be ASCII"
+                                              " letters, digits, '-', '_' or '.'"))
 
                             (not (map? m))
                             (conj errors (str path ": expected map"))
@@ -316,15 +320,43 @@
         i (str/index-of s "#")]
     (if i (subs s (inc i)) s)))
 
+(def ^:private account-id-part-re
+  "One `#`-separated part of an account alias id: ASCII letters, digits, '-',
+   '_' and '.'. The id travels into `provider/model` references, `/login` and
+   `--provider` arguments, terminal output and persisted session state, so it
+   stays ASCII — no whitespace, no unicode-normalization ambiguity, no
+   characters that would need escaping."
+  #"[A-Za-z0-9._-]+")
+
+(defn- account-id-parts
+  "The `#`-separated parts of ALIAS-ID's name, empty parts included so an
+   empty or trailing-# id fails the charset."
+  [alias-id]
+  (str/split (if (keyword? alias-id) (name alias-id) (str alias-id)) #"#" -1))
+
+(defn writable-account-id?
+  "True when ALIAS-ID can be an :accounts key: a plain (non-namespaced)
+   keyword or string whose `#`-separated parts are ASCII [A-Za-z0-9._-].
+   Such an id survives an EDN round-trip and every surface that carries it."
+  [alias-id]
+  (let [s (if (keyword? alias-id) (name alias-id) (str alias-id))]
+    (and (or (keyword? alias-id) (string? alias-id))
+         (not (and (keyword? alias-id) (namespace alias-id)))
+         (not (str/includes? s "/"))
+         (every? #(re-matches account-id-part-re %) (account-id-parts alias-id)))))
+
 (defn parse-account-ref
-  "Parse a /login reference of the form `base#label` into
-   {:id :provider}; nil when REF does not have both halves."
+  "Parse a /login reference of the form `base#label` into {:id :provider};
+   nil when REF does not have both halves. Whitespace around the halves is
+   trimmed, so `deepseek # work` reads as `deepseek#work`."
   [ref]
-  (let [s (str/trim (str ref))
-        i (str/index-of s "#")]
-    (when (and i (pos? i) (< (inc i) (count s)))
-      {:id (keyword s)
-       :provider (keyword (subs s 0 i))})))
+  (let [s (str/trim (str ref))]
+    (when-let [i (str/index-of s "#")]
+      (let [base (str/trim (subs s 0 i))
+            label (str/trim (subs s (inc i)))]
+        (when (and (seq base) (seq label))
+          {:id (keyword (str base "#" label))
+           :provider (keyword base)})))))
 
 ;; ─── File loading (pi ModelConfig.load) ────────────────────────────────────
 
@@ -440,13 +472,20 @@
 (defn add-account!
   "Declare ALIAS-ID in the user's models.edn under :accounts. ACCOUNT is the
    account config (e.g. {:provider :github-copilot}); an existing entry for
-   ALIAS-ID is replaced. Refuses to touch a models.edn that is not a valid
-   EDN map, so a broken file can never be erased. Only the global file is
+   ALIAS-ID is replaced. The id must be a plain provider id
+   (writable-account-id?) so the written file stays readable. Refuses to
+   touch a models.edn that is not a valid EDN map, so a broken file can never
+   be erased. Only the global file is
    written (the project .kmet/models.edn stays hand-managed). Returns the
    file path. AGENT-DIR pins the global scope dir; nil resolves via
    cfg/get-agent-dir."
   ([alias-id account] (add-account! alias-id account nil))
   ([alias-id account agent-dir]
+   (when-not (writable-account-id? alias-id)
+     (throw (ex-info (str "Account alias id " (pr-str alias-id)
+                          " must be a plain ASCII provider id"
+                          " (letters, digits, '-', '_' or '.', no '/' or whitespace)")
+                     {:type :model-config-invalid :alias alias-id})))
    (let [path (first (models-edn-paths agent-dir))
          text (when (fs/exists? path)
                 (try (slurp path) (catch Exception _ nil)))

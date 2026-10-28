@@ -193,11 +193,8 @@
    offers an api-key login (env vars, models.edn configured key, or
    :auth-header) — openai-codex is oauth-only."
   [p]
-  (let [base (when-let [base-id (:base-provider p)]
-               (models/get-provider base-id))]
-    (or (seq (:env-vars p)) (:api-key p) (:auth-header p)
-        (boolean (and base
-                      (or (seq (:env-vars base)) (:api-key base) (:auth-header base)))))))
+  (boolean (some (fn [q] (or (seq (:env-vars q)) (:api-key q) (:auth-header q)))
+                 [p (models/family-provider p)])))
 
 (defn- provider-login-available?
   "True when PROVIDER offers at least one login method (oauth or api-key)."

@@ -85,12 +85,19 @@ provider can be used with several credentials. Declare aliases in
 ```
 
 Each alias becomes its own provider: it keeps the base provider's models,
-base URL, headers, and OAuth flow, but has its own credential in `auth.edn`
-and its own `:api-key` when one is declared. Alias ids are plain provider
-ids — use `base#label`, not a namespaced keyword, because `/` separates the
-provider and model in model references. Base-provider environment
-variables do not authenticate an alias — log in with `/login base#label`,
-enter the key when prompted, or give the alias its own `:api-key`.
+base URL, non-auth headers, and OAuth flow, and inherits no credential — the
+base's environment variables, `:api-key`, and credential-carrying headers
+(`Authorization`, `*-api-key`, `*-token`, …) stay with the base account. Log
+in with `/login base#label`, enter the key when prompted, or give the alias
+its own `:api-key`; the credential is stored under the alias in `auth.edn`.
+Alias ids are plain ASCII provider ids — letters, digits, `-`, `_`, `.`, and
+`#` before the label — never namespaced and never containing `/`, which
+separates the provider and model in model references.
+
+Ambient auth does not travel either: `google-vertex` resolves ADC credentials
+plus project/location and `amazon-bedrock` the AWS credential chain, both
+keyed by provider id, so those aliases need an explicit `:api-key` (or a
+`/login` credential) to authenticate at all.
 
 `/login base#label` creates the declaration when it is missing (merging into
 `~/.kmet/agent/models.edn`) and then starts the base provider's normal login
@@ -109,8 +116,11 @@ bb start --provider github-copilot#work --model <model-id>
 ```
 
 OAuth tokens are stored and refreshed per alias, so several Copilot, Codex,
-or Claude accounts stay independent. `--list-models` lists the alias like any
-other provider.
+or Claude accounts stay independent. Once an alias has a credential,
+`--list-models` and the model selectors list it like any other provider. A
+*bare* model id becomes ambiguous when the base and an alias are both
+authenticated (`--model <model-id>` then asks for `--provider` or
+`provider/model`), so prefer `base#label/<model-id>` in scripts.
 
 ## OpenDesign Cloud
 

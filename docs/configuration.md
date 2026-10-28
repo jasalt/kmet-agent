@@ -101,12 +101,22 @@ usable with more than one credential:
 ```
 
 An entry mirrors the provider named by `:provider`, or by the part before
-`#` in the alias id. Alias ids are plain provider ids (no `/`, which is the
-provider/model separator in model references). `:name` overrides the display name (default:
+`#` in the alias id. Alias ids are plain ASCII provider ids — letters, digits,
+`-`, `_` and `.`, with `#` before the label — and never namespaced or
+containing `/`, which separates the provider and model in model references.
+`:name` overrides the display name (default:
 `Base name (label)`), and `:api-key` is the same raw config value a provider
 entry accepts (`"literal"`, `"$ENV_VAR"`, or `"!command"`). Credentials
 entered with `/login` are stored per alias in `auth.edn`. `/login base#label`
-adds a missing account declaration to the global `models.edn`; see the
+adds a missing account declaration to the global `models.edn`.
+
+The alias inherits the base provider's models, base URL and non-auth headers,
+but no credential: base env vars, a base `:api-key`, and credential-carrying
+headers (`Authorization`, `*-api-key`, `*-token`, …) stay with the base
+account. Ambient auth (`google-vertex` ADC, `amazon-bedrock`'s AWS credential
+chain) does not carry over either, so an alias of those needs its own
+`:api-key`. A bare model id becomes ambiguous once the base and an alias are
+both authenticated; see the
 [providers guide](providers.md#multiple-accounts).
 
 ## System prompts

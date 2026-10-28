@@ -29,16 +29,16 @@
         requires-reasoning? (:requires-reasoning-content-on-assistant-messages
                              compat)
         messages (if requires-reasoning?
-                   (openai-messages-with-reasoning messages (:provider model-record) model-id
-                                                   (:reasoning-content-fill compat)
-                                                   (:base-provider model-record))
-                   (openai-messages messages (:provider model-record) model-id
-                                    (:base-provider model-record)))]
+                   (openai-messages-with-reasoning messages model-record model-id
+                                                   (:reasoning-content-fill compat))
+                   (openai-messages messages model-record model-id))]
     (cond-> {:model model-id
-             ;; provider+model-id flow to the converters as the replay target:
-             ;; a message's thinking echoes back as reasoning_content only
-             ;; when the message was produced by this same model (mid-session
-             ;; /model switches must not leak foreign CoT into the request)
+             ;; the model record + model-id flow to the converters as the
+             ;; replay target: a message's thinking echoes back as
+             ;; reasoning_content only when the message was produced by this
+             ;; same model (mid-session /model switches must not leak foreign
+             ;; CoT into the request), and the record carries the provider
+             ;; family (an account alias's base) for tool-call id shaping
              :messages messages
              :stream true
              :stream_options {:include_usage true}}

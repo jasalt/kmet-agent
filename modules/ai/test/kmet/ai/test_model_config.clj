@@ -234,16 +234,39 @@
              (mc/validate-config {:accounts {7 {}}})))
     (t/is (= ["accounts.github-copilot/work: account alias id must not contain '/'"]
              (mc/validate-config {:accounts {:github-copilot/work {}}}))
-          "'/' is the provider/model separator, so an alias id cannot be namespaced")))
+          "'/' is the provider/model separator, so an alias id cannot be namespaced")
+    (t/is (= ["accounts.wörk: account alias id must be ASCII letters, digits, '-', '_' or '.'"]
+             (mc/validate-config {:accounts {:wörk {}}}))
+          "an alias id is ASCII — it is carried by model refs, flags and terminals")))
 
 (t/deftest test-parse-account-ref
   (t/is (= {:id :github-copilot#work :provider :github-copilot}
            (mc/parse-account-ref "github-copilot#work")))
   (t/is (= {:id :deepseek#work#two :provider :deepseek}
            (mc/parse-account-ref "  deepseek#work#two ")))
+  (t/is (= {:id :deepseek#work :provider :deepseek}
+           (mc/parse-account-ref " deepseek # work "))
+        "whitespace around the halves is trimmed")
   (t/is (nil? (mc/parse-account-ref "deepseek")))
   (t/is (nil? (mc/parse-account-ref "deepseek#")))
+  (t/is (nil? (mc/parse-account-ref "deepseek # ")))
   (t/is (nil? (mc/parse-account-ref "#work"))))
+
+(t/deftest test-writable-account-id
+  (t/is (true? (mc/writable-account-id? :deepseek#work)))
+  (t/is (true? (mc/writable-account-id? "deepseek#work")))
+  (t/is (true? (mc/writable-account-id? :work.eu_2-x)))
+  (t/is (true? (mc/writable-account-id? :deepseek#work#two)))
+  (t/is (false? (mc/writable-account-id? (keyword "deep seek#work")))
+        "an EDN keyword name cannot embed whitespace")
+  (t/is (false? (mc/writable-account-id? :deepseek/work))
+        "'/' is the provider/model separator")
+  (t/is (false? (mc/writable-account-id? :deepseek#wörk))
+        "ids are ASCII: they ride on provider/model refs, CLI flags and terminals")
+  (t/is (false? (mc/writable-account-id? :wörk)))
+  (t/is (false? (mc/writable-account-id? "deepseek#wörk")))
+  (t/is (false? (mc/writable-account-id? :deepseek#)))
+  (t/is (not (mc/writable-account-id? ""))))
 
 (t/deftest test-add-account!
   (with-models-edn-paths
@@ -271,6 +294,13 @@
         (mc/add-account! :deepseek#home {} agent-dir)
         (t/is (= {:accounts {:deepseek#home {}}}
                  (edn/read-string (slurp global)))))
+      (t/testing "refuses an id that would not read back"
+        (write! global "{:accounts {}}\n")
+        (t/is (thrown? Exception
+                       (mc/add-account! (keyword "deep seek#x") {} agent-dir)))
+        (t/is (thrown? Exception (mc/add-account! :deepseek#wörk {} agent-dir)))
+        (t/is (= "{:accounts {}}\n" (slurp global))
+              "the file is untouched"))
       (t/testing "refuses to rewrite a malformed models.edn"
         (write! global "{:providers {:my {:base-url")
         (t/is (thrown? Exception (mc/add-account! :deepseek#home {} agent-dir)))
