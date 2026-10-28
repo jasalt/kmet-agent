@@ -41,7 +41,10 @@
    and counts it (`kmet.libs.concurrent/bounded-queue`), and the writer announces
    what it lost with `{:type :stream-gap :dropped n}` before the next record —
    dropping the newest would corrupt a message silently, and a visible gap is
-   what tells the client to resync with `:get-state`.
+   what tells the client to resync with `:get-state`. A drop is announced only
+   by a record the lane keeps afterwards, so an ask that went unanswered is
+   asked again: the reply may be the record the lane dropped, and a run settling
+   into a one-deep lane can lose the last records without an announcement.
 
    **An event belongs to the agent that emitted it.** The listener registers on
    the agent's own ctx, so the kernel's subtree scoping routes a run's events to

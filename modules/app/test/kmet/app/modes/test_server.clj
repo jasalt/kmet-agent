@@ -163,10 +163,18 @@
       conn)))
 
 (defn- listening-record
-  "The mode's `:listening` announcement from its own stdout."
+  "The mode's `:listening` announcement from its own stdout, or nil until the
+   announcement line is whole. OUT belongs to the mode's thread and is
+   snapshotted at whatever point the test reads it, so a line can be half
+   written: a line that does not parse is skipped rather than thrown, and the
+   announcement is read only once it is complete."
   [out]
-  (first (filter #(= :listening (:type %))
-                 (map edn/read-string (remove str/blank? (str/split-lines out))))))
+  (first (keep (fn [line]
+                 (try
+                   (let [record (edn/read-string line)]
+                     (when (= :listening (:type record)) record))
+                   (catch Throwable _ nil)))
+               (remove str/blank? (str/split-lines out)))))
 
 (def ^:private boot-wait-ms
   "How long a mode boot may take to announce `:listening`. A cold Jolt process
@@ -187,20 +195,26 @@
         stdin-peer @accepted
         out (java.io.StringWriter.)
         result (future (binding [*in* (io/reader (.getInputStream stdin-peer))]
-                         (support/run-main-into (into ["--profile" "server"] args) out)))]
-    (when-not (support/wait-until #(str/includes? (str out) ":listening") boot-wait-ms)
-      (throw (ex-info "the server never announced a port" {:out (str out)})))
-    (let [announced (listening-record (str out))]
-      {:port (:port announced)
-       :socket (:socket announced)
-       :transport (:transport announced)
-       :token (:token announced)
-       :max-sessions (:max-sessions announced)
-       :records (fn [] (mapv edn/read-string (remove str/blank? (str/split-lines (str out)))))
-       :stop! (fn []
-                (.close stdin-client)
-                (:code (deref result 60000 {:code ::timeout})))
-       :result result})))
+                         (support/run-main-into (into ["--profile" "server"] args) out)))
+        ;; wait for the announcement to *parse*, not for the substring: the mode
+        ;; writes the line from its own thread, so a snapshot can catch it half
+        ;; written (and a parse there would fail the whole namespace)
+        announced (do (when-not (support/wait-until #(listening-record (str out)) boot-wait-ms)
+                        (throw (ex-info "the server never announced a port"
+                                        {:out (str out)})))
+                      (listening-record (str out)))]
+    {:port (:port announced)
+     :socket (:socket announced)
+     :transport (:transport announced)
+     :token (:token announced)
+     :max-sessions (:max-sessions announced)
+     :records (fn [] (keep (fn [line]
+                             (try (edn/read-string line) (catch Throwable _ nil)))
+                           (remove str/blank? (str/split-lines (str out)))))
+     :stop! (fn []
+              (.close stdin-client)
+              (:code (deref result 60000 {:code ::timeout})))
+     :result result}))
 
 (defn- with-server
   "Run F with a served socket. F gets `{:port :socket :token :conn! :stop!}`, and
@@ -250,6 +264,25 @@
    (support/wait-until #(some? (first (filter (fn [r] (= id (:id r)))
                                               ((:records conn)))))
                        timeout-ms)))
+
+(defn- resync!
+  "Ask for `get-state` until CONN is answered, up to MAX-ASKS asks of
+   ANSWER-WAIT-MS each.
+
+   A one-deep lane drops its oldest record under pressure and announces the
+   loss only with the next record it keeps, so a record the run emits while it
+   settles can eat one ask — and when the dropped record was the last one, the
+   announcement never comes. A client that saw a stream gap asks again, which is
+   what the gap is for."
+  ([conn] (resync! conn 10 5000))
+  ([conn max-asks answer-wait-ms]
+   (loop [n 1]
+     (let [id (str "resync-" n)]
+       ((:send! conn) {:type :get-state :id id})
+       (cond
+         (answered? conn id answer-wait-ms) true
+         (< n max-asks) (recur (inc n))
+         :else false)))))
 
 (defn- verdict
   "Wait until CONN has been answered `:ready` or refused with `:error`, then say
@@ -605,12 +638,25 @@
         (is (some? (connect-when-accepted conn! 5000))
             "and the server still serves a new one")))))
 
+(deftest the-listening-announcement-is-read-once-it-is-whole
+  ;; The mode writes its announcement from its own thread; a snapshot of its
+  ;; stdout can catch the line half written, and parsing that line would fail
+  ;; the namespace instead of the test (the 16-error cascade this guards).
+  (is (nil? (listening-record "")))
+  (is (nil? (listening-record "{:type :listening :port 4123")))
+  (is (nil? (listening-record "{:type :ready :port 1}\n{:type :listenin")))
+  (is (= {:type :listening :port 4123 :token "t"}
+         (listening-record
+          "{:type :listening :port 4123 :token \"t\"}\n{:type :rea"))))
+
 (deftest a-client-that-stops-reading-gets-a-gap-and-resyncs
   ;; The fan-out's rule: a run streams to its end whether or not the client is
   ;; reading, and a client that fell behind learns its stream has a hole
   ;; (`:stream-gap`) instead of silently losing the middle of a message — then
   ;; resyncs with `get-state`. The lane is one record deep and the socket's
-  ;; receive buffer is tiny, so the gap is not a matter of timing.
+  ;; receive buffer is tiny, so the gap is not a matter of timing; the resync
+  ;; is retried because the same lane can eat the reply while the run settles
+  ;; (see resync!).
   (let [done (promise)]
     (with-server
       {:send-message (flooding done 4000)
@@ -626,10 +672,7 @@
           (let [gap (first ((:of-type c) :stream-gap))]
             (is (pos? (:dropped gap)) "the gap counts what it lost")
             (is (= ((:agent-id c)) (:agent-id gap)) "and belongs to its agent"))
-          ((:send! c) {:type :get-state :id "resync"})
-          ;; the flood's tail and the run's settle can take as long as the
-          ;; run itself, so this wait matches the test's other ceilings
-          (is (answered? c "resync" 60000)
+          (is (resync! c)
               "and the client resyncs with get-state"))))))
 
 (deftest a-connection-brings-its-own-world
