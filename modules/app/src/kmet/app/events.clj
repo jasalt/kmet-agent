@@ -116,6 +116,7 @@
    dispatches or silently disagree with a sibling. Returns nil."
   [ctx owner events]
   (when-let [handle (srce/get ctx :events)]
+    ;; two passes: a refused set leaves none of its names registered
     (doseq [[name spec] events]
       (when-some [existing (declaration ctx name)]
         (when (not= existing spec)
@@ -124,7 +125,8 @@
                            :event name
                            :existing existing
                            :declared spec
-                           :owner owner}))))
+                           :owner owner})))))
+    (doseq [[name spec] events]
       (registry/register! handle tag name spec owner)))
   nil)
 

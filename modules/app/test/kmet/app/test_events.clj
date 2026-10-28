@@ -181,7 +181,13 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already declared differently"
                           (events/declare! ctx [:app :c]
                                            {:turn-end {:mode :emit :domain :loop :doc "hijack"}}))
-        "a built-in event cannot be re-declared differently")))
+        "a built-in event cannot be re-declared differently")
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (events/declare! ctx [:app :d]
+                                  {:new/one spec
+                                   :turn-end {:mode :emit :domain :loop :doc "hijack"}})))
+    (is (nil? (events/declaration ctx :new/one))
+        "a refused set registers none of its names")))
 
 ;; ── the public stream: extension-only events stay in-process ─────────────
 
