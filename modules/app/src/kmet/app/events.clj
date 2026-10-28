@@ -531,16 +531,8 @@
   "The `:loop`-domain events: the agent loop emits every one of them."
   (apply dissoc event-types app-event-types))
 
-(def ^:private event-modes
-  "Event type keyword → its declared dispatch mode."
-  (into {} (map (juxt :name :mode)) (builtin-events)))
-
-(defn mode-of
-  "The declared dispatch mode for TYPE, `:emit` when the event declares none."
-  [type]
-  (get event-modes type :emit))
-
 (defn known-event-type?
-  "True if the keyword is part of the documented vocabulary."
+  "True if the keyword is part of the built-in vocabulary (a plugin's own
+   declarations are not listed here; `declaration` answers those)."
   [type]
   (contains? event-types type))

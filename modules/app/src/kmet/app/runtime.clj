@@ -184,8 +184,8 @@
   "Event names that two mounted fibers declare differently, as
    `[{:event :declarations [{:plugin :spec …} …]} …]`. A name may be re-declared
    (an app-wide vocabulary row and the plugin that later claims an event), but
-   only with the same mode, domain and doc — anything else is two plugins
-   disagreeing about one event."
+   only identically — anything else is two plugins disagreeing about one
+   event."
   [fibers]
   (->> fibers
        (mapcat (fn [fiber]

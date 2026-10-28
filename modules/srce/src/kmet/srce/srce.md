@@ -609,8 +609,8 @@ instead of a stored node.
 
 **The app owns the vocabulary; the kernel owns the table.** The *vocabulary*
 (three fifths of what was `event-bus.clj`, pure data) lives in
-`kmet.app.events`, declared as `:events` in the `:events` plugin map and read
-from that declaration (not from a generated projection — one was tried and
+`kmet.app.events`, declared as `:events` on a plugin map and registered into
+the `:events` service at mount (not a generated projection — one was tried and
 deleted: a file in the load path for data that is already in code). The
 dispatcher is `kmet.app.events/emit!`, which picks the fold from the event's
 declared `:mode`; `kmet.app.wire` holds the wire projection only. The extension

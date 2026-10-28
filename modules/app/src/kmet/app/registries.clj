@@ -1,6 +1,6 @@
 (ns kmet.app.registries
-  "The registry services — `:commands`, `:prompts`, `:skills`, `:tools` — as
-   one row shape.
+  "The registry services — `:commands`, `:prompts`, `:skills`, `:tools` (and
+   the event vocabulary, whose row is `kmet.app.events`) — as one row shape.
 
    Each registry is a `kmet.app.registry/Registry` handle over an atom,
    installed by one `provide!` into the app scope, and mutated through that
