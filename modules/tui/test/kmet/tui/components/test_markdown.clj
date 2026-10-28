@@ -1,6 +1,7 @@
 (ns kmet.tui.components.test-markdown
   (:require [clojure.test :as t]
             [clojure.string :as str]
+            [kmet.libs.markdown :as mdlib]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
             [kmet.tui.hikap :as h]
@@ -863,6 +864,137 @@
         lines1 (core/render m 30)
         lines2 (core/render m 30)]
     (t/is (= lines1 lines2))))
+
+;; ─── Incremental rendering (streaming) ────────────────────────────────────
+
+(def ^:private stream-sample
+  "Every block shape that can appear in a streaming text: paragraphs that
+   wrap, a list with a continuation line, a fenced code block, a table and a
+   trailing growing paragraph."
+  (str "Let me think about this.\n\n"
+       "First, a paragraph long enough to wrap across the terminal width and keep going.\n\n"
+       "- one item\n- two items\n  a continuation line\n\n"
+       "```clojure\n(defn f [x]\n  (* x 2))\n```\n\n"
+       "| a | b |\n|---|---|\n| 1 | 2 |\n\n"
+       "A trailing paragraph that keeps growing.\n"))
+
+(defn- rendered-with-cache
+  [cache text width]
+  (md/render-lines text width
+                   :padding-x 0
+                   :theme md/default-theme
+                   :cache-key [width]
+                   :cache-atom cache))
+
+(t/deftest test-render-lines-incremental-matches-full
+  (t/testing "a text streamed chunk by chunk renders exactly like a fresh full render"
+    (let [cache (atom nil)
+          n (count stream-sample)]
+      (loop [i 0]
+        (when (< i n)
+          (let [j (min n (+ i 3))
+                prefix (subs stream-sample 0 j)]
+            (t/is (= (md/render-lines prefix 50 :padding-x 0 :theme md/default-theme)
+                     (rendered-with-cache cache prefix 50))
+                  (str "prefix of " j " chars"))
+            (recur j)))))))
+
+(t/deftest test-render-lines-incremental-leading-blank-lines
+  (t/testing "a leading run of blank lines survives the stable-prefix split"
+    (let [cache (atom nil)]
+      (doseq [text ["\n" "\n\n" "\n\nhello" "\n\nhello\n\nworld"]]
+        (t/is (= (md/render-lines text 40 :padding-x 0 :theme md/default-theme)
+                 (rendered-with-cache cache text 40))
+              (pr-str text))))))
+
+(t/deftest test-render-lines-incremental-blank-runs
+  (t/testing "a run of blank lines is cut at its first line: the parser drops
+              trailing empty lines, so a cut inside the run would lose them"
+    (let [text "a\n\n\nb\n\n\n\nc\n"
+          cache (atom nil)]
+      (doseq [i (range 1 (inc (count text)))]
+        (let [prefix (subs text 0 i)]
+          (t/is (= (md/render-lines prefix 40 :padding-x 0 :theme md/default-theme)
+                   (rendered-with-cache cache prefix 40))
+                (pr-str prefix)))))))
+
+(t/deftest test-render-lines-incremental-transform
+  (t/testing "a transform that rewrites or appends to the whole text still
+              renders incrementally exactly like a fresh render"
+    (doseq [tf [(fn [text _] (if (> (count text) 50) (str "REWRITTEN: " text) text))
+                (fn [text _] (if (odd? (count text)) (str text "\nEXTRA") text))]]
+      (let [cache (atom nil)
+            n (count stream-sample)]
+        (loop [i 0]
+          (when (< i n)
+            (let [j (min n (+ i 7))
+                  prefix (subs stream-sample 0 j)]
+              (t/is (= (md/render-lines prefix 50 :padding-x 0 :theme md/default-theme
+                                        :transform tf)
+                       (md/render-lines prefix 50 :padding-x 0 :theme md/default-theme
+                                        :transform tf
+                                        :cache-key [50 tf] :cache-atom cache))
+                    (str "prefix of " j " chars"))
+              (recur j))))))))
+
+(t/deftest test-render-lines-incremental-rejected-cut-not-retried
+  (t/testing "a blank line inside an open fence is not a safe boundary; the
+              rejection is remembered instead of re-parsed on every delta"
+    (let [text (str "intro\n\n```\n"
+                    (apply str (for [i (range 20)] (str "line " i "\n\n"))))
+          cache (atom nil)
+          orig (deref #'mdlib/parse)]
+      (rendered-with-cache cache text 40)
+      (t/is (some? (:rejected-cut @cache)) "the unsafe cut is recorded")
+      (let [calls (atom 0)]
+        (with-redefs-fn {#'mdlib/parse (fn [s] (swap! calls inc) (orig s))}
+          (fn [] (rendered-with-cache cache (str text "still inside the fence") 40)))
+        (t/is (= 1 @calls)
+              (str "only the tail is parsed, got " @calls " parse(s)"))))))
+
+(t/deftest test-markdown-component-block-cache
+  (t/testing "a Markdown component's own block cache re-renders only the tail
+              when its text is appended"
+    (let [text (apply str (for [i (range 20)] (str "paragraph " i "\n\n")))
+          m (md/make-markdown text :padding-x 0)
+          orig (deref #'md/render-token-lines)]
+      (core/render m 40)
+      (md/markdown-append! m "a new trailing line")
+      (let [calls (atom 0)]
+        (with-redefs-fn {#'md/render-token-lines
+                         (fn [& args] (swap! calls inc) (apply orig args))}
+          (fn [] (core/render m 40)))
+        (t/is (<= @calls 3)
+              (str "only the tail blocks render, got " @calls))
+        (t/is (= (core/render (md/make-markdown (md/markdown-get-text m) :padding-x 0) 40)
+                 (core/render m 40))
+              "the incremental render equals a fresh full render")))))
+
+(t/deftest test-render-lines-incremental-renders-only-the-tail
+  (t/testing "appending a delta re-renders the trailing block, not the whole history"
+    (let [line (apply str (repeat 120 "word "))
+          text (str (apply str (for [i (range 30)]
+                                 (str "paragraph " i " " line "\n\n")))
+                    "the last paragraph grows")
+          cache (atom nil)
+          calls (atom 0)
+          orig (deref #'md/render-token-lines)]
+      (rendered-with-cache cache text 80)
+      (with-redefs-fn {#'md/render-token-lines
+                       (fn [& args] (swap! calls inc) (apply orig args))}
+        (fn [] (rendered-with-cache cache (str text " even more") 80)))
+      (t/is (<= @calls 2)
+            (str "only the changed tail blocks render, got " @calls)))))
+
+(t/deftest test-render-lines-incremental-key-change
+  (t/testing "a different cache key (width/theme) discards the entry"
+    (let [cache (atom nil)
+          text "one\n\ntwo three four five six seven"]
+      (md/render-lines text 80 :padding-x 0 :theme md/default-theme
+                       :cache-atom cache :cache-key [:wide])
+      (t/is (= (md/render-lines text 20 :padding-x 0 :theme md/default-theme)
+               (md/render-lines text 20 :padding-x 0 :theme md/default-theme
+                                :cache-atom cache :cache-key [:narrow]))))))
 
 ;; ─── Default theme ─────────────────────────────────────────────────────────
 

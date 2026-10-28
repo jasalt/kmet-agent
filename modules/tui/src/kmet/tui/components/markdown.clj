@@ -463,33 +463,233 @@
 
     nil))
 
+;; ─── Incremental rendering (streaming) ───────────────────────────────────
+
+(defn- parse-stream-tokens
+  "Parse TEXT into block tokens and trim a partial closing fence from the
+   last block (streaming: a closing fence being typed must not make the code
+   block shrink, pi #5825)."
+  [text]
+  (let [tokens (md/parse text)]
+    (if (seq tokens)
+      (update tokens (dec (count tokens)) trim-code-fence)
+      tokens)))
+
+(defn- render-token-lines
+  "Render one block TOKEN into its own line vector — the unit the incremental
+   renderer caches. Every block's lines are independent of its neighbours
+   (render-block reads only the token, the theme and the width), so a cache of
+   per-block lines concatenates back into the whole-document render."
+  [token theme content-width left-pad default-style table-border]
+  (let [result (volatile! [])]
+    (render-block result token theme content-width left-pad default-style table-border)
+    @result))
+
+(defn- last-blank-run-start
+  "Index in TEXT of the first line of the last run of blank lines at or
+   after FROM, or nil. A blank line is one whose text is whitespace only.
+   The first line of the RUN (not its last) is the cut: the prefix then ends
+   with the previous non-blank line's newline, so `str/split-lines` drops
+   nothing from it, and the whole blank run is in the tail, which parses on
+   its own. Cutting inside a run would leave earlier blanks in the prefix,
+   where the parser's trailing-empty-line drop loses them. FROM is always a
+   line start (0 or the start of a blank run)."
+  [text from]
+  (loop [line-start from, cut nil, previous-blank? false]
+    (if-some [nl (str/index-of text "\n" line-start)]
+      (let [line-end (if (and (pos? nl) (= \return (nth text (dec nl))))
+                       (dec nl)
+                       nl)
+            blank? (str/blank? (subs text line-start line-end))
+            cut (if (and blank? (not previous-blank?) (not= line-start from))
+                  line-start
+                  cut)]
+        (recur (inc nl) cut blank?))
+      ;; A final line without a newline can be a blank line (the text ends
+      ;; in spaces); the position itself just past a trailing newline is not
+      ;; a line, so it must not be cut there.
+      (let [blank? (and (< line-start (count text))
+                        (str/blank? (subs text line-start)))]
+        (if (and blank? (not previous-blank?) (not= line-start from))
+          line-start
+          cut)))))
+
+(defn- blank-line-at?
+  "True when the line starting at START in TEXT is whitespace only (or START
+   is the end of the text). A cached stable prefix stays valid only while the
+   text still has the blank line at its cut: a transform that appended a
+   blank line once can stop doing so, leaving a table header immediately
+   followed by its separator at the cut — the prefix's last block would then
+   tokenize differently than in the whole-text parse."
+  [text start]
+  (let [nl (str/index-of text "\n" start)
+        end (or nl (count text))]
+    (str/blank? (subs text start end))))
+
+(def ^:private clean-probe
+  "An indented sentinel line appended to a segment to tell whether its last
+   block leaves a container open (see segment-clean?)."
+  (str (apply str (repeat 256 \space)) "__kmet_stable_probe__"))
+
+(defn- segment-clean?
+  "True when SEGMENT — parsed from a clean state — ends outside every open
+   container, so the text after it can be parsed separately and concatenated
+   back. A last :ul/:ol block was closed by the end of the segment, not by
+   its content, so the next line might still belong to it; a :code block may
+   be a closed fence or an unclosed one, told apart by clean-probe (an open
+   fence swallows it as code; a closed one parses it as a paragraph). Every
+   other last block is complete at a blank-line boundary."
+  [segment seg-tokens]
+  (let [t (:type (peek seg-tokens))]
+    (cond
+      (#{:ul :ol} t) false
+      (= :code t) (= :paragraph (:type (peek (md/parse (str segment clean-probe)))))
+      :else true)))
+
+(def ^:private empty-cache
+  "No stable prefix yet: every call parses and renders the whole text."
+  {:stable-text "" :stable-tokens [] :stable-lines []})
+
+(defn- promote-stable
+  "Extend CACHED's clean stable prefix to the last blank line in TEXT.
+   The prefix may only be cut where the parser's state (open list, code
+   fence) is provably clean, so the tail can be parsed on its own and the
+   tokens concatenated back into the whole-text parse. The promoted segment
+   is the previous tail, so its already-rendered block lines are reused when
+   the token values match. A cut that fails the check is remembered
+   (:rejected-cut): its segment cannot change while only the text after it
+   grows, so the next deltas don't pay for it again. Returns CACHED updated."
+  [cached text theme content-width left-pad default-style table-border]
+  (let [from (count (:stable-text cached))
+        cut (last-blank-run-start text from)]
+    (if (and cut (> cut from) (not= cut (:rejected-cut cached)))
+      (let [segment (subs text from cut)
+            seg-tokens (md/parse segment)]
+        (if (segment-clean? segment seg-tokens)
+          (let [n (count seg-tokens)
+                old-tokens (:tail-tokens cached)
+                old-lines (:tail-lines cached)
+                reuse? (and old-tokens
+                            (<= n (count old-tokens))
+                            (= seg-tokens (subvec old-tokens 0 n)))
+                seg-lines (if reuse?
+                            (subvec old-lines 0 n)
+                            (mapv (fn [t]
+                                    (render-token-lines t theme content-width left-pad
+                                                        default-style table-border))
+                                  seg-tokens))]
+            (assoc cached
+                   :stable-text (subs text 0 cut)
+                   :stable-tokens (into (vec (:stable-tokens cached)) seg-tokens)
+                   :stable-lines (into (vec (:stable-lines cached)) seg-lines)
+                   :rejected-cut nil))
+          (assoc cached :rejected-cut cut)))
+      cached)))
+
+(defn render-lines
+  "Render TEXT as Markdown to display lines at WIDTH — the Markdown
+   component's pipeline (transform, parse, stream-fence trim, block styling
+   and wrapping) with no component. Options mirror make-markdown, plus:
+
+   :cache-atom — incremental streaming render, in two layers. Parsing
+   resumes at the last clean blank-line boundary (:stable-text), so only the
+   text after it is parsed; the blocks before it keep their rendered lines
+   and only the tail is rendered per delta. A streaming text that only grows
+   then pays for its trailing block instead of its whole history (24 KB of
+   thinking was ~110 ms per delta; its trailing paragraph is ~2 ms).
+   :cache-key — everything besides the text the lines depend on (width,
+   theme, default style, transform, border). A changed key discards the
+   entry.
+
+   Blocks are compared after the transform and the fence trim, so a block
+   that stops being the last one (a closing fence completing, a new list
+   item) re-renders even though its source prefix did not change."
+  [text width & {:keys [theme padding-x default-style transform border
+                        cache-key cache-atom]
+                 :or {padding-x 1}}]
+  (let [content-width (max 1 (- width (* 2 padding-x)))
+        text (if transform
+               (transform text {:available-width content-width})
+               text)
+        table-border (border/resolve border)
+        left-pad (apply str (repeat padding-x \space))
+        ;; the default key captures every input the lines depend on; a
+        ;; caller whose theme/default-style identity changes per call (the
+        ;; assistant's derived closures) passes its own stable key instead
+        key (or cache-key [width padding-x theme default-style transform table-border])
+        cached (when cache-atom @cache-atom)
+        cached (when (and cached (= key (:key cached))) cached)
+        ;; A transform may rewrite the whole text, so the cached prefix is
+        ;; only reusable when the transformed text still starts with it.
+        ;; Otherwise pick a fresh cut (the first render, a rewritten prefix,
+        ;; a width/theme change), rendering its blocks from scratch.
+        base (promote-stable
+              (if (and cached
+                       (str/starts-with? text (or (:stable-text cached) ""))
+                       ;; the cut must still begin a blank line in THIS text
+                       ;; (a transform can drop the one that justified it);
+                       ;; an empty prefix has no cut to re-validate
+                       (or (zero? (count (:stable-text cached)))
+                           (blank-line-at? text (count (:stable-text cached)))))
+                cached
+                ;; no usable prefix: pick a fresh cut from the top (and
+                ;; remember a rejected one, like any other attempt)
+                empty-cache)
+              text theme content-width left-pad default-style table-border)
+        stable-text (:stable-text base)
+        stable-tokens (:stable-tokens base)
+        stable-lines (:stable-lines base)
+        tail (subs text (count stable-text))
+        ;; An empty tail after a promoted prefix contributes no block —
+        ;; md/parse of "" is one :blank (split-lines' [""]), which belongs
+        ;; only to a genuinely empty document.
+        tail-tokens (if (and (seq stable-text) (empty? tail))
+                      []
+                      (parse-stream-tokens tail))
+        ;; The stable prefix's lines are final (they cannot change while the
+        ;; text only grows). Re-rendering the whole tail is cheap by
+        ;; construction: it is the text since the last clean blank line, and
+        ;; it used to be re-rendered per delta together with the whole
+        ;; history.
+        tail-lines (mapv (fn [t]
+                           (render-token-lines t theme content-width left-pad
+                                               default-style table-border))
+                         tail-tokens)
+        per-block (into stable-lines tail-lines)]
+    (when cache-atom
+      (reset! cache-atom {:key key
+                          :stable-text stable-text
+                          :stable-tokens stable-tokens
+                          :stable-lines stable-lines
+                          :tail-tokens tail-tokens
+                          :tail-lines tail-lines
+                          ;; keep the unsafe-cut verdict for the next delta
+                          :rejected-cut (:rejected-cut base)}))
+    (into [] cat per-block)))
+
 ;; ─── Markdown component ───────────────────────────────────────────────────
 
 (defcomponent Markdown nil [text-atom theme-atom padding-x-atom
                             default-style-atom transform-atom
-                            border-atom cache-atom]
+                            border-atom block-cache-atom cache-atom]
   (render [this width]
     (track! this width
       (let [padding-x @padding-x-atom
-            content-width (max 1 (- width (* 2 padding-x)))
-            ;; Extension markdown transformers (pi: Markdown's transform fn —
-            ;; applied per render with the available width; a throwing
-            ;; transformer is skipped). Nil when no transformers.
-            text (if-let [tf @transform-atom]
-                   (tf @text-atom {:available-width content-width})
-                   @text-atom)
             theme @theme-atom
             default-style @default-style-atom
-            left-pad (apply str (repeat padding-x \space))
-            result (volatile! [])]
-        ;; Trim partial closing-fence fragments from the LAST block (streaming)
-        (let [tokens (md/parse text)
-              tokens (if (seq tokens)
-                       (update tokens (dec (count tokens)) trim-code-fence)
-                       tokens)]
-          (doseq [t tokens]
-            (render-block result t theme content-width left-pad default-style @border-atom)))
-        @result))))
+            transform @transform-atom
+            border-set @border-atom]
+        (render-lines @text-atom width
+                      :theme theme
+                      :padding-x padding-x
+                      :default-style default-style
+                      :transform transform
+                      :border border-set
+                      ;; the cache key is every input the block lines were
+                      ;; built from besides the text; the setters swap the
+                      ;; atoms, so a theme/style change misses the entry
+                      :cache-key [width padding-x theme default-style transform border-set]
+                      :cache-atom block-cache-atom)))))
 
 ;; ─── Construction ──────────────────────────────────────────────────────────
 
@@ -504,8 +704,11 @@
    (code blocks, headings, quotes, hr), mirroring pi's defaultTextStyle,
    :transform — extension markdown transformer fn (fn [text {:keys
    [available-width]}]) applied per render before parsing (pi: Markdown's
-   transform)."
-  [text & {:keys [theme padding-x default-style transform border]
+   transform),
+   :block-cache-atom — atom for the incremental block cache (default: a
+   fresh one). A caller that swaps the component's text on every streaming
+   delta gets a re-render of only the changed tail; see render-lines."
+  [text & {:keys [theme padding-x default-style transform border block-cache-atom]
            :or {padding-x 1}}]
   (let [t (or theme default-theme)]
     (map->Markdown {:text-atom (atom text)
@@ -514,6 +717,7 @@
                     :default-style-atom (atom default-style)
                     :transform-atom (atom transform)
                     :border-atom (atom (border/resolve border))
+                    :block-cache-atom (or block-cache-atom (atom nil))
                     :cache-atom (atom nil)})))
 
 (defn markdown-set-text! [md text]

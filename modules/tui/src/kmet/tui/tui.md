@@ -908,12 +908,14 @@ overlay close, reconcile removal, shutdown; implementations must be
   is the manual form). The `track!` registry is weak, so an abandoned
   GC-reachable record no longer anchors its watchers — the next sweep
   unwatches it — but reclamation by backstop is not deterministic, and a
-  record the owner still references is never reclaimed. Assistant
-  text/thinking reflow and inline image rendering follow this rule: a
-  streaming reflow that keeps only the returned lines leaves every prefix
-  to the backstop (bounded by GC + sweep) instead of releasing the
-  temporary Markdown/Image now; replay, resize and visibility changes
-  behave the same.
+  record the owner still references is never reclaimed. Inline image
+  rendering follows this rule: a streaming reflow that keeps only the
+  returned lines leaves every prefix to the backstop (bounded by GC + sweep)
+  instead of releasing the temporary Image now; replay, resize and
+  visibility changes behave the same. Assistant text/thinking reflow does
+  not construct a component at all — `kmet.tui.components.markdown/render-lines`
+  returns the lines directly and keeps its streaming cache in the message
+  component (see the `markdown` entry in §10).
 - Timers/intervals belong in `dispose` — a dropped component must not keep
   a ticker invalidating forever.
 - Trees compiled outside a mount are disposed by their holder via
@@ -1450,7 +1452,7 @@ DSL tags of §2.2):
 |---|---|
 | `text` | multi-line word-wrapped text, optional padding/bg — wraps at the frame width and pads every line to it |
 | `truncated_text` | one exact line: the first line only, truncated with `...` when it does not fit and padded to the width; never wraps (pre-truncate yourself to control the ellipsis) |
-| `markdown` | markdown renderer with syntax highlighting |
+| `markdown` | markdown renderer with syntax highlighting; `render-lines` is the same pass without a component, and its `:cache-atom` makes streaming incremental (below) |
 | `box` | padding + background wrapper (no input) |
 | `container` | transparent child list |
 | `stack` / `v_stack` / `h_stack` | vertical/horizontal layout, gaps, entry maps |
@@ -1470,6 +1472,28 @@ DSL tags of §2.2):
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the
 app-layer `bash_execution` its top/bottom rules — each with a `:border` style.
+
+`markdown/render-lines` is the component's render body without the record — the
+same transform, parse, stream-fence trim and block styling — and the path
+streaming assistant text/thinking uses. With `:cache-atom` it renders
+incrementally in two layers: parsing resumes at the last **clean blank-line
+boundary** (`:stable-text`; the first line of a blank run whose parse ends
+outside an open list, code fence or table — the only point where the parser
+state is provably empty), and only the blocks after it re-render. The cut must
+be the run's first line (a cut inside a run would lose the earlier blanks to
+the parser's trailing-empty-line drop), and a cached cut is re-validated
+against the new text because a transform can remove the blank line that
+justified it (leaving a table header immediately before the cut). Appending a
+delta to a growing paragraph therefore costs its trailing block, not its whole
+history (24 KB of thinking was ~110 ms per delta before this, ~2 ms after). A
+construct spanning blank lines (a loose list, a code fence) refuses the
+promotion — the attempt is remembered so later deltas do not re-parse it — and
+re-parses its tail instead, which is correct and bounded by that construct.
+`:cache-key` must identify everything besides the text the lines depend on
+(width, theme, default style, transform, border), so a theme or resize change
+starts a fresh entry; the per-block lines are also compared structurally, so a
+block that stops being the last one (a closing fence completing) re-renders
+even though its prefix did not change.
 
 Message-like app components live in `kmet.ui.tui.*`, not here — landing 5h
 moved the last selector and 5i the resource config, so `kmet.agent.ui.tui.*`
@@ -1823,8 +1847,9 @@ embedded field.
   retry/compaction/branch indicators: they return plain string lines, not
   child trees. Wrapping them in hiccup adds reconcile cost for zero benefit.
 - **Intentional foreign splices** — `bash_execution`'s spinner (animation
-  identity), `image_block` (transient image per render), `assistant_message`
-  (transient markdown per reflow).
+  identity) and `image_block` (transient image per render). `assistant_message`
+  no longer splices: its text/thinking blocks go through the pure
+  `markdown/render-lines` walk with a per-message block cache.
 
 ---
 

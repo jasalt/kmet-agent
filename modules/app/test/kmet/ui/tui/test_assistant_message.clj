@@ -6,6 +6,7 @@
             [kmet.libs.theme :as theme]
             [kmet.tui.protocols :as protocols]
             [kmet.hikap.component :as component]
+            [kmet.tui.components.markdown :as md]
             [kmet.ui.tui.assistant-message :as am]))
 
 (t/use-fixtures :each tu/with-extension-host)
@@ -213,3 +214,29 @@
       (am/assistant-message-set-hide-thinking! b true)
       (is (true? @shared) "setter hits the shared atom")
       (is (not-any? #(re-find #"secret beta" %) (plain-b)) "b hides again"))))
+
+(deftest test-streaming-thinking-renders-only-the-tail
+  (testing "a thinking delta re-renders the trailing markdown blocks, not the
+            whole thinking history — the streaming reflow used to re-parse and
+            re-render tens of KB per delta, which made the block stutter"
+    ;; lines end without a trailing space: a space before the blank line
+    ;; would be trimmed while it is the text's end and reappear once the next
+    ;; paragraph streams in, legitimately changing the previous block
+    (let [line (str/join " " (repeat 120 "word"))
+          thinking (apply str (for [i (range 30)]
+                                (str "paragraph " i " " line "\n\n")))
+          c (am/make-assistant-message :thinking thinking)]
+      (am/assistant-message-set-streaming! c true)
+      (core/render c 80)
+      (let [calls (atom 0)
+            orig (deref #'md/render-token-lines)]
+        (with-redefs-fn {#'md/render-token-lines
+                         (fn [& args] (swap! calls inc) (apply orig args))}
+          (fn []
+            (swap! (:thinking-text-atom c) str "and a growing tail")
+            (core/render c 80)))
+        (is (<= @calls 2)
+            (str "only the trailing block re-renders, got " @calls))
+        (is (= (mapv strip-ansi (core/render (am/make-assistant-message :thinking (str thinking "and a growing tail")) 80))
+               (mapv strip-ansi (core/render c 80)))
+            "the incremental render equals a fresh full render")))))

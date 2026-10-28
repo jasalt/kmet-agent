@@ -11,7 +11,6 @@
    StatusIndicator in a dedicated layout layer between chat and editor (Pi-style)."
   (:require [clojure.string :as str]
             [kmet.ui.tui.subs :as s]
-            [kmet.tui.core :as core]
             [kmet.libs.theme :as theme]
             [kmet.tui.components.markdown :as md]
             [kmet.hikap.component :refer [track!]]
@@ -38,32 +37,42 @@
 (defn- render-text-to-width
   "Render assistant text as markdown (pi: Markdown + getMarkdownTheme, which
    includes syntax-highlighting the code fences). Plain text is left unstyled
-   — terminal default, exactly like pi's assistant messages."
-  [text cw left-pad theme transform]
+   — terminal default, exactly like pi's assistant messages. CACHE-ATOM makes
+   the render incremental: a streaming delta only re-renders the changed
+   block (see kmet.tui.components.markdown/render-lines)."
+  [text cw left-pad theme transform cache-atom]
   (when (seq text)
-    (let [mc (md/make-markdown text
-                               :theme (theme/get-markdown-theme theme)
-                               :transform transform
-                               :padding-x 0)]
-      (mapv #(str left-pad %) (core/render-and-dispose mc cw)))))
+    (mapv #(str left-pad %)
+          (md/render-lines text cw
+                           :theme (theme/get-markdown-theme theme)
+                           :transform transform
+                           :padding-x 0
+                           ;; the app theme identifies the markdown theme /
+                           ;; default style the lines were built with
+                           :cache-key [cw theme :text]
+                           :cache-atom cache-atom))))
 
 (defn- render-thinking-to-width
   "Render thinking text as markdown tinted thinkingText + italic (pi:
    Markdown with defaultTextStyle {color: thinkingText, italic: true}). Code
    fences inside thinking highlight, like pi. When hidden, renders the
    hidden-thinking label instead (pi: hiddenThinkingLabel)."
-  [text cw left-pad theme hide? hidden-label transform]
+  [text cw left-pad theme hide? hidden-label transform cache-atom]
   (if (not (seq text))
     []
     (if hide?
       [(str left-pad (theme/italic (theme/fg theme :thinking-text hidden-label)))]
-      (let [mc (md/make-markdown text
-                                 :theme (theme/get-markdown-theme theme)
-                                 :default-style (fn [s]
-                                                  (theme/italic (theme/fg theme :thinking-text s)))
-                                 :transform transform
-                                 :padding-x 0)]
-        (mapv #(str left-pad %) (core/render-and-dispose mc cw))))))
+      (mapv #(str left-pad %)
+            (md/render-lines text cw
+                             :theme (theme/get-markdown-theme theme)
+                             :default-style (fn [s]
+                                              (theme/italic (theme/fg theme :thinking-text s)))
+                             :transform transform
+                             :padding-x 0
+                             ;; the style kind is in the key so the text and
+                             ;; thinking block caches never cross
+                             :cache-key [cw theme :thinking]
+                             :cache-atom cache-atom)))))
 
 ;; The rendered-* atoms are the render body's OWN outputs — reflow-all!
 ;; writes them on a cache miss, after the values the cache recorded. A
@@ -89,9 +98,9 @@
 ;; ─── Record ────────────────────────────────────────────────────────────────
 
 ;; No custom dispose: stores no child components — only string lines and
-;; data atoms. Each transient Markdown is disposed by the reflow helpers
-;; (core/render-and-dispose) immediately after rendering; otherwise the
-;; global track! registry retains every streaming prefix.
+;; data atoms (the incremental block caches included). Markdown rendering is
+;; the pure render-lines walk, so no transient component is constructed per
+;; reflow and no track! registry entry outlives the frame.
 (defcomponent AssistantMessageComponent :assistant
               [text-atom thinking-text-atom
                output-pad-atom hide-thinking-atom hidden-label-atom
@@ -107,6 +116,8 @@
                rendered-pad-atom        ;; output pad the cached lines were wrapped at
                rendered-theme-atom       ;; theme the cached lines were built with (theme-sub)
                last-render-width-atom
+               text-block-cache-atom     ;; incremental md blocks of the text
+               thinking-block-cache-atom ;; incremental md blocks of the thinking
                cache-atom]
   (render [this width]
     (track! this width
@@ -178,7 +189,9 @@
 
 (defn- reflow-all!
   "Re-wrap/render all text and thinking, storing into line atoms plus the
-   source text they were wrapped from (the render's stale check)."
+   source text they were wrapped from (the render's stale check). Both block
+   renders are incremental: their per-message caches keep the rendered lines
+   of every block but the streaming tail."
   [comp width]
   (let [theme (deref s/theme-sub)
         output-pad @(:output-pad-atom comp)
@@ -192,9 +205,11 @@
         streaming? (boolean @(:streaming-atom comp))
         transform (make-assistant-transform (:streaming-atom comp))]
     (reset! (:rendered-text-lines-atom comp)
-            (render-text-to-width text cw left-pad theme transform))
+            (render-text-to-width text cw left-pad theme transform
+                                  (:text-block-cache-atom comp)))
     (reset! (:rendered-thinking-lines-atom comp)
-            (render-thinking-to-width thinking cw left-pad theme hide? hidden-label transform))
+            (render-thinking-to-width thinking cw left-pad theme hide? hidden-label transform
+                                      (:thinking-block-cache-atom comp)))
     (reset! (:rendered-text-atom comp) text)
     (reset! (:rendered-thinking-atom comp) thinking)
     (reset! (:rendered-streaming-atom comp) streaming?)
@@ -246,6 +261,8 @@
                                               :rendered-pad-atom (atom nil)
                                               :rendered-theme-atom (atom nil)
                                               :last-render-width-atom (atom nil)
+                                              :text-block-cache-atom (atom nil)
+                                              :thinking-block-cache-atom (atom nil)
                                               :cache-atom (atom nil)})]
     ;; Lines are built lazily on the first render, at the width it is given:
     ;; eagerly reflowing here parsed every message at a fixed width 80 that
