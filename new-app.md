@@ -23,10 +23,11 @@ registrations reversible by construction, and plugins as the only unit of
 assembly. Everything below the app was to be reused unchanged — the library
 modules were; kmet1's `kmet.agent.*` no longer exists at HEAD.
 
-The kernel module is **`srce`** — heart (South Slavic). Cordis is Latin for the
-same thing (`cor`, `cordis`), which is what the kernel is to the system: the
-one thing every other part is wired through. The name also stays clear of
-`kmet.kernel`, `--list-kernels` and prose about OS kernels.
+The kernel module is **`srce`** (Cyrillic **срце**, IPA /sr̩̂t͡se/) — heart
+(Serbian). Cordis is Latin for the same thing (`cor`, `cordis`), which is what
+the kernel is to the system: the one thing every other part is wired through.
+The name also stays clear of `kmet.kernel`, `--list-kernels` and prose about OS
+kernels.
 
 ## Reconciliation (HEAD `214b551b`)
 

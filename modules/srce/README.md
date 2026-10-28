@@ -1,9 +1,9 @@
 # srce (❤️)
 
-**srce** (*sir-tseh*) is "heart" in South Slavic — the thing every other part is
-wired through. It is the kernel kmet mounts itself on: a context tree, services
-claimed by keyword, plugins as data, one listener table, and registrations that
-unwind.
+**srce** (Cyrillic **срце**, IPA /sr̩̂t͡se/, roughly "SIR-tseh") is "heart" in
+Serbian — the thing every other part is wired through. It is the kernel kmet
+mounts itself on: a context tree, services claimed by keyword, plugins as data,
+one listener table, and registrations that unwind.
 
 It has no third-party dependencies and one public namespace,
 `kmet.srce.core`.

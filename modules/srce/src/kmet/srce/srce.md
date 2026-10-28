@@ -8,10 +8,10 @@ what was deliberately left out. User-facing usage (what srce is for, the five
 principles and a how-to) is [`modules/srce/README.md`](../../../README.md); this
 file is the reference its contracts and internal decisions live in.
 
-The name is **`srce`** — heart (South Slavic). Cordis is Latin for the same
-thing (`cor`, `cordis`), which is what the kernel is to the system: the one
-thing every other part is wired through. It stays clear of `kmet.kernel`,
-`--list-kernels` and prose about OS kernels.
+The name is **`srce`** (Cyrillic **срце**, IPA /sr̩̂t͡se/) — heart (Serbian).
+Cordis is Latin for the same thing (`cor`, `cordis`), which is what the kernel
+is to the system: the one thing every other part is wired through. It stays
+clear of `kmet.kernel`, `--list-kernels` and prose about OS kernels.
 
 ## What "light" means
 
