@@ -218,6 +218,20 @@
       (catch Throwable _ nil)))
   nil)
 
+(def ^:dynamic *dispose-failures*
+  "The collector of the unwind in progress: a volatile holding
+   `[{:label … :error …}]`, or nil outside `unwind-effects!`. A throwing
+   disposer is logged either way; this is what makes a teardown reportable
+   instead of only written to the log."
+  nil)
+
+(defn- dispose-failed!
+  "Record and log a disposer that threw, without stopping the unwind."
+  [ctx label error]
+  (when *dispose-failures*
+    (vswap! *dispose-failures* conj {:label label :error error}))
+  (log! ctx :error "effect disposer threw" error))
+
 (defn assert-active!
   "Throw :srce/inactive-effect unless FIBER is :active. This is the closed-store
    guard: only an active fiber may register."
@@ -247,7 +261,7 @@
                              (try
                                (d)
                                (catch Throwable t
-                                 (log! ctx :error "effect disposer threw" t))))
+                                 (dispose-failed! ctx (or label :effect) t))))
                            nil
                            (rseq @undos))))]
       ;; The entry is pushed before F runs, so a throwing body still leaves
@@ -262,9 +276,12 @@
 
 (defn unwind-effects!
   "Run every effect LIFO and empty the list. The caller must already have set a
-   non-:active state, so a disposer cannot register."
+   non-:active state, so a disposer cannot register. Returns what threw, as
+   `[{:label … :error …}]` in unwind order — each failure was logged as it ran
+   and the remaining disposers still ran."
   [fiber]
-  (doseq [{:keys [undo]} (rseq (:effects @fiber))]
-    (undo))
-  (swap! fiber assoc :effects [])
-  nil)
+  (binding [*dispose-failures* (volatile! [])]
+    (doseq [{:keys [undo]} (rseq (:effects @fiber))]
+      (undo))
+    (swap! fiber assoc :effects [])
+    @*dispose-failures*))

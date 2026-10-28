@@ -118,8 +118,9 @@ not a set of modules whose callers each pick their own:
 (srce/runtime ctx web-search)            ; the runtime, or nil
 (srce/runtime? ctx web-search)           ; is a runtime mounted for this source?
 (srce/runtimes ctx)                      ; [runtime …], mount order
-(srce/dispose! fiber)                    ; effects LIFO; sync → nil
+(srce/dispose! fiber)                    ; effects LIFO → {:disposed :failed}
 (srce/restart! fiber)                    ; dispose then mount again → a new fiber
+(srce/update! fiber cfg)                 ; config change in place (needs :update)
 (srce/dispose-plugin! ctx web-search)    ; every fiber of one source
 (srce/dispose-subtree! ctx)              ; every fiber under ctx, children first
 (srce/effect ctx f)                      ; → disposer (single-shot, sync)
@@ -419,7 +420,11 @@ are the accessor:
   against a half-torn-down service. `:disposing` stays internal to those four
   steps; it is never a value of `:state`.
 - **Disposal runs everything and never skips.** A throwing disposer is reported
-  through `:logger` at `:error` and the remaining disposers still run.
+  through `:logger` at `:error` and the remaining disposers still run. The
+  unwind also *collects* them: `dispose!` answers `{:disposed n :failed [{:label
+  … :error …}]}` (`dispose-plugin!`/`dispose-subtree!` aggregate the same
+  shape), so a caller can report a teardown failure instead of leaving it only
+  in a log that is silent without `--debug`.
 - **A failed fiber is a state, not an exception.** `apply` throws → the fiber is
   marked `:failed` with `:error e` **first**, so an effect or `provide!` from
   inside its own disposers throws `:srce/inactive-effect`; then its partial effects
@@ -444,8 +449,19 @@ are the accessor:
   follows registration order. Two effects are two LIFO runs with no guarantee
   between them.
 - **`restart!` is `dispose!` + `plugin!`** with the same source and config,
-  returning the new fiber. There is no `update!`: a config change is a restart,
-  which is what `/reload` does in the app.
+  returning the new fiber — a new uid, so dependents remount.
+- **`update!` changes a config without a restart**, and that is why it is the
+  narrow one: it requires an `:active` fiber and a plugin that declares
+  `:update` (`:srce/no-update`/`:srce/inactive-update` otherwise), validates the
+  new config with `:config` exactly as a mount would, runs `(hook ctx
+  resolved-config)` and stores the raw config last — so a throw leaves the
+  fiber as it was. The uid stays, so no dependent remounts and a dependent
+  keeps the value it resolved until its own reload: an in-place config change
+  is a snapshot, not a provider swap. A hook that provides a *new* name is a
+  normal provider-set change (dependents reload at the next `settle!`); the
+  name the plugin already holds cannot be re-provided
+  (`:srce/duplicate-service`), so a hook updates the value it owns and
+  replacing a service is `restart!`.
 
 The disposal axes stay distinct, as in the full port: the **fiber**
 (`dispose!`), the **effect** (its disposer), the **ctx subtree**
@@ -453,7 +469,8 @@ The disposal axes stay distinct, as in the full port: the **fiber**
 release), and the **plugin** (`dispose-plugin!`, every fiber of one source).
 The root fiber's disposal is an ordinary disposal: it unwinds every root effect,
 so the app tree is gone and the app remounts the tree to restart. It never tears
-down the process, and there is no implicit restart — `dispose!` returns nil.
+down the process, and there is no implicit restart — `dispose!` answers
+`{:disposed 0 :failed []}` on a second call instead of restarting anything.
 
 ## 5. Events
 
@@ -630,6 +647,7 @@ as a map, shape-checked at compile time by `defplugin` and once at mount by
  :inject  {:tools nil}         ; optional, default {} — required deps, nil values
  :config  (fn [cfg] …)         ; optional, default identity — validator, cfg or throw
  :provide #{:web-search}       ; optional, default #{} — declared, checked after apply
+ :update  (fn [ctx cfg] …)     ; optional — absorb a config change in place (`update!`)
  :apply   (fn [ctx cfg] …)}    ; required — the effect body
 ```
 
@@ -642,7 +660,9 @@ remount, from the raw config, and its return is what `apply` receives;
 claim, checked after a successful `apply` against the fiber's `:provides`
 (§4): a mismatch in either direction is logged at `:warn` through `:logger`
 (a plugin may provide conditionally, so it is not a failure), which is what
-keeps the `--dump-config` card honest instead of aspirational.
+keeps the `--dump-config` card honest instead of aspirational. `:update` is
+the opt-in for `update!` (§4): without it a config change is `restart!`, and
+the hook is what a plugin declares when its service can absorb one.
 
 | Cordis | srce |
 |---|---|
@@ -724,8 +744,9 @@ an awaitable queue. The light kernel answers with a rule:
 - **The app marshals.** Plugin work, reloads and approvals are submitted to the
   loop; a tool thread that must mutate the kernel asks the loop to do it. This
   is app policy, recorded in `new-app.md`, and
-  `kmet.app.test-submit-guard` holds it: the five calls that run plugin code
-  (`plugin!`, `restart!`, `dispose!`, `dispose-plugin!`, `dispose-subtree!`)
+  `kmet.app.test-submit-guard` holds it: the six calls that run plugin code
+  (`plugin!`, `restart!`, `update!`, `dispose!`, `dispose-plugin!`,
+  `dispose-subtree!`)
   have a ledger of the owner-side call sites, each with a written reason, and
   the tool layer, the mode rows and the UI must contain none. The drain is the
   loop's `:agent-settled` boundary (`kmet.app.runtime/boundary!`, one at a time
@@ -813,11 +834,15 @@ grows a keyword or a key, not a new shape.
 | `parallel` / `serial` | `events.ts` | awaited, so they need the app's awaitable — the kernel has none (§8), and the app's submission queue is a drain, not an awaitable | `kmet.app.events` over `srce/listeners` once something needs them (`bail` and `waterfall` landed there: §5) |
 | Lazy config resolution, `{:schema :transform}` | `config.ts` | `apply` validates its own map; a validator fn composes | `:config` accepting a schema map |
 | Fiber lifecycle beyond 4 states (`:loading` `:unloading`, `inertia`, epoch drop-rule) | `fiber.ts` | one thread makes the race unrepresentable | states on `:state`; the epoch is the provider set |
-| `update!` (config waterfall, no-save hint) | `fiber.update` | `restart!` covers `/reload`; a vetoing waterfall is app policy | an `:update` hook on the plugin map |
 | `fiber.store` snapshot, `fiber.await`, `assert-active!` | `fiber.ts` | sync: there is nothing to await; the per-fiber facts the listing needs are `:provides`/`:inject`/`:waiting-for` on the record (§4), not a store snapshot | derived from `:state` and the record's own keys |
 | awaitable, drain owner, `drain-await` | (kmet2 addition) | a queue and a thread to serialize what the app already serializes | the optimistic pass flag + `settle!` (§3) are the replacement; an awaitable, if ever needed, is the app's |
 | `DisposableList`, `EffectMeta` labels, `utils.ts` traceable | `utils.ts` | a vector and a map cover it | `:label` on `effect` is already accepted |
 | JS syntax: `Proxy`, decorators, `instanceof`, prototype splicing | — | not semantics | never |
+
+`update!` came back as this table said it would — an `:update` hook on the
+plugin map, with `srce/update!` over it (§4/§6). The rest of `fiber.update` did
+not: its config waterfall (a veto chain over the new config) is app policy, and
+the kernel's validator fn already is the place a config is checked.
 
 ## 11. Parity matrix
 
@@ -940,7 +965,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 
 ## 12. Gates
 
-- 52 contract tests (201 assertions) — one per bullet in §2–§8 that can fail,
+- 58 contract tests (227 assertions) — one per bullet in §2–§8 that can fail,
   one per `keep` row of §11, table-driven where the rows are uniform. The behaviors: realm
   resolution and the boundary, including two **siblings** under one realm
   providing the same name (nearest visible wins, no throw — §3); duplicate
@@ -968,7 +993,15 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
   `:inject`/`:provides`/`:waiting-for` matching the store after a mount, a
   provide and a dispose; the pass flag — two threads entering `provide!` at
   once run one pass owner, both changes land, and `settle!` returning with no
-  other owner means `:changes` empty.
+  other owner means `:changes` empty, answering `{:rounds 1 :churn? false}` for
+  an empty pass; `update!` refusing a plugin without `:update`
+  (`:srce/no-update`) and a non-active fiber (`:srce/inactive-update`), passing
+  the hook the resolved config, keeping the uid so no dependent remounts, and
+  storing nothing when the validator throws; a hook that provides a new name
+  reloading a dependent; and a teardown reporting the disposer that threw (with
+  its label) while the rest still ran, `dispose!`
+  answering `{:disposed 0 :failed []}` a second time, and
+  `dispose-subtree!` aggregating the same shape.
 - srce self-containment: `kmet.srce.*` may require only rank-0 code
   (`kmet.libs.*`, `kmet.loader.*`, `kmet.reakt.*`) and third-party code — no
   `kmet.agent.*`, no `tui`/`tk`, nothing at its own rank or above.
@@ -993,6 +1026,7 @@ The conformance suite is written from §3–§8 and this table's `keep` rows.
 | What `dispose!` on the root fiber does | disposes (unwinds every root effect); the app remounts. No implicit restart — a restart after dispose is `plugin!` again |
 | Does a pass reload reuse the fiber? | yes — `unload!` + `activate!` on the same fiber and uid. `restart!` is the new-uid operation. Otherwise a provider swap would churn uids and dependents would remount twice |
 | `:resolver`: ctx key or service? | inherited ctx key (`(root {:resolver f})`), not a service: it is policy carried to the loader seam, and a service would need provide/dispose for something the kernel only forwards |
+| What does an in-place config update tell dependents? | nothing — they keep the value they resolved until their own reload. A config change does not churn the tree, and "a dependent sees the new provider" (§3) stays a rule about provider *sets*: `update!` cannot change the name the fiber holds, so replacing a service is `restart!` |
 
 ## 14. Not doing
 

@@ -132,23 +132,32 @@
   fiber/runtimes)
 
 (def settle!
-  "Run any pending provider change to a fixpoint."
+  "Run any pending provider change to a fixpoint; answers `{:rounds n :churn?
+   bool}` for the passes this call ran."
   fiber/settle!)
 
 (def dispose!
-  "Unwind FIBER's effects LIFO and detach it. Idempotent; returns nil."
+  "Unwind FIBER's effects LIFO and detach it. Idempotent; answers `{:disposed n
+   :failed [{:label … :error …}]}`."
   fiber/dispose!)
 
 (def restart!
-  "Dispose FIBER and mount it again; returns the new fiber."
+  "Dispose FIBER and mount it again, new uid; returns the new fiber."
   fiber/restart!)
 
+(def update!
+  "Change FIBER's config in place (same fiber, same uid) through the plugin's
+   `:update`; refuses without one. Dependents keep their resolved value until
+   their own reload."
+  fiber/update!)
+
 (def dispose-plugin!
-  "Dispose every fiber of SOURCE."
+  "Dispose every fiber of SOURCE; answers the aggregate of the disposals."
   fiber/dispose-plugin!)
 
 (def dispose-subtree!
-  "Dispose every fiber under CTX, children first."
+  "Dispose every fiber under CTX, children first; answers the aggregate of the
+   disposals."
   fiber/dispose-subtree!)
 
 ;; ── events ────────────────────────────────────────────────────────────────

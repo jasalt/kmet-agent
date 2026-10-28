@@ -633,8 +633,8 @@
 
 (deftest settle-is-idempotent
   (let [[r] (kernel)]
-    (is (nil? (srce/settle! r)))
-    (is (nil? (srce/settle! r)))
+    (is (= {:rounds 1 :churn? false} (srce/settle! r)) "one empty pass")
+    (is (= {:rounds 1 :churn? false} (srce/settle! r)))
     (is (empty? @(:changes (:kernel r))))))
 
 (deftest two-threads-provide-at-once
@@ -706,3 +706,110 @@
     (srce/dispose! a)
     (is (= [:probe/b] (mapv :name (srce/fibers r))) "a disposed fiber leaves the list")
     (is (srce/active? b) "an optional dependency does not hold a mount pending")))
+
+;; ── in-place config updates and teardown results ──────────────────────────
+
+(deftest update-needs-an-active-fiber-and-a-hook
+  (let [[r] (kernel)
+        plain (srce/plugin! r {:name :probe/plain :apply (fn [_ _] nil)})
+        pending (srce/plugin! r {:name :probe/pending
+                                 :inject {:probe/missing nil}
+                                 :apply (fn [_ _] nil)})]
+    (is (= :srce/no-update (thrown-type #(srce/update! plain {:a 1})))
+        "a plugin that cannot absorb a config change refuses by name")
+    (is (= :srce/inactive-update (thrown-type #(srce/update! pending {:a 1})))
+        "only an :active fiber can be updated")
+    (is (= :pending (:state (srce/fiber-info pending))))))
+
+(deftest update-keeps-the-fiber-and-does-not-remount-dependents
+  (let [[r] (kernel)
+        applied (atom 0)
+        seen (atom [])
+        provider (srce/plugin! r {:name :probe/provider
+                                  :provide #{:probe}
+                                  :config (fn [cfg] (assoc cfg :resolved true))
+                                  :update (fn [_ cfg] (swap! seen conj cfg))
+                                  :apply (fn [c cfg]
+                                           (srce/provide! c :probe cfg {:in (:parent c)})
+                                           nil)}
+                               {:n 1})]
+    (srce/plugin! r {:name :probe/dependent
+                     :inject {:probe nil}
+                     :apply (fn [_ _] (swap! applied inc) nil)})
+    (srce/settle! r)
+    (let [before (srce/fiber-info provider)]
+      (is (= 1 @applied))
+      (srce/update! provider {:n 2})
+      (srce/settle! r)
+      (let [after (srce/fiber-info provider)]
+        (is (= (:uid before) (:uid after)) "same fiber, same uid")
+        (is (= [{:n 2 :resolved true}] @seen) "the hook gets the resolved config")
+        (is (= {:n 2} (:config after)) "the raw config is what is stored")
+        (is (= 1 @applied) "no dependent remounted")
+        (is (= {:n 1 :resolved true} (srce/get r :probe))
+            "a dependent keeps the value it resolved — a config update is a snapshot")))))
+
+(deftest update-stores-nothing-when-validation-throws
+  (let [[r] (kernel)
+        seen (atom [])
+        f (srce/plugin! r {:name :probe/strict
+                           :config (fn [cfg]
+                                     (when-not (:ok cfg)
+                                       (throw (ex-info "bad config" {:type ::bad})))
+                                     cfg)
+                           :update (fn [_ cfg] (swap! seen conj cfg))
+                           :apply (fn [_ _] nil)}
+                        {:ok true})]
+    (is (thrown? Throwable (srce/update! f {:ok false})))
+    (is (empty? @seen) "the hook did not run")
+    (is (= {:ok true} (:config (srce/fiber-info f))) "the old config is intact")
+    (is (srce/active? f))))
+
+(deftest teardown-reports-what-threw
+  (let [[r] (kernel)
+        second-ran (atom false)
+        f (srce/plugin! r {:name :probe/teardown
+                           :apply (fn [c _]
+                                    (srce/effect c (fn [] (fn [] (throw (ex-info "boom" {}))))
+                                                 :probe/first)
+                                    (srce/effect c (fn [] (fn [] (reset! second-ran true)))
+                                                 :probe/second)
+                                    nil)})]
+    (let [{:keys [disposed failed]} (srce/dispose! f)]
+      (is (= 1 disposed))
+      (is (= 1 (count failed)))
+      (is (= :probe/first (:label (first failed))) "the failing effect is named")
+      (is (= "boom" (ex-message (:error (first failed)))))
+      (is (true? @second-ran) "the remaining disposers still ran"))
+    (is (= {:disposed 0 :failed []} (srce/dispose! f)) "a second dispose is a no-op")))
+
+(deftest aggregate-disposals-report-per-fiber-failures
+  (let [[r] (kernel)
+        ok (srce/plugin! r {:name :probe/ok :apply (fn [_ _] nil)})
+        bad (srce/plugin! r {:name :probe/bad
+                             :apply (fn [c _]
+                                      (srce/effect c (fn [] (fn [] (throw (ex-info "bad" {}))))
+                                                   :probe/bad)
+                                      nil)})]
+    (let [{:keys [disposed failed]} (srce/dispose-subtree! r)]
+      (is (= 2 disposed) "children first, both fibers")
+      (is (= [{:label :probe/bad :error "bad"}]
+             (mapv (fn [f] (update f :error ex-message)) failed))
+          "the failure keeps the effect's label"))
+    (is (not (srce/active? ok)))
+    (is (not (srce/active? bad)))))
+
+(deftest an-update-that-provides-a-new-name-reloads-dependents
+  (let [[r] (kernel)
+        applied (atom 0)
+        provider (srce/plugin! r {:name :probe/grower
+                                  :update (fn [c cfg]
+                                            (srce/provide! c :grown cfg {:in (:parent c)}))
+                                  :apply (fn [_ _] nil)})]
+    (srce/plugin! r {:name :probe/late
+                     :inject {:grown nil}
+                     :apply (fn [_ _] (swap! applied inc) nil)})
+    (is (= 0 @applied) "nothing provides :grown yet")
+    (srce/update! provider :value)
+    (is (= 1 @applied) "a provider-set change reloads the dependent")
+    (is (= :value (srce/get r :grown)))))

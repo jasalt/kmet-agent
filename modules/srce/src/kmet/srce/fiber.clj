@@ -90,6 +90,7 @@
                            (map? (:inject plugin))
                            (sequential? (:inject plugin)))) (conj :inject)
                   (not (or (nil? (:config plugin)) (fn? (:config plugin)))) (conj :config)
+                  (not (or (nil? (:update plugin)) (fn? (:update plugin)))) (conj :update)
                   (not (or (nil? (:provide plugin))
                            (set? (:provide plugin))
                            (sequential? (:provide plugin)))) (conj :provide))]
@@ -243,13 +244,14 @@
 
 (defn- unload!
   "Unwind every effect LIFO; the state must already be non-:active. The provide!
-   disposers delete their store entries and record their names as changes."
+   disposers delete their store entries and record their names as changes.
+   Returns the disposers that threw, as `unwind-effects!` reports them."
   [fiber]
-  (let [{:keys [ctx provides]} @fiber]
-    (ctx/unwind-effects! fiber)
+  (let [{:keys [ctx provides]} @fiber
+        failed (ctx/unwind-effects! fiber)]
     (when (seq provides)
-      (ctx/record-change! ctx provides)))
-  nil)
+      (ctx/record-change! ctx provides))
+    failed))
 
 (defn- reload!
   "The pass's remount: same fiber, same uid, config re-validated."
@@ -283,7 +285,9 @@
 (defn- run-pass!
   "Recompute the provider set of every fiber the change set can affect, remount
    what changed, and repeat to a fixpoint. Round 0 also re-checks pending
-   fibers, which is how a :check that turns true is noticed."
+   fibers, which is how a :check that turns true is noticed. Answers
+   `{:rounds n :churn? bool}` — churn is the round budget running out with
+   changes still pending, which are then cleared."
   [ctx]
   (let [{:keys [mounted changes]} (:kernel ctx)]
     (loop [round 0]
@@ -304,8 +308,11 @@
           (do
             (ctx/log! ctx :warn ":srce/churn" {:rounds (inc round)
                                                :pending (count @changes)})
-            (reset! changes [])))))
-    nil))
+            (reset! changes [])
+            {:rounds (inc round) :churn? true})
+
+          :else
+          {:rounds (inc round) :churn? false})))))
 
 (declare settle!)
 
@@ -326,18 +333,24 @@
 (defn settle!
   "Run any pending provider change to a fixpoint. Idempotent; the app calls it
    at the turn boundary and after every cross-thread submission. When it returns
-   and no other thread owns the pass, :changes is empty."
+   and no other thread owns the pass, :changes is empty.
+
+   Answers `{:rounds n :churn? bool}` for the passes *this* call ran; a call
+   that loses the pass to another thread runs none and answers
+   `{:rounds 0 :churn? false}` — its change is that owner's, not lost."
   [ctx]
   (let [{:keys [pass changes]} (:kernel ctx)]
-    (loop []
-      (when (compare-and-set! pass nil :running)
-        (try
-          (run-pass! ctx)
-          (finally
-            (reset! pass nil))))
-      (when (and (seq @changes) (nil? @pass))
-        (recur))))
-  nil)
+    (loop [rounds 0 churn? false]
+      (let [ran (when (compare-and-set! pass nil :running)
+                  (try
+                    (run-pass! ctx)
+                    (finally
+                      (reset! pass nil))))
+            rounds (+ rounds (:rounds ran 0))
+            churn? (or churn? (:churn? ran))]
+        (if (and (seq @changes) (nil? @pass))
+          (recur rounds churn?)
+          {:rounds rounds :churn? churn?})))))
 
 (defn- poke!
   "Apply a recorded change now unless a pass is already running; a nested or
@@ -434,29 +447,41 @@
 
 (defn dispose!
   "Unwind FIBER's effects LIFO, detach it, and drop its runtime when it was the
-   last. Idempotent; returns nil. The state flips to :disposed first, so a
-   disposer cannot register and `get` already reads nil."
+   last. Idempotent. The state flips to :disposed first, so a disposer cannot
+   register and `get` already reads nil.
+
+   Answers `{:disposed n :failed [{:label … :error …}]}` — n is 0 for a fiber
+   that was already disposed, and a throwing disposer is logged and listed
+   without stopping the rest."
   [fiber]
   (let [{:keys [ctx]} @fiber]
     (run-owned!
      ctx
      (fn []
-       (when-not (= :disposed (:state @fiber))
+       (if (= :disposed (:state @fiber))
+         {:disposed 0 :failed []}
          (let [fctx (:ctx @fiber)]
            (set-state! fiber :disposed)
-           (unload! fiber)
-           (swap! (:mounted (:kernel ctx))
-                  (fn [v] (filterv #(not (identical? % fiber)) v)))
-           (when-let [parent (:parent fctx)]
-             (swap! (:children parent)
-                    (fn [v] (filterv #(not (identical? % fctx)) v))))
-           (drop-runtime! ctx fiber)))
-       nil))))
+           (let [failed (unload! fiber)]
+             (swap! (:mounted (:kernel ctx))
+                    (fn [v] (filterv #(not (identical? % fiber)) v)))
+             (when-let [parent (:parent fctx)]
+               (swap! (:children parent)
+                      (fn [v] (filterv #(not (identical? % fctx)) v))))
+             (drop-runtime! ctx fiber)
+             {:disposed 1 :failed failed})))))))
+
+(defn- tally
+  "The aggregate of DISPOSALS: `{:disposed n :failed [...]}`."
+  [disposals]
+  {:disposed (reduce + (map :disposed disposals))
+   :failed (into [] (mapcat :failed) disposals)})
 
 (defn restart!
   "Dispose FIBER and mount the same source and config again; returns the new
-   fiber. There is no update!: a config change is a restart, which is what
-   /reload does. A :failed fiber is retried this way."
+   fiber. A restart allocates a new uid, so dependents remount; a plugin that
+   can absorb a config change in place declares `:update` and is changed with
+   `update!` instead. A :failed fiber is retried this way."
   [fiber]
   (let [mount-ctx (:ctx @fiber)
         {source :source config :config} @fiber]
@@ -466,28 +491,67 @@
        (dispose! fiber)
        (plugin! (:parent mount-ctx) source config)))))
 
+(defn update!
+  "Change FIBER's config in place. FIBER must be :active (`:srce/inactive-update`)
+   and its plugin must declare `:update` (`:srce/no-update` otherwise) — a
+   config change a plugin cannot absorb is `restart!`. The new config is
+   validated by `:config` exactly as a mount would, the hook runs with the
+   resolved config, and the raw config is stored last, so a throw from either
+   leaves the fiber as it was (whatever the hook already registered stays).
+
+   The fiber and its uid stay: no dependent remounts, and a dependent keeps the
+   value it resolved until its own reload. A hook that provides a *new* name is
+   a normal provider-set change, so the drain reloads dependents; the name the
+   plugin already provides is not re-provided (that would be
+   `:srce/duplicate-service`), so a hook updates the value it owns — replacing
+   a service is `restart!`.
+
+   Like every other mutator, the hook runs with the pass held and the drain
+   runs once at the end."
+  [fiber new-config]
+  (let [{:keys [ctx plugin state]} @fiber
+        _ (when-not (= :active state)
+            (throw (ex-info "cannot update an inactive fiber"
+                            {:type :srce/inactive-update
+                             :name (:name plugin)
+                             :state state})))
+        hook (:update plugin)
+        _ (when-not hook
+            (throw (ex-info (str "plugin " (pr-str (:name plugin))
+                                 " has no :update; a config change it cannot absorb is restart!")
+                            {:type :srce/no-update :name (:name plugin)})))
+        config (if-let [validate (:config plugin)]
+                 (validate new-config)
+                 new-config)]
+    (run-owned!
+     ctx
+     (fn []
+       (hook ctx config)
+       (swap! fiber assoc :config new-config)
+       fiber))))
+
 (defn dispose-plugin!
-  "Dispose every fiber of SOURCE, in one pass; the last one drops the runtime."
+  "Dispose every fiber of SOURCE, in one pass; the last one drops the runtime.
+   Answers the aggregate of the disposals (`dispose!`'s shape)."
   [ctx source]
   (run-owned!
    ctx
    (fn []
-     (when-let [rt (runtime ctx source)]
-       (doseq [fiber (rseq @(:fibers rt))]
-         (dispose! fiber)))
-     nil)))
+     (tally (if-let [rt (runtime ctx source)]
+              (mapv dispose! (rseq @(:fibers rt)))
+              [])))))
 
 (defn dispose-subtree!
   "Dispose every fiber under CTX, children first and in one pass. Mount order is
-   topological, so the reverse mount list is already children-first."
+   topological, so the reverse mount list is already children-first. Answers the
+   aggregate of the disposals (`dispose!`'s shape)."
   [ctx]
   (run-owned!
    ctx
    (fn []
-     (doseq [fiber (rseq @(:mounted (:kernel ctx)))
-             :when (ctx/inside? (:ctx @fiber) ctx)]
-       (dispose! fiber))
-     nil)))
+     (tally (mapv dispose!
+                  (filter #(ctx/inside? (:ctx @%) ctx)
+                          (rseq @(:mounted (:kernel ctx)))))))))
 
 (defn effects
   "The effect labels in creation order (the reverse of unwinding)."

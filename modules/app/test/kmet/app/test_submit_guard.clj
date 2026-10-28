@@ -33,7 +33,7 @@
    owner's alone. `detach!` is not among them: it removes a ctx and runs no
    `apply` and no disposer, and `settle!` is the pass itself, not a mount. A fn
    the kernel grows that mounts, remounts or tears down belongs here."
-  #{"plugin!" "restart!" "dispose!" "dispose-plugin!" "dispose-subtree!"})
+  #{"plugin!" "restart!" "update!" "dispose!" "dispose-plugin!" "dispose-subtree!"})
 
 (def ^:private owner-sites
   "Every structural mutation the app and UI sources still make, and why that
