@@ -443,27 +443,62 @@
    :addition (fn [s] (fg t :tool-diff-added s))
    :deletion (fn [s] (fg t :tool-diff-removed s))})
 
+(def ^:dynamic *code-cache*
+  "Optional atom for render-highlighted's growing-code cache, bound by the
+   markdown render pass. Entry: {:text prefix :styled ansi :lang lang}."
+  nil)
+
+(defn- highlight-token
+  "Style one [scope text] token; a token spanning newlines is wrapped per
+   line-fragment so every line is self-contained (no color bleed)."
+  [fmts [scope s]]
+  (if-let [f (and scope (get fmts scope))]
+    (->> (str/split s #"\n" -1)
+         (map (fn [frag] (if (str/blank? frag) "" (f frag))))
+         (str/join "\n"))
+    s))
+
 (defn render-highlighted
   "Highlight CODE as LANG → vector of ANSI-colored lines (pi: highlightCode).
    Unsupported language → each line in mdCodeBlock color (pi behavior);
-   unknown scopes pass through unstyled. Tokens spanning newlines are wrapped
-   per line-fragment so every line is self-contained (no color bleed). Blank
-   code renders no lines, matching the un-highlighted path. Public: shared by
-   the markdown code-block renderer and the write tool renderer (pi: both
-   call highlightCode)."
-  [t code lang]
-  (if (str/blank? code)
-    []
-    (if-let [tokens (hl/tokenize lang code)]
-      (let [fmts (highlight-formatters t)
-            styled (fn [[scope s]]
-                     (if-let [f (and scope (get fmts scope))]
-                       (->> (str/split s #"\n" -1)
-                            (map (fn [frag] (if (str/blank? frag) "" (f frag))))
-                            (str/join "\n"))
-                       s))]
-        (str/split (apply str (map styled tokens)) #"\n" -1))
-      (mapv (fn [l] (fg t :md-code-block l)) (str/split code #"\n" -1)))))
+   unknown scopes pass through unstyled. Blank code renders no lines,
+   matching the un-highlighted path. Public: shared by the markdown
+   code-block renderer and the write tool renderer (pi: both call
+   highlightCode).
+
+   With CACHE (an atom) and a growing code text, the styled prefix before the
+   last token is reused and only that token plus the appended text is
+   tokenized — a token boundary is a clean scanner restart point for the
+   generic scanner. A streaming code fence therefore re-highlights its last
+   token, not its whole body. The cache is keyed by language and raw prefix;
+   markup/diff/Dockerfile/Markdown (custom scanners with construct state) are
+   not prefix-cached."
+  ([t code lang] (render-highlighted t code lang *code-cache*))
+  ([t code lang cache]
+   (if (str/blank? code)
+     []
+     (let [cacheable? (and cache (hl/token-boundaries-clean? lang))
+           cached (when cacheable? @cache)
+           prefix (when (and cached
+                             (= lang (:lang cached))
+                             (str/starts-with? code (:text cached))
+                             (< (count (:text cached)) (count code)))
+                    cached)
+           tokens (hl/tokenize lang (if prefix (subs code (count (:text prefix))) code))]
+       (if tokens
+         (let [fmts (highlight-formatters t)
+               styled (mapv #(highlight-token fmts %) tokens)
+               full (str (when prefix (:styled prefix)) (apply str styled))]
+           (when cacheable?
+             ;; Cache up to the start of the last token: the next delta
+             ;; re-tokenizes only that token plus whatever was appended.
+             (let [[_ last-text] (last tokens)
+                   last-styled (peek styled)]
+               (reset! cache {:text (subs code 0 (- (count code) (count last-text)))
+                              :styled (subs full 0 (- (count full) (count last-styled)))
+                              :lang lang})))
+           (str/split full #"\n" -1))
+         (mapv (fn [l] (fg t :md-code-block l)) (str/split code #"\n" -1)))))))
 
 (defn get-markdown-theme
   "pi-equivalent: getMarkdownTheme() — returns MarkdownTheme fn map."
@@ -478,7 +513,7 @@
    :quote-border (fn [s] (fg t :md-quote-border s))
    :hr (fn [s] (fg t :md-hr s))
    :list-bullet (fn [s] (fg t :md-list-bullet s))
-   :highlight-code (fn [code lang] (render-highlighted t code lang))
+   :highlight-code (fn [code lang] (render-highlighted t code lang *code-cache*))
    :bold bold
    :italic italic
    :underline underline

@@ -233,6 +233,14 @@
   (t/is (= [[:function "hello"] [:punctuation "("]]
            (toks "groovy" "hello("))))
 
+(t/deftest token-boundaries-clean
+  (t/is (true? (hl/token-boundaries-clean? "clojure")))
+  (t/is (true? (hl/token-boundaries-clean? "python")))
+  (t/is (false? (hl/token-boundaries-clean? "html")))
+  (t/is (false? (hl/token-boundaries-clean? "diff")))
+  (t/is (false? (hl/token-boundaries-clean? "markdown")))
+  (t/is (nil? (hl/token-boundaries-clean? "nope"))))
+
 (t/deftest language-resolution
   (t/is (hl/supports-language? "clojure"))
   (t/is (hl/supports-language? "clj"))

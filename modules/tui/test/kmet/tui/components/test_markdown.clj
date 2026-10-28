@@ -1,6 +1,7 @@
 (ns kmet.tui.components.test-markdown
   (:require [clojure.test :as t]
             [clojure.string :as str]
+            [kmet.libs.highlight :as hlib]
             [kmet.libs.markdown :as mdlib]
             [kmet.libs.terminal-image :as timg]
             [kmet.tui.core :as core]
@@ -995,6 +996,102 @@
       (t/is (= (md/render-lines text 20 :padding-x 0 :theme md/default-theme)
                (md/render-lines text 20 :padding-x 0 :theme md/default-theme
                                 :cache-atom cache :cache-key [:narrow]))))))
+
+(t/deftest test-render-lines-incremental-syntax-highlight
+  (t/testing "a syntax-highlighted text streamed chunk by chunk renders exactly
+              like a fresh full render (code fences, multiline strings, block
+              comments, the closing fence and the prose after it)"
+    (let [sample (str "Let me check.\n\n"
+                      "```clojure\n"
+                      "(defn f [x]\n"
+                      "  ;; a comment\n"
+                      "  (str \"a\n"
+                      "multi-line\" x))\n"
+                      "\n"
+                      "#| block\n"
+                      "comment |#\n"
+                      "```\n\n"
+                      "After the fence, a paragraph that wraps across the width.\n")
+          thm (fn [] (theme/get-markdown-theme theme/dark-theme))
+          cache (atom nil)
+          n (count sample)]
+      (loop [i 0]
+        (when (< i n)
+          (let [j (min n (+ i 3))
+                prefix (subs sample 0 j)]
+            (t/is (= (md/render-lines prefix 50 :padding-x 0 :theme (thm))
+                     (md/render-lines prefix 50 :padding-x 0 :theme (thm)
+                                      :cache-key [50] :cache-atom cache))
+                  (str "prefix of " j " chars"))
+            (recur j)))))))
+
+(t/deftest test-render-highlighted-cache-matches-full
+  (t/testing "reusing the styled prefix is exact for every generic-scanner
+              language, including tokens spanning newlines"
+    (let [code (str "(defn f [x]\n  ;; c\n  (str \"a\nmultiline\" x))\n"
+                    "\n#| block\ncomment |#\n  (prn :x x))\n")]
+      (doseq [lang ["clojure" "python" "javascript" "json"]]
+        (let [cache (atom nil)
+              bad (loop [i 1 bad nil]
+                    (if (> i (count code)) bad
+                        (let [c (subs code 0 i)
+                              want (theme/render-highlighted theme/dark-theme c lang)
+                              got (binding [theme/*code-cache* cache]
+                                    (theme/render-highlighted theme/dark-theme c lang))]
+                          (recur (inc i) (or bad (when (not= want got) i))))))]
+          (t/is (nil? bad) (str lang " prefix " bad)))))))
+
+(t/deftest test-render-highlighted-cache-tokenizes-the-tail
+  (t/testing "a growing code text tokenizes only its last token plus the delta"
+    (let [code (apply str (for [i (range 100)] (str "(prn :x" i ")\n")))
+          cache (atom nil)
+          orig (deref #'hlib/tokenize)
+          sizes (atom [])]
+      (with-redefs-fn {#'hlib/tokenize
+                       (fn [lang text] (swap! sizes conj (count text)) (orig lang text))}
+        (fn []
+          (binding [theme/*code-cache* cache]
+            (theme/render-highlighted theme/dark-theme code "clojure")
+            (reset! sizes [])
+            (loop [i 0 text code]
+              (when (< i 5)
+                (let [t (str text "  (prn :more " i ")\n")]
+                  (theme/render-highlighted theme/dark-theme t "clojure")
+                  (recur (inc i) t))))
+            (t/is (seq @sizes))
+            (t/is (every? #(< % 100) @sizes)
+                  (str "only the growing tail tokenizes, got " @sizes))))))))
+
+(t/deftest test-render-lines-streaming-fence-reuses-body-lines
+  (t/testing "a growing fence re-wraps only its last line and the new lines,
+              and a non-append rewrite still matches a fresh render"
+    (let [fence (apply str (for [i (range 40)]
+                             (str "(defn f" i " [x]\n  (prn :x " i "))\n")))
+          base (str "intro\n\n```clojure\n" fence)
+          cache (atom nil)
+          orig (deref #'u/wrap-text-with-ansi)
+          calls (atom 0)]
+      (rendered-with-cache cache base 60)
+      (with-redefs-fn {#'u/wrap-text-with-ansi
+                       (fn [& args] (swap! calls inc) (apply orig args))}
+        (fn []
+          (loop [i 0 text base]
+            (when (< i 5)
+              (let [t (str text "  (prn :more " i ")\n")]
+                (rendered-with-cache cache t 60)
+                (recur (inc i) t))))
+          (t/is (<= @calls 30)
+                (str "the cached body is not re-wrapped, got " @calls " wraps"))))
+      (let [grown (str base (apply str (for [i (range 5)]
+                                         (str "  (prn :more " i ")\n"))))
+            rewritten (str base "  (prn :changed)\n")
+            partial-fence (str grown "``")]
+        (t/is (= (md/render-lines grown 60 :padding-x 0 :theme md/default-theme)
+                 (rendered-with-cache cache grown 60)))
+        (t/is (= (md/render-lines rewritten 60 :padding-x 0 :theme md/default-theme)
+                 (rendered-with-cache cache rewritten 60)))
+        (t/is (= (md/render-lines partial-fence 60 :padding-x 0 :theme md/default-theme)
+                 (rendered-with-cache cache partial-fence 60)))))))
 
 ;; ─── Default theme ─────────────────────────────────────────────────────────
 

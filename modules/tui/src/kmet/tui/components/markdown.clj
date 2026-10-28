@@ -10,7 +10,8 @@
             [kmet.tui.utils :as u]
             [kmet.hikap.component :refer [track!]]
             [kmet.tui.macros :refer [defcomponent]]
-            [kmet.libs.markdown :as md]))
+            [kmet.libs.markdown :as md]
+            [kmet.libs.theme :as theme]))
 
 ;; ─── Theme ──────────────────────────────────────────────────────────────────
 ;; Matches pi's MarkdownTheme interface.
@@ -163,28 +164,88 @@
     (apply str (map #(render-inline % theme style-context) tokens))
     style-context)))
 
+(def ^:private ^:dynamic *code-lines-cache*
+  "Optional atom for render-code's body-line cache, bound by render-lines.
+   Entry: {:text complete-line-prefix :n complete-line-count :hl styled
+   complete lines :groups body lines per line :prefix indent :content-width
+   cw :lang lang}. A streaming fence re-wraps only the line being typed and
+   the new lines."
+  nil)
+
+(defn- code-body-lines
+  "Wrap STYLED at CONTENT-WIDTH and pad each line — one code line's body."
+  [styled content-width]
+  (mapv #(pad-right content-width %) (u/wrap-text-with-ansi styled content-width)))
+
+(defn- newline-count
+  "Number of complete lines in S (one per newline)."
+  [s]
+  (loop [i 0 n 0]
+    (if-let [j (str/index-of s "\n" i)]
+      (recur (inc j) (inc n))
+      n)))
+
 (defn- render-code
   "Render a :code token: styled fence lines (with lang), interior lines with
    the code-block theme and indent (or a :highlight-code hook when set).
    EXTRA-INDENT prefixes code nested inside list items. Trailing interior
    blank lines are preserved. Like pi, long lines are wrapped via
-   wrap-text-with-ansi to CONTENT-WIDTH, not truncated with ellipsis."
+   wrap-text-with-ansi to CONTENT-WIDTH, not truncated with ellipsis.
+
+   With *code-lines-cache* bound, the body lines of the complete code lines
+   are reused when the text still starts with them, so a growing fence wraps
+   only its last line and the new lines. The incomplete last line is never
+   cached."
   [result t theme content-width left-pad extra-indent]
   (let [indent (or (:code-block-indent theme) "  ")
         prefix (str left-pad extra-indent)
         lang (:lang t "")
         text (:text t)
-        interior (if (str/blank? text) [] (str/split text #"\n" -1))
+        lines (vec (if-let [hl (:highlight-code theme)]
+                     (hl text lang)
+                     (mapv #((:code-block theme) %)
+                           (if (str/blank? text) [] (str/split text #"\n" -1)))))
+        ;; the last line is incomplete while the fence streams; only the
+        ;; complete lines (through the last newline) are cacheable
+        nl (str/last-index-of text "\n")
+        prefix-text (if nl (subs text 0 (inc nl)) "")
+        ;; complete lines: one per newline, capped by what the highlighter
+        ;; returned (a custom hook may drop the trailing empty line)
+        n-complete (min (count lines) (newline-count text))
+        cached (when *code-lines-cache*
+                 (let [c @*code-lines-cache*]
+                   (when (and c
+                              (= prefix (:prefix c))
+                              (= content-width (:content-width c))
+                              (= lang (:lang c))
+                              (str/starts-with? text (:text c))
+                              ;; the styled prefix must still be the same —
+                              ;; a highlighter may depend on later text
+                              (<= (count (:hl c)) (count lines))
+                              (= (:hl c) (subvec lines 0 (count (:hl c)))))
+                     c)))
+        groups (if cached
+                 (into (vec (:groups cached))
+                       (map (fn [l] (code-body-lines (str prefix indent l) content-width))
+                            (drop (:n cached) lines)))
+                 (mapv (fn [l] (code-body-lines (str prefix indent l) content-width)) lines))
         push-wrapped (fn [styled]
-                       (doseq [wl (u/wrap-text-with-ansi styled content-width)]
-                         (vswap! result conj (pad-right content-width wl))))]
+                       (doseq [l (code-body-lines styled content-width)]
+                         (vswap! result conj l)))]
     (push-wrapped (str prefix ((:code-block-border theme) (str "```" lang))))
-    (if-let [hl (:highlight-code theme)]
-      (doseq [l (hl text lang)]
-        (push-wrapped (str prefix indent l)))
-      (doseq [line interior]
-        (push-wrapped (str prefix indent ((:code-block theme) line)))))
-    (push-wrapped (str prefix ((:code-block-border theme) "```")))))
+    (doseq [g groups, l g]
+      (vswap! result conj l))
+    (push-wrapped (str prefix ((:code-block-border theme) "```")))
+    (when *code-lines-cache*
+      (reset! *code-lines-cache*
+              (when (pos? n-complete)
+                {:text prefix-text
+                 :n n-complete
+                 :hl (subvec lines 0 n-complete)
+                 :groups (subvec groups 0 n-complete)
+                 :prefix prefix
+                 :content-width content-width
+                 :lang lang})))))
 
 (defn- longest-word-width
   "Visible width of TEXT's longest word, capped at LIMIT (0 when empty)."
@@ -591,7 +652,7 @@
    component's pipeline (transform, parse, stream-fence trim, block styling
    and wrapping) with no component. Options mirror make-markdown, plus:
 
-   :cache-atom — incremental streaming render, in two layers. Parsing
+   :cache-atom — incremental streaming render, in two caching layers. Parsing
    resumes at the last clean blank-line boundary (:stable-text), so only the
    text after it is parsed; the blocks before it keep their rendered lines
    and only the tail is rendered per delta. A streaming text that only grows
@@ -603,7 +664,10 @@
 
    Blocks are compared after the transform and the fence trim, so a block
    that stops being the last one (a closing fence completing, a new list
-   item) re-renders even though its source prefix did not change."
+   item) re-renders even though its source prefix did not change. A code
+   fence that streams inside the tail is still re-rendered, but only its
+   growing last line: the built-in highlighter reuses its styled prefix and
+   render-code reuses the wrapped body lines of the complete code lines."
   [text width & {:keys [theme padding-x default-style transform border
                         cache-key cache-atom]
                  :or {padding-x 1}}]
@@ -619,53 +683,62 @@
         key (or cache-key [width padding-x theme default-style transform table-border])
         cached (when cache-atom @cache-atom)
         cached (when (and cached (= key (:key cached))) cached)
-        ;; A transform may rewrite the whole text, so the cached prefix is
-        ;; only reusable when the transformed text still starts with it.
-        ;; Otherwise pick a fresh cut (the first render, a rewritten prefix,
-        ;; a width/theme change), rendering its blocks from scratch.
-        base (promote-stable
-              (if (and cached
-                       (str/starts-with? text (or (:stable-text cached) ""))
-                       ;; the cut must still begin a blank line in THIS text
-                       ;; (a transform can drop the one that justified it);
-                       ;; an empty prefix has no cut to re-validate
-                       (or (zero? (count (:stable-text cached)))
-                           (blank-line-at? text (count (:stable-text cached)))))
-                cached
-                ;; no usable prefix: pick a fresh cut from the top (and
-                ;; remember a rejected one, like any other attempt)
-                empty-cache)
-              text theme content-width left-pad default-style table-border)
-        stable-text (:stable-text base)
-        stable-tokens (:stable-tokens base)
-        stable-lines (:stable-lines base)
-        tail (subs text (count stable-text))
-        ;; An empty tail after a promoted prefix contributes no block —
-        ;; md/parse of "" is one :blank (split-lines' [""]), which belongs
-        ;; only to a genuinely empty document.
-        tail-tokens (if (and (seq stable-text) (empty? tail))
-                      []
-                      (parse-stream-tokens tail))
-        ;; The stable prefix's lines are final (they cannot change while the
-        ;; text only grows). Re-rendering the whole tail is cheap by
-        ;; construction: it is the text since the last clean blank line, and
-        ;; it used to be re-rendered per delta together with the whole
-        ;; history.
-        tail-lines (mapv (fn [t]
-                           (render-token-lines t theme content-width left-pad
-                                               default-style table-border))
-                         tail-tokens)
-        per-block (into stable-lines tail-lines)]
-    (when cache-atom
-      (reset! cache-atom {:key key
-                          :stable-text stable-text
-                          :stable-tokens stable-tokens
-                          :stable-lines stable-lines
-                          :tail-tokens tail-tokens
-                          :tail-lines tail-lines
-                          ;; keep the unsafe-cut verdict for the next delta
-                          :rejected-cut (:rejected-cut base)}))
-    (into [] cat per-block)))
+        ;; The built-in highlighter's growing-code cache travels with the
+        ;; entry, so a key change (width/theme) starts it fresh too.
+        code-cache (when cache-atom (or (:code-cache cached) (atom nil)))
+        code-lines-cache (when cache-atom (or (:code-lines-cache cached) (atom nil)))]
+    (binding [theme/*code-cache* code-cache
+              *code-lines-cache* code-lines-cache]
+      (let [;; A transform may rewrite the whole text, so the cached prefix is
+            ;; only reusable when the transformed text still starts with it.
+            ;; Otherwise pick a fresh cut (the first render, a rewritten
+            ;; prefix, a width/theme change), rendering its blocks from scratch.
+            base (promote-stable
+                  (if (and cached
+                           (str/starts-with? text (or (:stable-text cached) ""))
+                           ;; the cut must still begin a blank line in THIS text
+                           ;; (a transform can drop the one that justified it);
+                           ;; an empty prefix has no cut to re-validate
+                           (or (zero? (count (:stable-text cached)))
+                               (blank-line-at? text (count (:stable-text cached)))))
+                    cached
+                    ;; no usable prefix: pick a fresh cut from the top (and
+                    ;; remember a rejected one, like any other attempt)
+                    empty-cache)
+                  text theme content-width left-pad default-style table-border)
+            stable-text (:stable-text base)
+            stable-tokens (:stable-tokens base)
+            stable-lines (:stable-lines base)
+            tail (subs text (count stable-text))
+            ;; An empty tail after a promoted prefix contributes no block —
+            ;; md/parse of "" is one :blank (split-lines' [""]), which belongs
+            ;; only to a genuinely empty document.
+            tail-tokens (if (and (seq stable-text) (empty? tail))
+                          []
+                          (parse-stream-tokens tail))
+            ;; The stable prefix's lines are final (they cannot change while
+            ;; the text only grows). Re-rendering the whole tail is cheap by
+            ;; construction: it is the text since the last clean blank line,
+            ;; and it used to be re-rendered per delta together with the whole
+            ;; history.
+            tail-lines (mapv (fn [t]
+                               (render-token-lines t theme content-width left-pad
+                                                   default-style table-border))
+                             tail-tokens)
+            per-block (into stable-lines tail-lines)]
+        (when cache-atom
+          (reset! cache-atom {:key key
+                              :stable-text stable-text
+                              :stable-tokens stable-tokens
+                              :stable-lines stable-lines
+                              :tail-tokens tail-tokens
+                              :tail-lines tail-lines
+                              ;; keep the unsafe-cut verdict for the next delta
+                              :rejected-cut (:rejected-cut base)
+                              ;; the growing-code highlight and body-line caches
+                              :code-cache code-cache
+                              :code-lines-cache code-lines-cache}))
+        (into [] cat per-block)))))
 
 ;; ─── Markdown component ───────────────────────────────────────────────────
 

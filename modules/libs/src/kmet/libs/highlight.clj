@@ -1353,6 +1353,16 @@
 (defn supports-language? [lang]
   (boolean (resolve-language lang)))
 
+(defn token-boundaries-clean?
+  "True when a scan started at any token boundary yields the same tokens as
+   the whole-text scan — the generic scanner keeps no state between tokens.
+   The custom scanners (markup, diff, Dockerfile, Markdown) carry construct
+   state across tokens, so their suffixes may not restart mid-construct.
+   nil for an unsupported language."
+  [lang]
+  (when-let [cfg (resolve-language lang)]
+    (nil? (:scanner cfg))))
+
 (defn supported-languages
   "Sorted names of every supported language and alias."
   []
