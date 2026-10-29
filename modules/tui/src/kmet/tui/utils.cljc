@@ -435,6 +435,13 @@
   "`bmp-wide-ranges` compiled: `plain-char-width` adds one column per match."
   (re-pattern (ranges->char-class bmp-wide-ranges)))
 
+(def ^:private all-bmp-wide-re
+  "`bmp-wide-ranges` repeated: a word of only 2-column BMP code points
+   (CJK, Hangul, fullwidth, BMP emoji) has width 2 x its char count, so a
+   long one can be sliced natively instead of walked code point by code
+   point (`split-long-word`)."
+  (re-pattern (str (ranges->char-class bmp-wide-ranges) "+")))
+
 (def ^:private walker-ranges
   "Code points whose width a per-character sum gets wrong, i.e. the ones the
    grapheme walker must decide: the zero-width set and variation selectors
@@ -762,6 +769,66 @@
         link (if hyperlink (str "\u001b]8;;" hyperlink hyperlink-term) "")]
     (str sgr link)))
 
+(defn- split-pieces
+  "Slice WORD every PER characters, prefixing every piece with ACTIVE (the
+   wrap's active SGR/hyperlink state). The shape for a run whose
+   per-code-point width is constant: no code point is ever split, and every
+   piece starts a fresh line, so it re-opens the state (pi: breakLongWord
+   starts each piece with getActiveCodes()). [WORD] for an empty word."
+  [word per active]
+  (let [n (count word)]
+    (if (zero? n)
+      [word]
+      (vec (map (fn [i] (str active (subs word i (min n (+ i per)))))
+                (range 0 n per))))))
+
+(defn- uniform-word-width
+  "Per-code-point visible width WORD has throughout when every code point is
+   the same width and the word holds no ANSI code — 2 for an all-BMP-wide
+   word, 1 for plain narrow BMP text (accents, Cyrillic, box drawing) — else
+   nil. Both answers are one native scan: `char-width` widens exactly the
+   class `bmp-wide-re` matches, and `width-special-re` (zero-width/variation
+   selectors, astral) plus the control set rule out the uniform cases — so a
+   caller may multiply by the code-point count. A tab is 3 columns and is not
+   in the control set: `wrap-text-with-ansi` expands tabs before wrapping, so
+   a word that reaches here has none."
+  [word]
+  (cond
+    (re-matches all-bmp-wide-re word) 2
+    (and (not (re-find width-special-re word))
+         (not (re-find plain-control-re word))) 1))
+
+(defn- walk-pieces
+  "Slice WORD into pieces of at most MAX-WIDTH visible columns one code point
+   at a time — the fallback for a word with wide *and* narrow code points, an
+   astral code point, or an embedded ANSI code. CODES? tells whether WORD may
+   contain ANSI codes; when it cannot, the active state is read once and no
+   per-piece code scan runs."
+  [word max-width st codes?]
+  (let [n (count word)
+        active (when-not codes? (ansi-active-codes st))]
+    (loop [i 0 pieces []]
+      (if (>= i n)
+        (if (seq pieces) pieces [word])
+        (let [active-before (or active (ansi-active-codes st))
+              stop (loop [j i total 0]
+                     (if (>= j n)
+                       j
+                       (if-let [[_ clen] (and codes? (= \u001b (nth word j))
+                                              (ansi-code-at word j))]
+                         (recur (+ j clen) total)
+                         (let [cp (code-point-at word j)
+                               w (char-width cp)
+                               nchars (codepoint-len word j)]
+                           ;; Stop only once the piece has visible content —
+                           ;; never emit an empty piece (e.g. a styled word
+                           ;; starting with a 2-wide char at max-width 1).
+                           (if (and (pos? total) (> (+ total w) max-width))
+                             j
+                             (recur (+ j nchars) (+ total w)))))))]
+          (when codes? (ansi-process-range! st word i stop))
+          (recur stop (conj pieces (str active-before (subs word i stop)))))))))
+
 (defn- split-long-word
   "Split WORD (longer than max-width) into pieces of at most max-width
    visible columns. Every character is preserved — long unbreakable words
@@ -771,53 +838,32 @@
    start of every piece so styling survives the break (pi: breakLongWord +
    AnsiCodeTracker). ST is the wrap's tracker (atom of AnsiState), updated
    with the codes seen so far.
-   Fast path: pure-ASCII words break with a regex (visible width = char
-   count), avoiding per-character work — crucial for streaming long
-   tokens under SCI where per-char interop is slow."
+
+   Three shapes need no per-code-point walk: pure ASCII (width = chars), an
+   all-BMP-wide word (width = 2 x chars) and a word with nothing wider than
+   one column (width = chars) — a long CJK paragraph is one unbroken word, so
+   this is the difference between a per-char walk and native slicing. An
+   ANSI-free word also cannot change the tracker between pieces, so the
+   active state is read once. Everything else (mixed wide/narrow, astral,
+   embedded codes) walks code points."
   [word max-width st]
-  (let [n (count word)]
-    (if (not (re-find #"[^\u0020-\u007e]" word))
-      ;; ASCII fast path — no ANSI codes possible (ESC 0x1b is non-ASCII).
-      ;; NOTE (jolt perf): was (re-seq (re-pattern "(?s).{1,N}") word) — a
-      ;; per-call re-pattern + regex chunk (~56 µs on jolt); plain subs
-      ;; slicing is ~4 µs there and ~2x faster on bb too.
-      (let [nchars (count word)
-            pieces (mapv (fn [i] (subs word i (min nchars (+ i max-width))))
-                         (range 0 nchars max-width))]
-        (if (seq pieces)
-          ;; every piece starts a fresh line after the buffer flush, so the
-          ;; active state is re-emitted on each — including the first
-          ;; (pi: breakLongWord starts with tracker.getActiveCodes())
-          (vec (map-indexed (fn [_ p] (str (ansi-active-codes st) p))
-                            pieces))
-          [word]))
-      ;; Walker: wide chars (CJK/emoji) or embedded ANSI — slice by visible
-      ;; width; one subs per piece, no per-character appends. Codes inside
-      ;; each piece are processed into the tracker so continuation pieces
-      ;; re-emit the state accumulated so far.
-      (loop [i 0 pieces []]
-        (if (>= i n)
-          (if (seq pieces) pieces [word])
-          (let [active-before (ansi-active-codes st)
-                stop (loop [j i total 0]
-                       (if (>= j n)
-                         j
-                         (if-let [[_ clen] (and (= \u001b (nth word j))
-                                                (ansi-code-at word j))]
-                           (recur (+ j clen) total)
-                           (let [cp (code-point-at word j)
-                                 w (char-width cp)
-                                 nchars (codepoint-len word j)]
-                             ;; Stop only once the piece has visible content —
-                             ;; never emit an empty piece (e.g. a styled word
-                             ;; starting with a 2-wide char at max-width 1).
-                             (if (and (pos? total) (> (+ total w) max-width))
-                               j
-                               (recur (+ j nchars) (+ total w)))))))]
-            (ansi-process-range! st word i stop)
-            (recur stop
-                   (conj pieces
-                         (str active-before (subs word i stop))))))))))
+  (cond
+    ;; ASCII — no ANSI codes possible (ESC 0x1b is non-ASCII).
+    ;; NOTE (jolt perf): was (re-seq (re-pattern "(?s).{1,N}") word) — a
+    ;; per-call re-pattern + regex chunk (~56 µs on jolt); plain subs
+    ;; slicing is ~4 µs there and ~2x faster on bb too.
+    (not (re-find #"[^\u0020-\u007e]" word))
+    (split-pieces word max-width (ansi-active-codes st))
+
+    ;; No code inside: the tracker cannot change, so only the cuts matter.
+    (not (str/includes? word "\u001b"))
+    (if-let [w (uniform-word-width word)]
+      (split-pieces word
+                    (max 1 (if (= 2 w) (quot max-width 2) max-width))
+                    (ansi-active-codes st))
+      (walk-pieces word max-width st false))
+
+    :else (walk-pieces word max-width st true)))
 
 (defn- wrap-single-line
   "Wrap a single line (no internal newlines) to max-width visible columns.

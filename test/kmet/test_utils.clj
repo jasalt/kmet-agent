@@ -664,6 +664,29 @@ QWdiAKmzt6MfYOx22Q50Fqk=
           "wide characters counted as 2 columns")
     (t/is (= 60 (apply + (map u/visible-width lines))))))
 
+(t/deftest test-wrap-long-unbreakable-word-shapes
+  (t/testing "an all-wide word slices at half the width (2 columns per char)"
+    (let [lines (u/wrap-text-with-ansi (apply str (repeat 60 "\u4e2d")) 22)]
+      (t/is (= [11 11 11 11 11 5] (mapv count lines))
+            "11 chars are 22 columns; every piece stays within the width")
+      (t/is (= [22 22 22 22 22 10] (mapv u/visible-width lines)))
+      (t/is (= 120 (apply + (map u/visible-width lines))) "no characters lost")))
+  (t/testing "an all-narrow non-ASCII word slices at the width"
+    (let [lines (u/wrap-text-with-ansi (apply str (repeat 60 "\u043f")) 22)]
+      (t/is (= [22 22 16] (mapv u/visible-width lines)))
+      (t/is (= 60 (apply + (map u/visible-width lines))))))
+  (t/testing "a mixed wide/narrow word still walks and never overflows"
+    (let [lines (u/wrap-text-with-ansi (apply str (repeat 40 "\u65e5a")) 22)]
+      (t/is (= 120 (apply + (map u/visible-width lines)))
+            "40 wide + 40 narrow columns, nothing lost")
+      (t/is (every? #(<= (u/visible-width %) 22) lines) "every piece fits")))
+  (t/testing "a styled all-wide word re-opens the style on every piece"
+    (let [styled (str "\u001b[31m" (apply str (repeat 30 "\u4e2d")) "\u001b[0m")
+          lines (u/wrap-text-with-ansi styled 22)]
+      (t/is (= 60 (apply + (map u/visible-width lines))))
+      (t/is (every? #(str/includes? % "\u001b[31m") lines)
+            "every piece keeps the fg code"))))
+
 ;; ─── ANSI-aware slicing + compositing (HStack support) ─────────────────────
 
 (t/deftest test-slice-with-width-plain
