@@ -645,7 +645,7 @@
     (core/handle-input e (ctrl 1))  ;; ctrl+a = home
     (core/handle-input e K-DEL)
     (let [text (editor/editor-get-text e)]
-      (t/is (= "[paste #1 +15 lines — ctrl+o to expand][paste #2 +15 lines — ctrl+o to expand]"
+      (t/is (= "[paste #1 +15 lines][paste #2 +15 lines]"
                text)
             "remaining markers renumbered to close the gap")
       (t/is (= #{1 2} (set (keys @(:paste-store e)))))
@@ -742,7 +742,7 @@
     (core/handle-input e (str "\u001b[200~" big "\u001b[201~"))
     (core/handle-input e (ctrl 1))  ;; ctrl+a = home
     (doseq [c "aaa bbb ccc "] (core/handle-input e (str c)))
-    (let [m "[paste #1 +30 lines — ctrl+o to expand]"
+    (let [m "[paste #1 +30 lines]"
           text (editor/editor-get-text e)
           lines (core/render e 30)]
       (t/is (clojure.string/includes? text m) "text contains the whole marker")
@@ -790,11 +790,11 @@
     ;; Delete the first marker → #2 renumbered to #1, store {1: big2}
     (core/handle-input e (ctrl 1))
     (core/handle-input e K-DEL)
-    (t/is (= "[paste #1 +15 lines — ctrl+o to expand]" (editor/editor-get-text e)))
+    (t/is (= "[paste #1 +15 lines]" (editor/editor-get-text e)))
     (t/is (= #{1} (set (keys @(:paste-store e)))))
     ;; Undo restores both markers AND the original store entries
     (core/handle-input e (ctrl 31))
-    (t/is (= "[paste #1 +15 lines — ctrl+o to expand][paste #2 +15 lines — ctrl+o to expand]"
+    (t/is (= "[paste #1 +15 lines][paste #2 +15 lines]"
              (editor/editor-get-text e)))
     (t/is (= #{1 2} (set (keys @(:paste-store e)))) "undo restores the original store")
     (t/is (= big1 (editor/editor-get-paste e 1)))

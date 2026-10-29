@@ -1478,9 +1478,10 @@ clearing the editor; `editor-get-text` remains the raw display-text accessor.
 Paste expansion preserves stored content literally, matches each marker id
 exactly (`#1` never claims `#10`), and runs in one pass, so marker-like text
 inside pasted content is never expanded. Marker IDs are canonical positive integers
-(no leading zeros). As in pi, a marker may have no count, ` +N lines`, or
-` N chars`; kmet additionally accepts its ` — ctrl+o to expand` hint.
-Malformed suffixes and out-of-range IDs stay literal. Scanning resumes inside
+(no leading zeros). The marker is pi's — `[paste #N]`, `[paste #N +M lines]` or
+`[paste #N M chars]`, with no key hint: ctrl+o belongs to the tool-display mode,
+not to a paste, so the old ` — ctrl+o to expand` suffix is gone (the parser
+treats it as literal text). Malformed suffixes and out-of-range IDs stay literal. Scanning resumes inside
 rejected candidates so an unfinished literal prefix, including one with digits,
 cannot hide a later valid paste marker.
 

@@ -8,16 +8,15 @@
 ;; "中文" is 2 chars (not 6 bytes) in Java's UTF-16.
 
 (t/deftest test-paste-marker-grammar
-  (doseq [suffix ["" " +15 lines" " 1200 chars"]
-          hint ["" " — ctrl+o to expand"]]
-    (let [marker (str "[paste #1" suffix hint "]")
+  (doseq [suffix ["" " +15 lines" " 1200 chars"]]
+    (let [marker (str "[paste #1" suffix "]")
           line (str "before " marker " after")]
       (t/is (= [{:id 1 :start 7 :end (+ 7 (count marker))}]
                (edit/find-paste-markers-in-line line)))
       (t/is (= "before payload after" (edit/expand-paste-markers-in-line line {1 "payload"})))))
   (doseq [literal ["[paste #1oops]" "[paste #01]" "[paste #1 then "
                    "[paste #1 +3 frogs]" "[paste #1 3 lines]"
-                   "[paste #1 +3 lines — wrong hint]"
+                   "[paste #1 +3 lines — ctrl+o to expand]"
                    "[paste #999999999999999999999999999999]"]]
     (let [line (str literal "[paste #2]")]
       (t/is (= [{:id 2 :start (count literal) :end (count line)}]
@@ -235,19 +234,19 @@
 (t/deftest test-find-paste-markers-in-line
   (t/is (= [] (edit/find-paste-markers-in-line "")))
   (t/is (= [] (edit/find-paste-markers-in-line "no markers here")))
-  (let [line "abc [paste #3 +10 lines — ctrl+o to expand] xyz"
+  (let [line "abc [paste #3 +10 lines] xyz"
         m (first (edit/find-paste-markers-in-line line))]
     (t/is (= 3 (:id m)))
     (t/is (= 4 (:start m)))
     (t/is (= "]" (subs line (dec (:end m)) (:end m))) "end is just past the closing bracket"))
-  (let [line "a[paste #1 +1 lines — ctrl+o to expand]b[paste #2 +5 lines — ctrl+o to expand]c"
+  (let [line "a[paste #1 +1 lines]b[paste #2 +5 lines]c"
         [m1 m2] (edit/find-paste-markers-in-line line)]
     (t/is (= [1 2] [(:id m1) (:id m2)]))
     (t/is (< (:end m1) (:start m2)) "markers don't overlap")
     (t/is (= "b" (subs line (:end m1) (:start m2))))))
 
 (t/deftest test-segment-with-markers
-  (let [marker "[paste #1 +10 lines — ctrl+o to expand]"]
+  (let [marker "[paste #1 +10 lines]"]
     ;; Marker merged into a single atomic segment
     (let [segs (edit/segment-with-markers (str "ab" marker "cd") edit/grapheme-segments #{1})]
       (t/is (= 5 (count segs)))
@@ -270,12 +269,12 @@
       (t/is (= marker (:text (first segs)))))))
 
 (t/deftest test-renumber-paste-markers-in-line
-  (let [line "x[paste #3 +5 lines — ctrl+o to expand]y"
-        m2 "[paste #2 +5 lines — ctrl+o to expand]"]
+  (let [line "x[paste #3 +5 lines]y"
+        m2 "[paste #2 +5 lines]"]
     (t/is (= (str "x" m2 "y") (edit/renumber-paste-markers-in-line line {3 2})))
     (t/is (= line (edit/renumber-paste-markers-in-line line {1 9})) "unknown id unchanged")
-    (let [two "a[paste #2 +1 lines — ctrl+o to expand]b[paste #4 +2 lines — ctrl+o to expand]c"
-          expected "a[paste #1 +1 lines — ctrl+o to expand]b[paste #2 +2 lines — ctrl+o to expand]c"]
+    (let [two "a[paste #2 +1 lines]b[paste #4 +2 lines]c"
+          expected "a[paste #1 +1 lines]b[paste #2 +2 lines]c"]
       (t/is (= expected (edit/renumber-paste-markers-in-line two {2 1, 4 2}))))))
 
 ;; ─── Paste text processing ───────────────────────────────────────────────
@@ -304,6 +303,6 @@
   (t/is (= "plain" (edit/filter-paste-printable "plain"))))
 
 (t/deftest test-paste-marker-predicate
-  (t/is (edit/paste-marker? "[paste #1 +3 lines — ctrl+o to expand]"))
+  (t/is (edit/paste-marker? "[paste #1 +3 lines]"))
   (t/is (not (edit/paste-marker? "hello")))
   (t/is (not (edit/paste-marker? ""))))

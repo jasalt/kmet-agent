@@ -848,8 +848,8 @@
                    :cursor-col (count (last rest-lines)))))
         (let [n (swap! (:paste-counter editor) inc)
               marker (if (> line-count 10)
-                       (str "[paste #" n " +" line-count " lines — ctrl+o to expand]")
-                       (str "[paste #" n " " total-chars " chars — ctrl+o to expand]"))
+                       (str "[paste #" n " +" line-count " lines]")
+                       (str "[paste #" n " " total-chars " chars]"))
               cur-line (nth lines cl "")
               new-cur-line (str (subs cur-line 0 cc) marker (subs cur-line cc))]
           (swap! (:paste-store editor) assoc n text)

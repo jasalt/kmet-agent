@@ -345,13 +345,13 @@
 
 (defn find-paste-markers-in-line
   "Find complete paste markers with canonical positive IDs in a single line.
-   Accept pi's optional line/character count and kmet's expansion hint.
+   Accept pi's optional line/character count (pi: PASTE_MARKER_SINGLE).
    Returns {:id int :start int :end int}, with :end past the closing bracket."
   [line]
   (loop [offset 0, found []]
     (if-let [idx (clojure.string/index-of line paste-marker-prefix offset)]
       (if-let [end-idx (clojure.string/index-of line "]" (+ idx 1))]
-        (let [match (re-matches #"([1-9]\d*)(?: (?:\+\d+ lines|\d+ chars))?(?: — ctrl\+o to expand)?"
+        (let [match (re-matches #"([1-9]\d*)(?: (?:\+\d+ lines|\d+ chars))?"
                                 (subs line (+ idx (count paste-marker-prefix)) end-idx))
               id (some-> match second parse-long)]
           (if id
