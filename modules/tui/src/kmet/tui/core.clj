@@ -3218,6 +3218,35 @@
   (if (satisfies? protocols/IEditorComponent ed)
     (protocols/editor-get-expanded-text ed)
     (editor/editor-get-expanded-text ed)))
+
+(defn- editor-has-paste-store? [ed]
+  (and (map? ed) (contains? ed :paste-store)))
+
+(defn editor-get-content
+  "Snapshot ED's content for a swap or a dialog's draft restore (pi has no
+   equivalent: its setText drops the paste bindings). An editor that keeps a
+   paste store contributes its raw display text with the bindings; any other
+   editor contributes its expanded text, so a marker never outlives its
+   content."
+  [ed]
+  (if (editor-has-paste-store? ed)
+    {:text (editor-get-text ed)
+     :paste-store @(:paste-store ed)
+     :paste-counter @(:paste-counter ed)}
+    {:text (editor-get-expanded-text ed)}))
+
+(defn editor-set-content!
+  "Install a content snapshot from editor-get-content into ED. A target that
+   keeps a paste store gets the markers and their bindings back; any other
+   target gets the expanded text."
+  [ed {:keys [text paste-store paste-counter]}]
+  (if (and paste-store (editor-has-paste-store? ed))
+    (do (editor-set-text! ed text)
+        (reset! (:paste-store ed) paste-store)
+        (reset! (:paste-counter ed) paste-counter))
+    (editor-set-text! ed (editor/expand-paste-text text paste-store)))
+  nil)
+
 (defn editor-set-autocomplete-provider! [ed provider]
   (if (satisfies? protocols/IEditorComponent ed)
     (protocols/editor-set-autocomplete-provider! ed provider)

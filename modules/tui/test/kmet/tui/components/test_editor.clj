@@ -1229,6 +1229,56 @@
     (t/is (clojure.string/includes? (core/editor-get-text e) "[paste #1]"))
     (t/is (= "see the content here" (core/editor-get-expanded-text e)))))
 
+(t/deftest test-editor-content-carries-paste-bindings
+  ;; the swap/dialog snapshot keeps a collapsed paste's bindings with its
+  ;; display markers, so the content is never stranded
+  (let [src (editor/make-editor)
+        pasted (clojure.string/join "\n" (repeat 15 "payload"))
+        dst (editor/make-editor)
+        submitted (atom nil)]
+    (core/handle-input src (str "\u001b[200~" pasted "\u001b[201~"))
+    (core/editor-set-content! dst (core/editor-get-content src))
+    (t/is (= (core/editor-get-text src) (core/editor-get-text dst))
+          "the display text moves as-is")
+    (t/is (= pasted (core/editor-get-expanded-text dst))
+          "the bindings travel with the markers")
+    (t/is (= 1 @(:paste-counter dst)) "the counter continues from the snapshot")
+    (core/editor-set-on-submit! dst #(reset! submitted %))
+    (core/handle-input dst K-ENTER)
+    (t/is (= pasted @submitted) "submitting the target expands the paste")))
+
+(t/deftest test-editor-content-expands-for-editors-without-a-paste-store
+  ;; a target that cannot keep bindings gets the expanded text instead of a
+  ;; marker whose content is gone
+  (let [state-atom (atom {:text ""})
+        custom (reify core/IEditorComponent
+                 core/IComponent
+                 (render [_ _] [])
+                 (handle-input [_ _] nil)
+                 (invalidate [_] nil)
+                 (editor-get-text [_] (:text @state-atom))
+                 (editor-set-text! [_ t] (swap! state-atom assoc :text t))
+                 (editor-get-expanded-text [_] (:text @state-atom))
+                 (editor-add-to-history! [_ _] nil)
+                 (editor-insert-text-at-cursor! [_ _] nil)
+                 (editor-set-autocomplete-provider! [_ _] nil)
+                 (editor-set-autocomplete-max-visible! [_ _] nil)
+                 (editor-set-padding-x! [_ _] nil)
+                 (editor-set-on-submit! [_ _] nil)
+                 (editor-set-on-change! [_ _] nil))
+        src (editor/make-editor)
+        pasted (clojure.string/join "\n" (repeat 15 "payload"))]
+    (core/handle-input src (str "\u001b[200~" pasted "\u001b[201~"))
+    (core/editor-set-content! custom (core/editor-get-content src))
+    (t/is (= pasted (core/editor-get-text custom))
+          "the store-less target receives the expanded text")
+    ;; and the reverse direction stays literal: nothing to bind
+    (let [back (editor/make-editor)]
+      (core/editor-set-content! back (core/editor-get-content custom))
+      (t/is (= pasted (core/editor-get-text back)))
+      (t/is (= pasted (core/editor-get-expanded-text back)))
+      (t/is (empty? @(:paste-store back)) "nothing was invented"))))
+
 (t/deftest test-ieditorcomponent-callbacks
   (let [e (editor/make-editor)
         submitted (atom nil)

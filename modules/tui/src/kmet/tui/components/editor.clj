@@ -1738,13 +1738,18 @@
     (swap! (:priority-action-handlers editor) dissoc action-id))
   nil)
 
+(defn expand-paste-text
+  "Expand TEXT's paste markers whose ids are in STORE, exactly as the editor
+   expands its own lines: one literal pass, no rescanning of inserted content."
+  [text store]
+  (clojure.string/join "\n" (map #(edit/expand-paste-markers-in-line % store)
+                                 (clojure.string/split text #"\n" -1))))
+
 (defn editor-get-expanded-text
   "Get the editor text with paste markers expanded to their stored content
    (pi: Editor.getExpandedText — used by submission and external editing)."
   [editor]
-  (let [store @(:paste-store editor)]
-    (clojure.string/join "\n" (map #(edit/expand-paste-markers-in-line % store)
-                                   (:lines @(:state-atom editor))))))
+  (expand-paste-text (editor-get-text editor) @(:paste-store editor)))
 
 (defn editor-autocomplete-active?
   "True when the autocomplete dropdown is currently showing."

@@ -270,17 +270,17 @@
          ;; the returned promise
          :custom (fn [factory {:keys [overlay overlay-options on-handle]}]
                    (let [p (promise)
-                         saved-text (tui/editor-get-text @current-editor-atom)
+                         saved-content (tui/editor-get-content @current-editor-atom)
                          closed (atom false)
                          close (fn [result]
                                  (when-not @closed
                                    (reset! closed true)
                                    (close-dialog!)
-                                   ;; the dock also restores the editor text
-                                   ;; the dialog covered
+                                   ;; the dock also restores the editor content
+                                   ;; the dialog covered, paste bindings included
                                    (when-not overlay
-                                     (tui/editor-set-text!
-                                      @current-editor-atom saved-text))
+                                     (tui/editor-set-content!
+                                      @current-editor-atom saved-content))
                                    (deliver p result)))]
                      (try
                        ;; pi: custom() accepts a Promise<Component> — deref
@@ -410,8 +410,8 @@
                                       (chat-history/chat-history-set-hidden-thinking-label!
                                        ch label))
          :set-editor-component (fn [factory]
-                                 (let [current-text (tui/editor-get-text @current-editor-atom)
-                                       prev-ed @current-editor-atom]
+                                 (let [prev-ed @current-editor-atom
+                                       prev-content (tui/editor-get-content prev-ed)]
                                    ;; pi parity: setCustomEditorComponent runs
                                    ;; disposeActiveSelector() then clears the dock —
                                    ;; the swap disposes whatever it held, and a
@@ -425,11 +425,11 @@
                                    (if factory
                                      (let [new-ed (factory t (th/get-current-theme) (tui-kb/get-global-keybindings))]
                                        (transfer-editor! ed new-ed (tui-kb/get-global-keybindings))
-                                       (tui/editor-set-text! new-ed current-text)
+                                       (tui/editor-set-content! new-ed prev-content)
                                        (tui/tui-set-focus t new-ed)
                                        ;; tracked by the dock area: the swap alone re-derives
                                        (reset! current-editor-atom new-ed))
-                                     (do (tui/editor-set-text! ed current-text)
+                                     (do (tui/editor-set-content! ed prev-content)
                                          (tui/tui-set-focus t ed)
                                          (reset! current-editor-atom ed)))
                                    (reset! editor-factory-atom factory)
@@ -662,12 +662,12 @@
                   (reset! extension-autocomplete-factories [])
                   (rebuild-autocomplete-provider!)
                   (when @editor-factory-atom
-                    (let [current-text (tui/editor-get-text @current-editor-atom)
-                          prev-ed @current-editor-atom]
-                      (tui/editor-set-text! ed current-text)
-                      (tui/tui-set-focus t ed)
+                    (let [prev-ed @current-editor-atom
+                          prev-content (tui/editor-get-content prev-ed)]
                       (when-not (identical? prev-ed ed)
+                        (tui/editor-set-content! ed prev-content)
                         (dispose-dialog-component! prev-ed))
+                      (tui/tui-set-focus t ed)
                       (reset! current-editor-atom ed))
                     (reset! editor-factory-atom nil))
                   ;; restore any open dialog

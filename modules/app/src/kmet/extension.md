@@ -933,6 +933,10 @@ from the api.
 ;; branch-summarization spinner) in its own first line — the top border.
 ;; A custom editor is plain: it has no top-border hook, so the standalone
 ;; status layer above the dock keeps rendering the status with it.
+;; The editor's text moves with the swap, collapsed pastes included: text and
+;; paste bindings cross both ways, so a marker still expands to its content in
+;; either editor. A component with no paste store of its own receives the
+;; expanded text instead — a marker never outlives its content.
 (ext/ui-add-autocomplete-provider api (fn [base-provider] wrapped-or-nil))
 (ext/ui-on-terminal-input api (fn [data] nil-or-{:consume true :data d}))
 (ext/ui-set-tools-expanded api true)   ; boolean shim: expanded? <=> mode :expanded

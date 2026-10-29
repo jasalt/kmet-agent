@@ -1367,10 +1367,12 @@ Exactly three component protocols, by design:
 accessors, so call sites never open-code the `satisfies?` + field-based
 fallback pair: the IEditorComponent members (`editor-get-text`,
 `editor-set-text!`, `editor-get-expanded-text`, `editor-add-to-history!`,
-`editor-insert-text-at-cursor!`, the `editor-set-*!` setters) and the
-IComponent verbs (`handle-input`, `invalidate`, `focused`, `set-focused!`),
-besides the one-frame `render` / `render-and-dispose` entries. App and mode
-code calls those — an editor accessor of its own is a duplicate.
+`editor-insert-text-at-cursor!`, the `editor-set-*!` setters), the content
+snapshot pair a swap or a dialog draft restore moves (`editor-get-content`,
+`editor-set-content!` — see §2.5's editor paragraph), and the IComponent verbs
+(`handle-input`, `invalidate`, `focused`, `set-focused!`), besides the
+one-frame `render` / `render-and-dispose` entries. App and mode code calls
+those — an editor accessor of its own is a duplicate.
 
 The package has one more protocol, outside the component model:
 `kmet.tui.terminal/ITerminal` — the lean platform seam every terminal
@@ -1487,7 +1489,16 @@ saving undo state, even when the replacement display text is unchanged. This
 keeps marker-like text literal when expanded content returns from an external
 editor or is restored programmatically. Undo/redo snapshots include the paste
 counter as well as the store so a subsequent paste cannot overwrite a restored
-entry. No separate expanded-text setter is needed.
+entry.
+
+Because that reset is right for literal text, a swap or a draft restore that
+must keep a collapsed paste moves a snapshot instead: `editor-get-content`
+records the display text with its bindings (an editor without a paste store
+contributes its expanded text), and `editor-set-content!` installs it — markers
+plus bindings on a target that keeps a paste store, expanded text on any other.
+The custom-editor swap (`set-editor-component`, both directions) and a
+`ui.custom` dialog's draft restore use the pair, so neither strands a marker
+without its content.
 
 Frame glyphs come from `kmet.tui.border` (§2.8), not from the components:
 `dynamic_border` and `editor` draw a rule, `markdown` its table, and the

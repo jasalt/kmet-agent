@@ -2,6 +2,7 @@
   "Rendering plumbing: the dock generation gate and widget-area reactivity, and the
    editor's submit ordering (submitValue clears before onSubmit)."
   (:require [clojure.test :as t :refer [deftest testing]]
+            [clojure.string :as str]
             [kmet.test-utils :as tu :refer [strip-ansi]]
             [kmet.tui.components.editor :as editor]
             [kmet.tui.hikap :as hiccup]
@@ -312,4 +313,74 @@
         (finally
           (commands/clear-commands!)
           (tu/clear-extension-wiring!))))))
+
+(deftest test-editor-content-survives-dialogs-and-swaps
+  (testing "a collapsed paste keeps its bindings across a ui-custom draft
+            restore and an editor-component swap: the marker is restored as a
+            marker and still expands to the pasted text, so the model never
+            receives the placeholder"
+    (commands/clear-commands!)
+    (let [ui (tui/create-tui nil)
+          ed (editor/make-editor)
+          ch (chat-history/make-chat-history)
+          fdp-instance (fdp/make-footer-data-provider)
+          cs (assoc (hs/core-state (hs/new-handle)
+                                   {:tui ui
+                                    :current-editor-atom (atom ed)
+                                    :editor ed
+                                    :chat-history ch
+                                    :footer-provider fdp-instance
+                                    :status-indicator (status-indicator/make-status-indicator)
+                                    :config cfg/default-config
+                                    :turn-running? false})
+                    :dock-stack (atom []))
+          pasted (str/join "\n" (repeat 15 "payload"))
+          submitted (atom nil)
+          close-ref (atom nil)
+          registry ((var ui-registry/build-extension-ui-registry)
+                    {:tui ui :cs cs}
+                    {:ftr {:extension-statuses-atom (atom {})}
+                     :ed ed
+                     :ch ch
+                     :fdp fdp-instance
+                     :widgets-above-atom (atom {})
+                     :widgets-below-atom (atom {})}
+                    nil)
+          paste! (fn [target]
+                   (tui/handle-input target (str "\u001b[200~" pasted "\u001b[201~"))
+                   (t/is (str/includes? (tui/editor-get-text target) "[paste #1")))
+          submit! (fn [target]
+                    (reset! submitted nil)
+                    (tui/handle-input target "\r")
+                    @submitted)]
+      (try
+        (tui/editor-set-on-submit! ed #(reset! submitted %))
+        (paste! ed)
+        (testing "a ui-custom dialog restores the draft with its bindings"
+          (extensions/ui-custom (fn [_tui _th _kb close]
+                                  (reset! close-ref close)
+                                  {:render (fn [_width] [""])})
+                                {})
+          (@close-ref nil)
+          (t/is (str/includes? (tui/editor-get-text ed) "[paste #1")
+                "the marker comes back as a marker")
+          (t/is (= pasted (submit! ed))))
+        (testing "a custom editor swap carries the bindings both ways"
+          (let [custom (editor/make-editor)]
+            (with-redefs [tui/tui-set-focus (fn [_ _] nil)
+                          tui/tui-request-render (fn [_] nil)]
+              ((:set-editor-component registry) (fn [_ _ _] custom))
+              (t/is (identical? custom @(:current-editor-atom cs)))
+              (t/is (str/includes? (tui/editor-get-text custom) "[paste #1")
+                    "the custom editor shows the marker")
+              (t/is (= pasted (submit! custom)) "and expands it on submit")
+              ((:set-editor-component registry) nil)
+              (t/is (identical? ed @(:current-editor-atom cs)))
+              (t/is (str/includes? (tui/editor-get-text ed) "[paste #1")
+                    "the default editor gets the marker back")
+              (t/is (= pasted (submit! ed)) "with its content still bound"))))
+        (finally
+          (commands/clear-commands!)
+          (tu/clear-extension-wiring!))))))
+
 
