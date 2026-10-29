@@ -44,9 +44,18 @@
    "\udb40\udd00"                      ;; VS supplement (U+E0100)
    "tab\tthen \u4e2d"])
 
+(def ^:private bmp-emoji-boundaries
+  "BMP edges of `wide-emoji-ranges` ±1 — the codes the arithmetic wide term
+   must widen exactly where `char-width' does (the astral emoji ranges are
+   covered by the walker side of the corpus)."
+  [0x2319 0x231A 0x231B 0x23E8 0x23E9 0x23ED 0x23EF 0x23F0 0x23F1
+   0x2692 0x2693 0x2694 0x26A0 0x26A1 0x26A2 0x2B1A 0x2B1B 0x2B1C
+   0x2B4F 0x2B50 0x2B51 0x2B54 0x2B55 0x2B56 0x27BE 0x27BF 0x27C0])
+
 (defn- boundary-chars
-  "Every range boundary ±1 in the walker's tables, plus ASCII and a couple of
-   astral code points — the randomised corpus the boundary check needs."
+  "Every range boundary ±1 in the walker's and the wide-arithmetic tables,
+   plus ASCII and a couple of astral code points — the randomised corpus the
+   boundary check needs."
   []
   (let [rs (concat [[0x2E80 0x9FFF] [0xAC00 0xD7AF] [0xFE30 0xFE4F]
                     [0xFF00 0xFF60] [0xFFE0 0xFFE6]]
@@ -54,7 +63,7 @@
                     [0xE0100 0xE01EF]])
         cps (for [[a b] rs d [-1 0 1]] (+ (if (zero? (rand-int 2)) a b) d))]
     (mapv (fn [cp] (String. (Character/toChars cp)))
-          (concat cps (map int "abcXY 019 \t\n\u0007")
+          (concat cps bmp-emoji-boundaries (map int "abcXY 019 \t\n\u0007")
                   [0x1F300 0x1F1E6 0x1F3FB 0x10000 0x20000]))))
 
 (t/deftest fast-path-agrees-with-the-walker
@@ -86,6 +95,30 @@
           (#'u/visible-width-plain "─── ⏺ ⎿ café … ───")
           (#'u/visible-width-plain "plain ascii")))
       (t/is (zero? @calls) "the arithmetic path handled both"))))
+
+(t/deftest wide-lines-skip-the-walker
+  (t/testing "BMP-wide text (CJK, Hangul, fullwidth, BMP emoji) is arithmetic"
+    (let [calls (atom 0)]
+      (with-redefs-fn {#'u/grapheme-width-plain (fn [& _] (swap! calls inc))}
+        (fn []
+          (doseq [s ["\u4e2d\u6587\u6df7\u5408 ascii"
+                     "\ud55c\uad6d\uc5b4 text"
+                     "\uff21\uff22\uff23"
+                     "\u231a\u231b \u26a1"]]
+            (t/is (pos? (u/visible-width s)) (str "width for " (pr-str s))))))
+      (t/is (zero? @calls) "no wide line entered the walker")))
+  (t/testing "sequence constructs and astral code points still walk"
+    (doseq [s ["\ud83c\uddef\ud83c\uddf5"          ;; regional-indicator flag
+               "\ud83d\udc68\u200d\ud83d\udc69"    ;; ZWJ chain
+               "\u23fa\ufe0f"                      ;; VS16
+               "\ud83d\ude80 rocket"               ;; astral emoji
+               "\u4e2d\u200d\ud83d\ude80"]]         ;; CJK + ZWJ + astral
+      (let [calls (atom 0)
+            orig (deref #'u/grapheme-width-plain)]
+        (with-redefs-fn {#'u/grapheme-width-plain
+                         (fn [& args] (swap! calls inc) (apply orig args))}
+          (fn [] (t/is (pos? (u/visible-width s)) (str "width for " (pr-str s)))))
+        (t/is (pos? @calls) (str "the walker decided " (pr-str s)))))))
 
 (def ^:private apply-sgr-code #'u/apply-sgr-code)
 (def ^:private reset-sgr-state #'u/reset-sgr-state)
