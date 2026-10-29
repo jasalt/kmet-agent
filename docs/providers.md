@@ -65,11 +65,6 @@ flows include:
 - OpenAI Codex through a browser PKCE loopback or device code.
 - Anthropic Claude Pro/Max through a browser PKCE loopback.
 - OpenRouter through a browser PKCE loopback (with a permanent key).
-- Command Code through its Studio browser hand-off (the `cmd login` flow: the
-  Studio issues an API key and redirects it to a localhost callback). Command
-  Code can expire a key server-side (`Your API key has expired`) and offers no
-  refresh token, so a login is the only renewal: re-run
-  `/login commandcode` when a key stops working.
 
 If a provider offers no OAuth flow, use its API-key environment variable or
 `/login` credential entry.
