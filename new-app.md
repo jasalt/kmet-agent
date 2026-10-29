@@ -3827,8 +3827,10 @@ landed.** The interactive front end went first because it is what the app
 is used through; 10a's table is invisible to a TUI user. Retirement followed as
 soon as it could be taken: its hard prerequisites were a complete 8 (the TUI
 reads a handle, so `session.driver`'s engine path could go — T-4 took the last
-TUI call out) and 10a (kmet1's rpc modes were deleted by 11, and kmet2 must
-already answer the whole `docs/rpc.md` table, or the protocol regresses). 9's
+TUI call out; the engine itself was retired from `src` afterwards and now lives
+in the test tree as `kmet.app.session.test-engine`) and 10a (kmet1's rpc modes
+were deleted by 11, and kmet2 must already answer the whole `docs/rpc.md` table,
+or the protocol regresses). 9's
 isolation seams landed after the rename pass, which kept that pass out of the
 files 9 would touch. 10b and 10c were kmet2's own boundary and transport work —
 the old app has no server to compare against — and 10c closed them.

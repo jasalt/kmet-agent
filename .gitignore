@@ -33,12 +33,16 @@ dist/
 *.swo
 *~
 .#*
+*.bak
+*.orig
+*.rej
 
 # OS
 .DS_Store
 Thumbs.db
 
 # Logs
+/logs/
 *.log
 /.clj-kondo/.cache/
 

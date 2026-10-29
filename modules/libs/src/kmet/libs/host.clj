@@ -13,7 +13,8 @@
    on Jolt, so the isNaN/isInfinite statics compose it portably; stdout-tty?
    papers over Jolt's permanently-nil System/console with the native OS
    check."
-  (:require [babashka.fs :as fs]))
+  (:require [babashka.fs :as fs]
+            [kmet.libs.log :as log]))
 
 (defn jolt?
   "True on the Jolt host: jolt defines clojure.core/*jolt-version*;
@@ -58,10 +59,7 @@
      (try
        ((requiring-resolve 'kmet.libs.host-native/stdout-tty?))
        (catch Exception e
-         (try
-           ((requiring-resolve 'kmet.app.debug/log)
-            "host: stdout-tty? native check failed: " (ex-message e))
-           (catch Throwable _ nil))
+         (log/log! "host: stdout-tty? native check failed: " (ex-message e))
          false)))
     (some? (System/console))))
 

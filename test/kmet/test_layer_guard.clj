@@ -8,10 +8,13 @@
    The `ui` module merged into `app`, so the split is a path rule here rather
    than a module rank: both trees live under `modules/app/src`. Its subject is
    the app source tree, not one module's tests, so it lives beside the other
-   cross-cutting guards."
+   cross-cutting guards. One more rule is global: no module source may require
+   the retired `kmet.app.session.driver` (its bare-engine fixture is
+   `kmet.app.session.test-engine` in the test tree)."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [clojure.string :as str]
             [babashka.fs :as fs]
+            [kmet.tasks.modules :as kmod]
             [kmet.tasks.source-reader :as sr]))
 
 (defn- slash
@@ -142,6 +145,20 @@
    {:scope :ui
     :prefixes ["kmet.app.session.driver"]
     :why "the UI layer reads the engine; the driver starts work, and a mode owns a run"}])
+
+(deftest the-retired-session-engine-is-not-required
+  (testing "kmet.app.session.driver was retired to the test fixture
+            kmet.app.session.test-engine; the production require must not
+            come back"
+    (let [files (->> (kmod/modules)
+                     (mapcat (fn [{:keys [src]}] (source-files-under src)))
+                     sort)
+          offenders (for [f files
+                          :when (some #{"kmet.app.session.driver"} (required-kmet f))]
+                      f)]
+      (is (seq files) "no module sources scanned — check the manifest")
+      (is (empty? offenders)
+          (str "src namespaces require the retired engine: " (vec offenders))))))
 
 (deftest front-ends-drive-the-runtime-not-the-loop
   (testing "modes and app UI reach the engine through the session runtime"

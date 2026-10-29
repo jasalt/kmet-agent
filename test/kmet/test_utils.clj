@@ -9,7 +9,7 @@
             [kmet.app.registries :as registries]
             [kmet.app.registry :as registry]
             [kmet.app.runtime :as runtime]
-            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.test-engine :as session-driver]
             [kmet.app.session.lifecycle :as lifecycle]
             [kmet.app.session.runtime :as rt]
             [kmet.app.skills :as skills]

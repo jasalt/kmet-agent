@@ -492,6 +492,17 @@
                 ns-syms)]
     (run-and-summarize {:vars vars :unloaded unloaded} false)))
 
+(defn- isolate-diagnostics!
+  "Point the app's diagnostics logs at target/test-logs for this run: a test
+   that reports an unhandled error must not append to the checkout's `logs/`.
+   `kmet.app.debug` reads the system property before its own defaults, so no
+   app namespace has to load here. A host that cannot set a property keeps
+   the default."
+  []
+  (try
+    (System/setProperty "kmet.log.dir" "target/test-logs")
+    (catch Throwable _ nil)))
+
 (defn run-changed!
   "Run the test namespaces the changed files affect (kmet.tasks.changed), with
    SLOW? selecting ^:slow vs non-slow vars — the shared body of
@@ -500,6 +511,7 @@
    Prints the nothing-to-run line and exits 0 when no test namespace is
    affected."
   [slow?]
+  (isolate-diagnostics!)
   (let [nss ((requiring-resolve 'kmet.tasks.changed/affected-test-nss))]
     (if (seq nss)
       (run-ns-syms nss slow?)
@@ -528,6 +540,7 @@
    JVM; var filters ignore bb-only too, so an explicit request runs and
    reports the underlying ::bb-only error."
   [slow? & args]
+  (isolate-diagnostics!)
   (let [slow? (slow-flag slow?)
         args (vec args)]
     (if (= "--changed" (first args))

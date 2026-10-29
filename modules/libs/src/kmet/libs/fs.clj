@@ -21,7 +21,8 @@
    publish steps are therefore retried on a short ladder before the write
    is allowed to fail."
   (:require [clojure.java.io :as io]
-            [babashka.fs :as fs]))
+            [babashka.fs :as fs]
+            [kmet.libs.log :as log]))
 
 (def ^:private write-retry-delays-ms
   "Backoff before each retried write (5 retries, ~0.8s in total): long
@@ -30,13 +31,11 @@
   [25 50 100 200 400])
 
 (defn- log-retry!
-  "Best-effort debug line. Resolved at call time, not required: the lib
-   stays free of kmet.* requires (see kmet.libs.test-self-contained), the
-   convention kmet.libs.concurrent/spawn follows."
+  "Best-effort debug line through the host's logger sink (see
+   `kmet.libs.log`): the lib stays free of kmet.* requires
+   (kmet.libs.test-self-contained)."
   [what err]
-  (try
-    ((requiring-resolve 'kmet.app.debug/log) "fs: retrying " what " after: " (ex-message err))
-    (catch Throwable _ nil)))
+  (log/log! "fs: retrying " what " after: " (ex-message err)))
 
 (defn- retry-write!
   "Run F, retrying while it throws and delays remain from DELAYS (default

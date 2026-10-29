@@ -84,10 +84,10 @@
     "The per-path mutation tails (key → the promise the last section holding it delivers). Defonce because a reload must not empty the map while a lock is held: the next caller of that path would run alongside the holder. The paths are a process's, not a run's — two runs' tools can name one file."}
 
    "modules/app/src/kmet/app/debug.clj"
-   {'log-path
-    "The debug log's path, set by the entry from `--debug`. A path, not per-agent state."
-    'error-path
-    "The error log's path. Always written; one file per process."
+   {'write-lock
+    "The one lock every diagnostics write takes: the debug and error files are written from the loop's thread, tool threads and the TUI, and a line must never interleave with a rotation."
+    'write-failure-reported?
+    "The one-shot guard behind the stderr report for an unwritable log path: the first failure is reported, later ones stay quiet so a full disk does not turn every log call into another error line."
     'debug-enabled
     "The `--debug` switch — the process's command line, and one place owns it (the session loader's diagnostic reads it through this namespace)."}
 

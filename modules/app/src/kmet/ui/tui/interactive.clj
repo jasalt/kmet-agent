@@ -285,9 +285,9 @@
                              path (session/resolve-session-path (:session opts) base-dir)]
                          (if path
                            (session/load-session path)
-                           (do (binding [*out* *err*]
-                                 (println (str "No session found matching '" (:session opts) "'")))
-                               (System/exit 1))))
+                           (throw (ex-info (str "No session found matching '" (:session opts) "'")
+                                           {:type :kmet.app/unknown-session
+                                            :session (:session opts)}))))
                        (:resume opts) nil
                        (:continue opts) (if-let [path (state/find-session config)]
                                          ;; find-session returns the session

@@ -28,7 +28,7 @@
             [kmet.libs.terminal-image :as timg]
             [kmet.app.session.core :as session]
             [kmet.app.session.export :as session-export]
-            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.test-engine :as session-driver]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.skills :as skills]
             [kmet.ui.tui.footer-data-provider :as fdp]

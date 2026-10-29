@@ -9,7 +9,7 @@
             [kmet.app.registry :as registry]
             [kmet.srce.core :as srce]
             [kmet.app.session.core :as session]
-            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.test-engine :as session-driver]
             [kmet.app.loop.test-support :as loop-support]
             [kmet.test-utils :as tu]))
 

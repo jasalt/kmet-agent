@@ -3,7 +3,8 @@
    package and whitelisted wholesale into extension SCI contexts:
 
    - self-contained: no requires outside kmet.libs.* (app, tui, modes, ai are
-     forbidden; sibling libs like kmet.libs.yaml are allowed)
+     forbidden; sibling libs like kmet.libs.yaml are allowed), statically or
+     through a literal `(requiring-resolve 'kmet.…)`
    - sandbox-safe: no static-field reference in any code a sandbox runs. SCI
      has static-method access but no static-field access, so a `Class/FIELD`
      inside a function body is a crash in every extension. A top-level `def`
@@ -63,6 +64,29 @@
       (let [v (node/sexpr head)]
         (when (symbol? v) v)))))
 
+(defn- quoted-symbol
+  "The symbol a resolution argument names: `'sym` parses as `(quote sym)`."
+  [form]
+  (let [form (if (and (seq? form) (= 'quote (first form))) (second form) form)]
+    (when (symbol? form) form)))
+
+(defn- requiring-resolve-targets
+  "The `kmet.*` symbols PATH names in a literal `(requiring-resolve 'sym)`.
+
+   The ns-form scan above cannot see a runtime resolution, and the rank guard
+   only reads `:require`. A library that reaches an upper layer this way is
+   still coupled — and the self-containment claim would be false."
+  [path]
+  (->> (parser/parse-string-all (slurp path))
+       (tree-seq node/inner? node/children)
+       (keep (fn [n]
+               (when (= :list (node/tag n))
+                 (let [form (node/sexpr n)]
+                   (when (and (seq? form) (= 'requiring-resolve (first form)))
+                     (let [v (quoted-symbol (second form))]
+                       (when (and v (str/starts-with? (str v) "kmet."))
+                         v)))))))
+       distinct))
 (defn- field-refs
   "The static-field symbols in NODE. ENFORCE? is false inside a top-level `def`
    initializer — that code runs on the host, once, at load, and the sandbox
@@ -121,6 +145,17 @@
     (let [deps (kmet-requires f)]
       (is (empty? deps)
           (str f " must not require kmet.* namespaces, found: " (vec deps))))))
+
+(deftest libs-do-not-resolve-upward-at-runtime
+  ;; A literal `(requiring-resolve 'kmet.app.…)` is the same upward edge as a
+  ;; `:require` the ns-form scan forbids — and the rank guard cannot see it.
+  (doseq [f (lib-files)
+          :let [targets (remove #(str/starts-with? (str %) "kmet.libs.")
+                                (requiring-resolve-targets f))]]
+    (is (empty? targets)
+        (str f " resolves an upper-layer namespace at runtime: " (vec targets)
+             " — install the host sink (kmet.libs.log) or return the value,"
+             " never require upward"))))
 
 (deftest the-queue-runs-inside-a-sandbox
   ;; the static-field rule above is checked at the source; this is the executable

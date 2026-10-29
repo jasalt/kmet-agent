@@ -209,9 +209,9 @@
    Keys:
      :session  — a thunk returning the run's live session (a session switch
                  replaces the record behind it)
-     :runtime  — the runtime capabilities this agent answers (see
-                 `runtime-capabilities` in `kmet.app.session.driver`); a
-                 missing key falls back to the process binding
+     :runtime  — the runtime capabilities this agent answers (the handle's
+                 `extension-runtime` in `kmet.app.loop.driver`); a missing
+                 key falls back to the process binding
      :context  — a thunk of the ExtensionContext keys the run owns (:model,
                  :scoped-models, :thinking-level, :cwd, :is-idle, :abort,
                  :compact, ...), merged over the front end's `:build-context`
@@ -662,11 +662,11 @@
 
 ;; ─── Runtime capabilities (pi: bindCore) ───────────────────────────────────
 ;;
-;; Agent control the runtime owns for every front end — the runtime installs
-;; it at bootstrap (session-runtime/runtime-capabilities) and clears it at
-;; dispose!; the front end's UI port is a separate binding above. These are
-;; the capabilities that must work headless: an extension sends a message or
-;; switches the model in print/json mode just as in the TUI.
+;; Agent control the runtime owns for every front end — a handle binds it for
+;; its run (`kmet.app.loop.driver`), and the process binding is the fallback
+;; for a call outside a run; the front end's UI port is a separate binding
+;; above. These are the capabilities that must work headless: an extension
+;; sends a message or switches the model in print/json mode just as in the TUI.
 
 (defn bind-runtime-capabilities!
   "Install the runtime-owned extension capabilities (pi: bindCore):
@@ -706,8 +706,8 @@
 
 (def request-pending
   "Port return marker: the request was forwarded to an asynchronous client
-   (or an in-process dialog that has not resolved yet) and is answered
-   later with kmet.app.session.driver/respond!."
+   (or an in-process dialog that has not resolved yet) and is answered later
+   by the front end's request/respond pair."
   ::pending)
 
 (defn ui-request-default
@@ -757,7 +757,10 @@
    :has-pending-messages (fn [] false)
    :signal (fn [] nil)
    :abort (fn [] nil)
-   :shutdown (fn [] (System/exit 0))
+   ;; Degraded rather than inert: a headless process has no terminal to stop
+   ;; (the TUI installs its own shutdown over this map), and a library must not
+   ;; end the process. The entry owns the exit code.
+   :shutdown (fn [] nil)
    :get-context-usage (fn [] nil)
    :compact (fn [& _] nil)
    :get-system-prompt (fn [] nil)

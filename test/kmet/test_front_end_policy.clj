@@ -8,14 +8,14 @@
    failing anything. This holds the wiring the way `kmet.test-seam-requires`
    holds the edges: statically, per call site.
 
-   Both rules are about the handle front ends, which is what a front end is
-   since landing 8: the layout loads the process's resources before it creates
-   its agent and names that call, the driver names the expansion chain the
-   engine applies, and neither the TUI nor the interactive cluster requires
-   `kmet.app.session.driver` — they read a handle and the shared lifecycle.
-   The require graph has no edge from here to the front ends, so this runs in
-   the full suite (`bb test`), not in the changed-file loop of a front-end
-   edit."
+   The handle front ends are what a front end is since landing 8: the layout
+   loads the process's resources before it creates its agent and names that
+   call, the driver names the expansion chain the engine applies, and neither
+   the TUI nor the interactive cluster requires the retired
+   `kmet.app.session.driver` (now the test fixture `kmet.app.session.test-engine`)
+   — they read a handle and the shared lifecycle. The require graph has no edge
+   from here to the front ends, so this runs in the full suite (`bb test`), not
+   in the changed-file loop of a front-end edit."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -53,7 +53,7 @@
   ["modules/app/src/kmet/ui/tui.clj"
    "modules/app/src/kmet/ui/tui"])
 
-(t/deftest the-tui-reads-a-handle-and-not-kmet1s-session-driver
+(t/deftest the-tui-reads-a-handle-and-not-the-retired-engine
   (let [files (->> (mapcat (fn [root]
                              (if (fs/directory? root)
                                (map str (fs/glob root "**.clj"))
@@ -68,9 +68,9 @@
           "and the interactive cluster is scanned")
     (doseq [path files]
       (t/is (not (contains? (ns-requires path) 'kmet.app.session.driver))
-            (str path " requires kmet1's session driver — the TUI reads a"
-                 " handle and the shared lifecycle, not the engine constructor"
-                 " that dies with kmet1's entry (T-4)")))))
+            (str path " requires the retired engine (now"
+                 " kmet.app.session.test-engine in the test tree) — the TUI"
+                 " reads a handle and the shared lifecycle")))))
 
 (t/deftest a-handle-front-end-names-its-half-of-the-resource-policy
   (doseq [[path value] handle-front-ends]

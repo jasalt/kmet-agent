@@ -391,7 +391,7 @@
   (println "Options:")
   (println "  --profile <name>   Composition profile: tui (default), print, rpc, server
                      (see docs/profiles.md)")
-  (println "  -d, --debug        Log to kmet-debug.log")
+  (println "  -d, --debug        Log diagnostics to logs/kmet-debug.log")
   (println "  --list-models [search]  List available models (optional fuzzy search)")
   (println "  --generate-models  Fetch provider and image-model catalogs into ~/.kmet/agent/ and exit")
   (println "  -p, --print        Run one prompt and exit (--mode text)")

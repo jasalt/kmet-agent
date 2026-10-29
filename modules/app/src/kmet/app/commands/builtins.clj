@@ -1,6 +1,6 @@
 (ns kmet.app.commands.builtins
-  "Engine-portable builtin slash commands: they run
-   against the command ctx's :runtime and the shared command-UI
+  "Engine-portable builtin slash commands: they run against the command
+   ctx's :runtime — a front end's agent handle — and the shared command-UI
    capabilities (:message, :info, :warning, :set-title), so any front end
    can dispatch them. The interactive mode registers its view-bound
    commands itself (kmet.ui.tui.interactive.builtins)."
@@ -10,7 +10,6 @@
             [kmet.app.loop.state :as loop-state]
             [kmet.app.session.core :as session]
             [kmet.app.session.export :as session-export]
-            [kmet.app.session.driver :as session-driver]
             [kmet.app.session.runtime :as runtime]
             [kmet.app.inspect :as inspect]))
 
@@ -42,12 +41,12 @@
 
       :else
       (do (debug/log "/continue command")
-          ;; A handle owns the run (kmet2): its :send! starts with no message,
-          ;; which is what /continue means. A bare engine (kmet1's modes) has
-          ;; no :send! and starts through the session driver.
+          ;; The handle's :send! starts with no message, which is what
+          ;; /continue means. A front end always hands its commands a handle;
+          ;; without one there is no run to continue.
           (if-let [send! (:send! engine)]
             (send! nil {:target :next-turn})
-            (session-driver/prompt! engine {}))))))
+            (out ui :warning "This front end cannot continue the session."))))))
 
 (defn- handle-name
   [{:keys [ui] engine :runtime} args]
@@ -101,25 +100,24 @@
                                     ;; nothing-to-compact.
                                     (out ui :info "Compact" (if result
                                                               "Session compacted."
-                                                              "Nothing to compact (session too small)."))))}
-        ;; a handle answers the op (kmet2); a bare engine goes through the
-        ;; driver (kmet1's modes)
-        outcome (if-let [request (:request-compaction! engine)]
-                  (request instructions callbacks)
-                  (session-driver/request-compaction! engine instructions callbacks))]
-    (case outcome
-      ;; A run in flight defers the compaction (kmet's cancel is cooperative,
-      ;; so compacting under a live run would race it — pi instead aborts the
-      ;; run first).
-      :scheduled
-      (out ui :info "Compact"
-           "Compaction scheduled — it will run when the current response finishes.")
+                                                              "Nothing to compact (session too small)."))))}]
+    ;; A front end always hands its commands a handle; the handle owns the
+    ;; deferred-compaction queue a running prompt fills.
+    (if-let [request (:request-compaction! engine)]
+      (case (request instructions callbacks)
+        ;; A run in flight defers the compaction (kmet's cancel is cooperative,
+        ;; so compacting under a live run would race it — pi instead aborts the
+        ;; run first).
+        :scheduled
+        (out ui :info "Compact"
+             "Compaction scheduled — it will run when the current response finishes.")
 
-      :compacting
-      (out ui :info "Compact" "Compaction already in progress.")
+        :compacting
+        (out ui :info "Compact" "Compaction already in progress.")
 
-      ;; :started — the completion reply arrives through :on-complete
-      nil)))
+        ;; :started — the completion reply arrives through :on-complete
+        nil)
+      (out ui :warning "This front end cannot compact the session."))))
 
 (defn- handle-units
   "Show the process's unit tree: one flat line per ctx and per mounted fiber,

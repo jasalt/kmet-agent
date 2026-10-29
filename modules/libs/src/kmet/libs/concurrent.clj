@@ -30,23 +30,21 @@
    (`future-call`, `future-cancel`, …) plus `pmap`/`pcalls` for
    consistency. Keeping extensions on an explicit daemon `Thread` makes
    the lifecycle obvious and keeps unload/reload clean. If a nicer
-   primitive is needed later, expose exactly this `spawn` — not `future`.")
+   primitive is needed later, expose exactly this `spawn` — not `future`."
+  (:require [kmet.libs.log :as log]))
 
 (defn spawn
   "Start a daemon thread running `(f)` — the extension-SCI replacement
    for `future` (which is not available in extension contexts).
 
-   Exceptions in `f` are logged via `kmet.app.debug/log` and otherwise
-   swallowed (extension background work must never kill the host).
+   Exceptions in `f` are logged through `kmet.libs.log` (installed by the
+   host's diagnostics switch) and otherwise swallowed (extension background
+   work must never kill the host).
    Returns the `Thread` (already started, daemon=true)
    so callers that need to `.interrupt` / `.join` it can."
   [f]
   (let [t (Thread. (fn [] (try (f) (catch Throwable e
-                                     (try
-                                       (requiring-resolve 'kmet.app.debug/log)
-                                       (when-let [log-fn (resolve 'kmet.app.debug/log)]
-                                         (log-fn "spawn failed" e))
-                                       (catch Throwable _ nil))))))]
+                                     (log/log! "spawn failed" e)))))]
     (.setDaemon t true)
     (.start t)
     t))

@@ -33,7 +33,7 @@
   [{:label "build output" :paths ["target" "dist" "extensions/*/target"]}
    {:label "caches"
     :paths [".cpcache" ".jolt" ".clj-kondo/.cache" ".clj-kondo/imports"]}
-   {:label "logs" :paths ["*.log"]}
+   {:label "logs" :paths ["logs" "*.log"]}
    {:label "dev state" :paths [".kmet-changed-baseline"]}])
 
 (defn- hr-size
@@ -166,7 +166,7 @@
    Remove what this project's toolchain and test suite leave behind:
      build output   target/  dist/  extensions/*/target/
      caches         .cpcache/  .jolt/  .clj-kondo/{.cache,imports}/
-     logs           *.log
+     logs           logs/  *.log
      dev state      .kmet-changed-baseline
    Source and anything else git tracks is never touched, nor is .kmet/ or
    .lsp/ (user configuration). --dry-run lists without removing.")

@@ -1,11 +1,19 @@
-(ns kmet.app.session.driver
-  "The session driver: what builds an engine and runs it.
+(ns kmet.app.session.test-engine
+  "The bare session-engine fixture for the tests that drive the
+   kmet1-shaped `Engine` directly.
+
+   Production has one engine path: a front end creates an agent through
+   `:agents` and drives the handle (`kmet.app.loop.driver`). This namespace
+   is what remains of `kmet.app.session.driver` after that path retired — it
+   stays in the test tree so the session-layer tests that exercise the
+   Engine's operations (prompt/steering, cancellation, session switching,
+   compaction dispatch, disposal) keep their subject without shipping a
+   second engine in `src`.
 
    `bootstrap` constructs the engine (agent state, session, config-derived run
    options, system prompt, extension runtime handle) and the operations here
-   drive it: prompts and steering, cancellation, session switching, compaction
-   dispatch, extension commands, and disposal. The value itself — and what a
-   front end may read — is `kmet.app.session.runtime`, one rank below this.
+   drive it. The value itself — and what a front end may read — is
+   `kmet.app.session.runtime`.
 
    Design rules:
 

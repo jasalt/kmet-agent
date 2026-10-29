@@ -3,11 +3,12 @@
    and writes through.
 
    An `Engine` holds the agent state, the session, the config-derived run
-   options and the front end's callbacks. `kmet.app.session.driver` builds one
-   (`bootstrap`) and runs it — prompts, turns, session switching, compaction,
-   disposal — and this namespace is what the drivers and the front ends above
-   them read: the session and its cwd, the model and thinking level, the run
-   options, the queues, the turn flag.
+   options and the front end's callbacks. Production builds one through the
+   agent factory (`kmet.app.loop.driver`'s handle), and the tests that drive
+   the bare Engine construct it with `kmet.app.session.test-engine/bootstrap`
+   (the retired driver, kept in the test tree). This namespace is what the
+   drivers and the front ends read: the session and its cwd, the model and
+   thinking level, the run options, the queues, the turn flag.
 
    Everything here works on the value and the app's services; nothing here starts
    work. That is what lets the UI layer require it: a front end reads an engine

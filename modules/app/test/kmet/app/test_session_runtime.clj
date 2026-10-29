@@ -13,7 +13,7 @@
             [kmet.app.prompts :as prompts]
             [kmet.app.session.core :as session]
             [kmet.app.skills :as skills]
-            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.test-engine :as session-driver]
             [kmet.app.session.runtime :as rt]
             [kmet.app.tools.invoke :as invoke]
             [kmet.app.tools.registry :as tools-reg]

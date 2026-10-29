@@ -9,7 +9,7 @@
             [kmet.app.extensions.core :as extensions]
             [kmet.app.loop :as agent]
             [kmet.app.session.core :as session]
-            [kmet.app.session.driver :as session-driver]
+            [kmet.app.session.test-engine :as session-driver]
             [kmet.app.config :as cfg]
             [kmet.srce.core :as srce]
             [kmet.test-utils :as tu]))

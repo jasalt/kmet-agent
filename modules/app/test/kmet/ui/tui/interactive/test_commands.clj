@@ -27,7 +27,6 @@
             [kmet.app.session.runtime :as runtime]
             [kmet.srce.core :as srce]
             [kmet.ui.tui.interactive.test-handle-support :as hs]
-            [kmet.app.session.driver :as session-driver]
             [kmet.app.config :as cfg]
             [kmet.libs.concurrent :as concurrent]
             [kmet.ui.tui.interactive.test-support :as support]))
@@ -315,9 +314,8 @@
       (t/is (= "No conversation to continue." (:content @msg))))))
 
 (deftest test-continue-starts-through-the-handle
-  (testing "/continue starts through the handle's :send! when the runtime is a
-            handle (kmet2) and through the session driver on a bare engine
-            (kmet1's modes) — the table is shared"
+  (testing "/continue starts through the handle's :send!; without one the
+            command reports that this front end cannot continue"
     (commands/clear-commands!)
     ((var builtins/register-builtin-commands!) cfg/default-config)
     (let [handle* (hs/new-handle)
@@ -332,11 +330,12 @@
          (assoc (support/command-ctx cs) :runtime handle) "")
         (t/is (= [nil {:target :next-turn}] @sent)
               "the handle's send starts a message-less run"))
-      (let [prompted (atom nil)]
-        (with-redefs [session-driver/prompt! (fn [_ opts] (reset! prompted opts))]
+      (let [warned (atom nil)]
+        (with-redefs [chat-history/show-warning! (fn [_ m] (reset! warned m))]
           ((:handler (commands/find-command "continue"))
            (assoc (support/command-ctx cs) :runtime (dissoc engine :send!)) ""))
-        (t/is (= {} @prompted) "a bare engine keeps kmet1's path")))))
+        (t/is (= "This front end cannot continue the session." @warned)
+              "an engine without :send! is reported, not run through a driver")))))
 
 (deftest test-compact-schedules-while-running
   (testing "/compact schedules while a run is active even when the status atom

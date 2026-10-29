@@ -1,15 +1,16 @@
 (ns kmet.app.session.submission
-  "The front end's submission chain, below both drivers.
+  "The front end's submission chain, below the drivers.
 
    pi: `session.prompt`'s input event — a submitted text runs the extension
    input hooks, expands (the front end's skill/template chain), and then either
    steers a running turn or starts one; while a compaction runs it queues
-   instead. The chain is one implementation because kmet1's engine and a handle
-   answer the same way; what differs is *how* a delivery happens, so that is
-   the parameter (`:deliver!` for a submit, `:start!` for a queue flush).
+   instead. The chain is one implementation because a handle and the retired
+   engine (the test fixture) answer the same way; what differs is *how* a
+   delivery happens, so that is the parameter (`:deliver!` for a submit,
+   `:start!` for a queue flush).
  
-   Nothing here requires `kmet.app.session.driver` or the loop driver: the
-   driver and the handle both call it, and it must stay below both."
+   Nothing here requires `kmet.app.loop.driver` or the test engine: both call
+   it, and it must stay below both."
   (:require [clojure.string :as str]
             [kmet.app.commands :as commands]
             [kmet.app.debug :as debug]

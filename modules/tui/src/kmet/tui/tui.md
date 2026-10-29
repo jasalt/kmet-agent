@@ -1014,7 +1014,7 @@ any future surface stack should too.
   unwind. The close order is contractual: leave first, then dispose. A
   `dispose!` that finds the component still mounted removes it first (the
   UI can never render a corpse), records the violation in
-  `kmet-error.log`, and throws under `--debug`. Never call
+  `kmet-error.log` (in `logs/`), and throws under `--debug`. Never call
   `protocols/dispose` (or `dispose-tree!`) directly on a stacked surface.
 - **Focus follows the stack.** A watch on the stack — not each close
   path — restores input when the focused component leaves: to the new
@@ -1632,8 +1632,8 @@ per run.
 |---|---|
 | `kmet-crash.log` | a rendered line exceeds the terminal width — dumps all rendered lines with visible widths + the offending index; the frame truncates the line and keeps running |
 | `kmet-render-crash.log` | a render body threw — full stack trace, then the TUI stops (loud-crash contract, §2.5) |
-| `kmet-debug.log` | opt-in via `--debug`: lifecycle events (submit, cancel, agent turns) and the exit survivor report (live components/reactions/armed timers, §5.1) |
-| `kmet-error.log` | unhandled top-level exceptions |
+| `kmet-debug.log` | opt-in via `--debug`: lifecycle events (submit, cancel, agent turns) and the exit survivor report (live components/reactions/armed timers, §5.1); in `logs/` under the process cwd, size-capped |
+| `kmet-error.log` | unhandled top-level exceptions; in `logs/` under the process cwd, size-capped |
 
 ### Output + input traces (env flags)
 

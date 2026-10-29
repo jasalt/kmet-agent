@@ -54,8 +54,10 @@
       (touch! root "extensions/foo/target/x.jar")
       (touch! root "extensions/bar/README.md")
       (touch! root "kmet-debug.log")
+      (touch! root "logs/kmet-debug.log")
       (testing "a literal is the path itself, when it exists"
         (is (= [(str (fs/path root "target"))] (@expand root "target")))
+        (is (= [(str (fs/path root "logs"))] (@expand root "logs")))
         (is (= [] (@expand root "dist"))))
       (testing "a glob finds every hit, hidden directories included"
         (is (= [(str (fs/path root "extensions/foo/target"))]
@@ -76,6 +78,7 @@
         gone ["target/uberjar-bb.jar" "target/bb-lint/src/a.clj" "dist/kmet-bin"
               "extensions/foo/target/x.jar" ".cpcache/basis" ".jolt/cpcache/k.edn"
               ".clj-kondo/.cache/analysis" "kmet-debug.log" "kmet-error.log"
+              "logs/kmet-debug.log" "logs/kmet-error.log"
               ".kmet-changed-baseline"]
         kept ["src/kmet/core.clj" ".clj-kondo/config.edn" ".kmet/settings.edn"
               ".kmet/prompts/test.md" ".lsp/settings.edn" "target-ish.txt"]]
@@ -85,7 +88,7 @@
         (testing "every artifact is removed"
           (is (every? #(not (exists-under? root %)) gone))
           (is (= #{"target" "dist" "extensions/foo/target" ".cpcache" ".jolt"
-                   ".clj-kondo/.cache" "kmet-debug.log" "kmet-error.log"
+                   ".clj-kondo/.cache" "kmet-debug.log" "kmet-error.log" "logs"
                    ".kmet-changed-baseline"}
                  (set removed))))
         (testing "source, config and user state stay"
@@ -94,7 +97,7 @@
         (testing "the report names each removal and the total"
           (is (str/includes? out "clean: removed target"))
           (is (str/includes? out "clean: removed .clj-kondo/.cache"))
-          (is (str/includes? out "clean: 9 path(s) removed"))
+          (is (str/includes? out "clean: 10 path(s) removed"))
           (is (pos? bytes))
           (is (false? dry-run?))))
       (finally (fs/delete-tree root)))))

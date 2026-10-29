@@ -718,7 +718,9 @@ from the keyword. A runtime is dropped when its last fiber unloads, so a later
 The kernel writes nothing to stdout. `(srce/log! ctx level & args)` resolves
 `:logger` and calls it; absent means silent. The composition's `:logger` row
 (`kmet.app.debug/plugin`) provides `kmet.app.debug/logger`: an `:error` always
-writes `kmet-error.log`, the other levels follow `--debug`.
+writes the diagnostics error log (`logs/kmet-error.log` under the process cwd
+unless `KMET_LOG_DIR` names another directory), the other levels follow
+`--debug`.
 
 `kmet.srce.*` may require only rank-0 code — in practice `kmet.libs.*` and, for
 source resolution, `kmet.loader.*` — plus third-party code, so the kernel

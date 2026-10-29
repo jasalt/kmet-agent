@@ -91,8 +91,9 @@ kmet/app/
 ├── session/            — the log (core, store, listing, context, stats, tree,
 │                         schema, export, backend), the runtime
 │                         (`runtime.clj`: state, lifecycle, submission chain,
-│                         queues, compaction, subscribers), the shared
-│                         lifecycle and the driver (an engine over both)
+│                         queues, compaction, subscribers), and the shared
+│                         lifecycle (the bare-engine fixture retired to the
+│                         test tree)
 ├── loop/               — the agent loop: message, state, completion,
 │                         tool_exec, the stages, and `driver.clj`/`stages.clj`
 ├── compaction/         — the compaction subsystem (`core`, `stage`)
@@ -261,10 +262,10 @@ front end:
   (`new-session!`, `resume!`, `fork!`, `clone!`, `switch-session!`), the
   submission chain, the steer/follow-up queues, compaction (a manual request
   arriving mid-turn is deferred until the turn settles —
-  `request-compaction!`), and the extension runtime handle. Front ends call
-  `bootstrap` once and drive the engine through its operations: the TUI keeps
-  its `CoreState` view state plus the engine, and print/RPC modes construct
-  no agent state at all.
+  `request-compaction!`), and the extension runtime handle. Front ends create
+  an agent through `:agents` and drive its handle through the runtime's
+  operations: the TUI keeps its `CoreState` view state plus the handle, and
+  print/RPC modes construct no agent state at all.
   The front ends (the mode rows and `kmet.ui.**`) use the runtime's front-end
   surface only — they never require `kmet.app.loop` or the driver — and
   `kmet.test-layer-guard` enforces that boundary.
