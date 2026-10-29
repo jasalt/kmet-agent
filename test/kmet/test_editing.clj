@@ -7,6 +7,24 @@
 ;; BreakIterator works on Java char indices, not byte offsets.
 ;; "中文" is 2 chars (not 6 bytes) in Java's UTF-16.
 
+(t/deftest test-paste-marker-grammar
+  (doseq [suffix ["" " +15 lines" " 1200 chars"]
+          hint ["" " — ctrl+o to expand"]]
+    (let [marker (str "[paste #1" suffix hint "]")
+          line (str "before " marker " after")]
+      (t/is (= [{:id 1 :start 7 :end (+ 7 (count marker))}]
+               (edit/find-paste-markers-in-line line)))
+      (t/is (= "before payload after" (edit/expand-paste-markers-in-line line {1 "payload"})))))
+  (doseq [literal ["[paste #1oops]" "[paste #01]" "[paste #1 then "
+                   "[paste #1 +3 frogs]" "[paste #1 3 lines]"
+                   "[paste #1 +3 lines — wrong hint]"
+                   "[paste #999999999999999999999999999999]"]]
+    (let [line (str literal "[paste #2]")]
+      (t/is (= [{:id 2 :start (count literal) :end (count line)}]
+               (edit/find-paste-markers-in-line line)))
+      (t/is (= (str literal "second")
+               (edit/expand-paste-markers-in-line line {1 "first" 2 "second"}))))))
+
 (t/deftest test-grapheme-left
   (t/is (= 0 (edit/grapheme-left "" 0)))
   (t/is (= 0 (edit/grapheme-left "abc" 0)))

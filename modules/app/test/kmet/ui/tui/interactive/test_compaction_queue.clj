@@ -99,6 +99,19 @@
             "queued follow-up shows in the pending display (pi:
              queueCompactionMessage → updatePendingMessagesDisplay)"))))
 
+(deftest test-follow-up-expands-pasted-text
+  (let [cs (support/compaction-cs)
+        ed @(:current-editor-atom cs)
+        text (apply str (repeat 1200 "x"))]
+    (tui/handle-input ed (str "\u001b[200~" text "\u001b[201~"))
+    (reset! (:compacting? (runtime/agent-state (:engine cs))) true)
+    (with-redefs [tui/tui-request-render (fn [_] nil)]
+      (turn/handle-follow-up cs))
+    (t/is (= [{:text text :mode :follow-up}]
+             (runtime/compaction-queued (:engine cs))))
+    (t/is (= [text] (editor/editor-get-history ed)))
+    (t/is (= "" (editor/editor-get-text ed)))))
+
 (deftest test-flush-compaction-queue-prompts-when-idle
   (testing "compaction_end flushes the queue: the first non-extension message
             starts a run when idle, the rest queue (pi: flushCompactionQueue)"

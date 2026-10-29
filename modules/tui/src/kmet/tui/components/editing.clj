@@ -344,18 +344,19 @@
   "[paste #")
 
 (defn find-paste-markers-in-line
-  "Find paste markers in a single line of text.
-   Returns a vector of {:id int :start int :end int} in order of appearance.
-   :end is the index just past the closing bracket."
+  "Find complete paste markers with canonical positive IDs in a single line.
+   Accept pi's optional line/character count and kmet's expansion hint.
+   Returns {:id int :start int :end int}, with :end past the closing bracket."
   [line]
   (loop [offset 0, found []]
     (if-let [idx (clojure.string/index-of line paste-marker-prefix offset)]
       (if-let [end-idx (clojure.string/index-of line "]" (+ idx 1))]
-        (let [id-str (re-find #"\d+" (subs line (+ idx (count paste-marker-prefix))))]
-          (if id-str
-            (recur (inc end-idx)
-                   (conj found {:id (parse-long id-str) :start idx :end (inc end-idx)}))
-            (recur (inc end-idx) found)))
+        (let [match (re-matches #"([1-9]\d*)(?: (?:\+\d+ lines|\d+ chars))?(?: — ctrl\+o to expand)?"
+                                (subs line (+ idx (count paste-marker-prefix)) end-idx))
+              id (some-> match second parse-long)]
+          (if id
+            (recur (inc end-idx) (conj found {:id id :start idx :end (inc end-idx)}))
+            (recur (+ idx (count paste-marker-prefix)) found)))
         found)
       found)))
 
@@ -428,6 +429,21 @@
                            (clojure.string/replace old-text (str "#" id) (str "#" new-id))
                            old-text)]
             (recur (rest markers) (str out (subs line cursor start) new-text) end)))))))
+
+(defn expand-paste-markers-in-line
+  "Replace each paste marker in line whose id has content in store with that
+   content, literally and in one pass: a marker's id must match exactly
+   (#1 never claims #10), and inserted content is never rescanned, so marker
+   text inside a paste stays as pasted. Other markers are left unchanged."
+  [line store]
+  (loop [markers (find-paste-markers-in-line line), out "", cursor 0]
+    (if (empty? markers)
+      (str out (subs line cursor))
+      (let [{:keys [id start end]} (first markers)
+            content (get store id)]
+        (recur (rest markers)
+               (str out (subs line cursor start) (or content (subs line start end)))
+               end)))))
 
 (defn decode-csi-u
   "Decode CSI-u encoded control bytes (ESC [ <codepoint> ; 5 u) back to

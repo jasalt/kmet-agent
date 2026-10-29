@@ -197,7 +197,8 @@
   [editor]
   (let [s @(:state-atom editor)]
     {:lines (:lines s) :cursor-line (:cursor-line s) :cursor-col (:cursor-col s)
-     :paste-store @(:paste-store editor)}))
+     :paste-store @(:paste-store editor)
+     :paste-counter @(:paste-counter editor)}))
 
 (defn- undo-push [stack-atom snapshot]
   (swap! stack-atom conj snapshot))
@@ -220,6 +221,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -232,6 +234,7 @@
                                :cursor-line (:cursor-line snapshot)
                                :cursor-col (:cursor-col snapshot)}))
     (reset! (:paste-store editor) (:paste-store snapshot))
+    (reset! (:paste-counter editor) (:paste-counter snapshot))
     (reset! (:preferred-col-atom editor) nil)
     (reset! (:last-action editor) nil)
     (when-let [cb @(:on-change editor)] (cb (editor-get-text editor)))))
@@ -560,7 +563,7 @@
                   (re-find (trigger-pattern editor) before))
           (request-autocomplete editor {:force false :explicit-tab false}))))))
 
-(declare insert-character)
+(declare insert-character editor-get-expanded-text)
 
 (defn- handle-tab [editor]
   (if @(:autocomplete-state editor)
@@ -985,6 +988,7 @@
   (if-let [draft @(:history-draft editor)]
     (do (reset! (:state-atom editor) (map->EditorState draft))
         (reset! (:paste-store editor) (:paste-store draft))
+        (reset! (:paste-counter editor) (:paste-counter draft))
         (reset! (:scroll-offset-atom editor) 0)
         (reset! (:preferred-col-atom editor) nil)
         (reset! (:last-action editor) nil)
@@ -1292,9 +1296,7 @@
         (when (and char (not= (int char) 27))
           (handle-jump-character this (str char)))
         nil)
-      (let [state @state-atom
-            lines (:lines state)]
-        (cond
+      (cond
           ;; Paste handling takes precedence over key dispatch so streamed
           ;; bracketed-paste content (including \r, escape, and CSI-u encoded
           ;; control bytes) is buffered literally instead of triggering actions.
@@ -1302,264 +1304,264 @@
           ;; (pi treats everything between the first START and first END as
           ;; data): fall through to the buffering leg instead of resetting.
           ;; pi strips only the first START (String.replace, string pattern).
-          (and (clojure.string/includes? data "\u001b[200~")
-               (not= @paste-state :buffering))
-          (do (reset! paste-state :buffering)
-              (reset! paste-buffer "")
-              (let [remaining (clojure.string/replace-first data "\u001b[200~" "")]
-                (when (seq remaining)
-                  (protocols/handle-input this remaining)))
-              nil)
+        (and (clojure.string/includes? data "\u001b[200~")
+             (not= @paste-state :buffering))
+        (do (reset! paste-state :buffering)
+            (reset! paste-buffer "")
+            (let [remaining (clojure.string/replace-first data "\u001b[200~" "")]
+              (when (seq remaining)
+                (protocols/handle-input this remaining)))
+            nil)
 
           ;; Trailing input after END (pi: remaining + recursive handleInput)
           ;; re-enters dispatch instead of dropping.
-          (= @paste-state :buffering)
-          (do (swap! paste-buffer str data)
-              (let [buf @paste-buffer
-                    end-idx (clojure.string/index-of buf "\u001b[201~")]
-                (when (and end-idx (>= end-idx 0))
-                  (let [paste-text (subs buf 0 end-idx)
-                        remaining (subs buf (+ end-idx (count "\u001b[201~")))]
-                    (handle-paste this (edit/decode-csi-u paste-text))
+        (= @paste-state :buffering)
+        (do (swap! paste-buffer str data)
+            (let [buf @paste-buffer
+                  end-idx (clojure.string/index-of buf "\u001b[201~")]
+              (when (and end-idx (>= end-idx 0))
+                (let [paste-text (subs buf 0 end-idx)
+                      remaining (subs buf (+ end-idx (count "\u001b[201~")))]
+                  (handle-paste this (edit/decode-csi-u paste-text))
                     ;; Only leave buffering once the end marker arrives
-                    (reset! paste-state :idle)
-                    (reset! paste-buffer "")
-                    (when (seq remaining)
-                      (protocols/handle-input this remaining)))))
-              nil)
+                  (reset! paste-state :idle)
+                  (reset! paste-buffer "")
+                  (when (seq remaining)
+                    (protocols/handle-input this remaining)))))
+            nil)
 
           ;; Autocomplete dropdown — intercept only dropdown keys; other
           ;; input falls through to normal editing (which refreshes it)
-          (and @(:autocomplete-state this) @(:autocomplete-list this)
-               (or (kb-match? this data "tui.select.cancel")
-                   (kb-match? this data "tui.select.up")
-                   (kb-match? this data "tui.select.down")
-                   (kb-match? this data "tui.input.tab")
-                   (and (kb-match? this data "tui.select.confirm") (not @disable-submit))))
-          (let [sl @(:autocomplete-list this)
-                prefix @(:autocomplete-prefix this)]
-            (cond
-              (kb-match? this data "tui.select.cancel")
-              (do (cancel-autocomplete this) nil)
+        (and @(:autocomplete-state this) @(:autocomplete-list this)
+             (or (kb-match? this data "tui.select.cancel")
+                 (kb-match? this data "tui.select.up")
+                 (kb-match? this data "tui.select.down")
+                 (kb-match? this data "tui.input.tab")
+                 (and (kb-match? this data "tui.select.confirm") (not @disable-submit))))
+        (let [sl @(:autocomplete-list this)
+              prefix @(:autocomplete-prefix this)]
+          (cond
+            (kb-match? this data "tui.select.cancel")
+            (do (cancel-autocomplete this) nil)
 
-              (or (kb-match? this data "tui.select.up")
-                  (kb-match? this data "tui.select.down"))
-              (do (protocols/handle-input sl data) nil)
+            (or (kb-match? this data "tui.select.up")
+                (kb-match? this data "tui.select.down"))
+            (do (protocols/handle-input sl data) nil)
 
-              (kb-match? this data "tui.input.tab")
-              (do (apply-selected-completion! this) nil)
+            (kb-match? this data "tui.input.tab")
+            (do (apply-selected-completion! this) nil)
 
-              (and (kb-match? this data "tui.select.confirm") (not @disable-submit))
+            (and (kb-match? this data "tui.select.confirm") (not @disable-submit))
               ;; pi tui.select.confirm with the dropdown open: apply the
               ;; selected completion; only a command-name completion (prefix
               ;; starts with "/") falls through to submit — an argument
               ;; completion (e.g. "/login git" → "/login github-copilot")
               ;; replaces the typed text and waits for a second Enter.
-              (do (if (str/starts-with? prefix "/")
-                    (do (apply-selected-completion! this)
+            (do (if (str/starts-with? prefix "/")
+                  (do (apply-selected-completion! this)
                         ;; submit: the next message starts with a fresh
                         ;; @-completion snapshot
-                        (ac/invalidate-file-cache!)
-                        (when-let [cb @on-submit]
-                          (cb (clojure.string/join "\n" (:lines @(:state-atom this))))))
-                    (apply-selected-completion! this))
-                  nil)))
+                      (ac/invalidate-file-cache!)
+                      (when-let [cb @on-submit]
+                        (cb (editor-get-expanded-text this))))
+                  (apply-selected-completion! this))
+                nil)))
 
           ;; pi (custom-editor) order: interrupt and exit are tried BEFORE the
           ;; explicit history bindings, so a user binding history to escape/
           ;; ctrl+d cannot swallow cancel/exit. `and` short-circuits: when
           ;; neither id matches, dispatch-app-action! is not called here and
           ;; the general leg below runs the remaining actions exactly once.
-          (and (or (kb-match? this data "app.interrupt")
-                   (kb-match? this data "app.exit"))
-               (dispatch-app-action! this data))
-          nil
+        (and (or (kb-match? this data "app.interrupt")
+                 (kb-match? this data "app.exit"))
+             (dispatch-app-action! this data))
+        nil
 
           ;; pi (custom-editor): explicit history bindings take precedence
           ;; over the remaining app actions while the editor is focused —
           ;; the escape hatch that lets a user bind ctrl+p to history even
           ;; though it cycles models by default. Both default to no keys, so
           ;; this only fires for user-bound chords.
-          (kb-match? this data "tui.editor.historyPrevious")
-          (do (history-backward this) nil)
+        (kb-match? this data "tui.editor.historyPrevious")
+        (do (history-backward this) nil)
 
-          (kb-match? this data "tui.editor.historyNext")
-          (do (history-forward this) nil)
+        (kb-match? this data "tui.editor.historyNext")
+        (do (history-forward this) nil)
 
           ;; App actions (pi: CustomEditor.handleInput) — registered action
           ;; handlers take precedence over editor-internal key handling. Paste
           ;; buffering and the autocomplete dropdown are intercepted above, so
           ;; they keep priority.
-          (dispatch-app-action! this data)
-          nil
+        (dispatch-app-action! this data)
+        nil
 
-          (and (kb-match? this data "tui.input.submit") (not @disable-submit))
-          (do (ac/invalidate-file-cache!)
-              (when-let [cb @on-submit] (cb (clojure.string/join "\n" lines)))
-              nil)
+        (and (kb-match? this data "tui.input.submit") (not @disable-submit))
+        (do (ac/invalidate-file-cache!)
+            (when-let [cb @on-submit] (cb (editor-get-expanded-text this)))
+            nil)
 
-          (kb-match? this data "tui.input.newLine")
-          (do (add-new-line this) nil)
+        (kb-match? this data "tui.input.newLine")
+        (do (add-new-line this) nil)
 
           ;; pi base editor: Ctrl+C is the copy binding and is handed back
           ;; to the parent (no editing) — after app actions, so app.clear
           ;; still owns it in the app
-          (kb-match? this data "tui.input.copy")
-          nil
+        (kb-match? this data "tui.input.copy")
+        nil
 
           ;; kmet: the base editor's standalone cancel. pi's Editor has no
           ;; escape leg (its CustomEditor owns app.interrupt) — resolving
           ;; through tui.select.cancel keeps the fallback rebindable and
           ;; matches Input's cancel; in the app an app.interrupt handler
           ;; consumes escape before this leg.
-          (kb-match? this data "tui.select.cancel")
-          (do (reset! jump-mode nil)
-              (when-let [cb @on-submit] (cb nil))
-              nil)
+        (kb-match? this data "tui.select.cancel")
+        (do (reset! jump-mode nil)
+            (when-let [cb @on-submit] (cb nil))
+            nil)
 
-          (kb-match? this data "tui.editor.deleteCharBackward")
-          (do (handle-backspace this) nil)
+        (kb-match? this data "tui.editor.deleteCharBackward")
+        (do (handle-backspace this) nil)
 
-          (kb-match? this data "tui.editor.deleteCharForward")
-          (do (handle-forward-delete this) nil)
+        (kb-match? this data "tui.editor.deleteCharForward")
+        (do (handle-forward-delete this) nil)
 
-          (kb-match? this data "tui.editor.undo")
-          (do (handle-undo this) nil)
+        (kb-match? this data "tui.editor.undo")
+        (do (handle-undo this) nil)
 
-          (kb-match? this data "tui.editor.redo")
-          (do (handle-redo this) nil)
+        (kb-match? this data "tui.editor.redo")
+        (do (handle-redo this) nil)
 
-          (kb-match? this data "tui.input.tab")
-          (do (handle-tab this) nil)
+        (kb-match? this data "tui.input.tab")
+        (do (handle-tab this) nil)
 
           ;; jumpBackward's kmet chord ctrl+shift+] is part of the id's
           ;; default-keys, so a rebind moves both it and pi's ctrl+alt+]
-          (kb-match? this data "tui.editor.jumpForward")
-          (do (enter-jump-mode this :forward) nil)
+        (kb-match? this data "tui.editor.jumpForward")
+        (do (enter-jump-mode this :forward) nil)
 
-          (kb-match? this data "tui.editor.jumpBackward")
-          (do (enter-jump-mode this :backward) nil)
+        (kb-match? this data "tui.editor.jumpBackward")
+        (do (enter-jump-mode this :backward) nil)
 
-          (kb-match? this data "tui.editor.deleteToLineStart")
-          (do (handle-kill-to-line-start this) nil)
+        (kb-match? this data "tui.editor.deleteToLineStart")
+        (do (handle-kill-to-line-start this) nil)
 
-          (kb-match? this data "tui.editor.deleteToLineEnd")
-          (do (handle-kill-to-line-end this) nil)
+        (kb-match? this data "tui.editor.deleteToLineEnd")
+        (do (handle-kill-to-line-end this) nil)
 
           ;; ctrl+w keeps kmet's kill-the-line behavior (pi has no line kill;
           ;; deleteWordBackward also claims ctrl+w, so a user rebinding
           ;; killLine away gets the pi chord back)
-          (kb-match? this data "tui.editor.killLine")
-          (do (handle-kill-line this) nil)
+        (kb-match? this data "tui.editor.killLine")
+        (do (handle-kill-line this) nil)
 
-          (or (kb-match? this data "tui.editor.deleteWordBackward")
-              (keys/matches-key? data (keys/alt "h")))
-          (do (handle-delete-word-backward this) nil)
+        (or (kb-match? this data "tui.editor.deleteWordBackward")
+            (keys/matches-key? data (keys/alt "h")))
+        (do (handle-delete-word-backward this) nil)
 
-          (kb-match? this data "tui.editor.deleteWordForward")
-          (do (handle-delete-word-forward this) nil)
+        (kb-match? this data "tui.editor.deleteWordForward")
+        (do (handle-delete-word-forward this) nil)
 
-          (kb-match? this data "tui.editor.yank")
-          (do (handle-yank this) nil)
+        (kb-match? this data "tui.editor.yank")
+        (do (handle-yank this) nil)
 
-          (kb-match? this data "tui.editor.yankPop")
-          (do (handle-yank-pop this) nil)
+        (kb-match? this data "tui.editor.yankPop")
+        (do (handle-yank-pop this) nil)
 
-          (kb-match? this data "tui.editor.cursorUp")
-          (do (let [state @state-atom
-                    lines (:lines state)
-                    cc (:cursor-col state)
-                    first-visual? (zero? (current-visual-line-idx this))]
-                (cond
+        (kb-match? this data "tui.editor.cursorUp")
+        (do (let [state @state-atom
+                  lines (:lines state)
+                  cc (:cursor-col state)
+                  first-visual? (zero? (current-visual-line-idx this))]
+              (cond
                   ;; pi: history on Up when on the first visual line and
                   ;; (editor empty || browsing history || cursor at col 0)
-                  (and first-visual?
-                       (or (and (= 1 (count lines)) (= "" (first lines)))
-                           (not (neg? @(:history-idx this)))
-                           (zero? cc)))
-                  (history-backward this)
+                (and first-visual?
+                     (or (and (= 1 (count lines)) (= "" (first lines)))
+                         (not (neg? @(:history-idx this)))
+                         (zero? cc)))
+                (history-backward this)
                   ;; Already at the top — jump to the start of the line
                   ;; (pi: moveToLineStart)
-                  first-visual?
-                  (swap! state-atom assoc :cursor-col 0)
-                  :else
-                  (move-cursor-vertical this -1)))
-              nil)
+                first-visual?
+                (swap! state-atom assoc :cursor-col 0)
+                :else
+                (move-cursor-vertical this -1)))
+            nil)
 
-          (kb-match? this data "tui.editor.cursorDown")
-          (do (let [state @state-atom
-                    lines (:lines state)
-                    cl (:cursor-line state)
-                    line (nth lines cl "")
-                    last-visual? (= (current-visual-line-idx this)
-                                    (dec (count (build-visual-line-map
-                                                 lines @(:last-width-atom this)
-                                                 (valid-paste-ids this)))))]
-                (cond
+        (kb-match? this data "tui.editor.cursorDown")
+        (do (let [state @state-atom
+                  lines (:lines state)
+                  cl (:cursor-line state)
+                  line (nth lines cl "")
+                  last-visual? (= (current-visual-line-idx this)
+                                  (dec (count (build-visual-line-map
+                                               lines @(:last-width-atom this)
+                                               (valid-paste-ids this)))))]
+              (cond
                   ;; pi: Down navigates history only while browsing, and only
                   ;; from the last visual line
-                  (and (not (neg? @(:history-idx this))) last-visual?)
-                  (history-forward this)
+                (and (not (neg? @(:history-idx this))) last-visual?)
+                (history-forward this)
                   ;; Already at the bottom — jump to the end of the line
                   ;; (pi: moveToLineEnd)
-                  last-visual?
-                  (swap! state-atom assoc :cursor-col (count line))
-                  :else
-                  (move-cursor-vertical this 1)))
-              nil)
-
-          (keys/matches-key? data (keys/ctrl "p"))
-          (do (history-backward this) nil)
-
-          (keys/matches-key? data (keys/ctrl "n"))
-          (do (history-forward this) nil)
-
-          (kb-match? this data "tui.editor.cursorLeft")
-          (do (move-cursor-horizontal this -1)
-              (refresh-autocomplete this) nil)
-
-          (kb-match? this data "tui.editor.cursorRight")
-          (do (move-cursor-horizontal this 1)
-              (refresh-autocomplete this) nil)
-
-          (kb-match? this data "tui.editor.cursorLineStart")
-          (do (swap! state-atom assoc :cursor-col 0)
-              (reset! preferred-col-atom nil)
-              (reset! last-action nil)
-              (refresh-autocomplete this) nil)
-
-          (kb-match? this data "tui.editor.cursorLineEnd")
-          (do (let [line (nth (:lines @state-atom) (:cursor-line @state-atom) "")]
+                last-visual?
                 (swap! state-atom assoc :cursor-col (count line))
-                (reset! preferred-col-atom nil)
-                (reset! last-action nil))
-              (refresh-autocomplete this) nil)
+                :else
+                (move-cursor-vertical this 1)))
+            nil)
 
-          (kb-match? this data "tui.editor.cursorWordLeft")
-          (do (move-cursor-word-left this)
-              (refresh-autocomplete this) nil)
+        (keys/matches-key? data (keys/ctrl "p"))
+        (do (history-backward this) nil)
 
-          (kb-match? this data "tui.editor.cursorWordRight")
-          (do (move-cursor-word-right this)
-              (refresh-autocomplete this) nil)
+        (keys/matches-key? data (keys/ctrl "n"))
+        (do (history-forward this) nil)
 
-          (kb-match? this data "tui.editor.pageUp")
-          (do (page-scroll this -1)
-              (refresh-autocomplete this) nil)
+        (kb-match? this data "tui.editor.cursorLeft")
+        (do (move-cursor-horizontal this -1)
+            (refresh-autocomplete this) nil)
 
-          (kb-match? this data "tui.editor.pageDown")
-          (do (page-scroll this 1)
-              (refresh-autocomplete this) nil)
+        (kb-match? this data "tui.editor.cursorRight")
+        (do (move-cursor-horizontal this 1)
+            (refresh-autocomplete this) nil)
 
-          :else
-          (let [printable (keys/decode-printable-key data)
-                has-ctrl? (and (nil? printable)
-                               (some #(let [c (int %)]
-                                        (or (< c 32) (== c 127)
-                                            (and (>= c 128) (<= c 159))))
-                                     data))]
-            (when-not has-ctrl?
-              (insert-character this (or printable data)))))))))
+        (kb-match? this data "tui.editor.cursorLineStart")
+        (do (swap! state-atom assoc :cursor-col 0)
+            (reset! preferred-col-atom nil)
+            (reset! last-action nil)
+            (refresh-autocomplete this) nil)
+
+        (kb-match? this data "tui.editor.cursorLineEnd")
+        (do (let [line (nth (:lines @state-atom) (:cursor-line @state-atom) "")]
+              (swap! state-atom assoc :cursor-col (count line))
+              (reset! preferred-col-atom nil)
+              (reset! last-action nil))
+            (refresh-autocomplete this) nil)
+
+        (kb-match? this data "tui.editor.cursorWordLeft")
+        (do (move-cursor-word-left this)
+            (refresh-autocomplete this) nil)
+
+        (kb-match? this data "tui.editor.cursorWordRight")
+        (do (move-cursor-word-right this)
+            (refresh-autocomplete this) nil)
+
+        (kb-match? this data "tui.editor.pageUp")
+        (do (page-scroll this -1)
+            (refresh-autocomplete this) nil)
+
+        (kb-match? this data "tui.editor.pageDown")
+        (do (page-scroll this 1)
+            (refresh-autocomplete this) nil)
+
+        :else
+        (let [printable (keys/decode-printable-key data)
+              has-ctrl? (and (nil? printable)
+                             (some #(let [c (int %)]
+                                      (or (< c 32) (== c 127)
+                                          (and (>= c 128) (<= c 159))))
+                                   data))]
+          (when-not has-ctrl?
+            (insert-character this (or printable data))))))))
 
 ;; ─── Construction ──────────────────────────────────────────────────────────
 
@@ -1622,7 +1624,8 @@
 (defn editor-set-text!
   "Replace the editor text. A programmatic clear (submit, session switch,
    app.clear) also ends the current @-completion message: a blank editor has
-   no snapshot left to keep."
+   no snapshot left to keep. Like pi setText, discard old paste associations
+   after saving undo state; replacement text is literal."
   [editor text]
   (cancel-autocomplete editor)
   (when (str/blank? text)
@@ -1640,8 +1643,9 @@
     (reset! (:jump-mode editor) nil)
     (reset! (:history-idx editor) -1)
     (reset! (:history-draft editor) nil)
-    ;; Reconcile the paste store with the new text (e.g. cleared after submit)
-    (sync-paste-store! editor (:lines @(:state-atom editor)))))
+    ;; pi setText: replacement text is literal, not a reference to old pastes.
+    (reset! (:paste-store editor) {})
+    (reset! (:paste-counter editor) 0)))
 
 (defn editor-set-on-submit! [editor f]
   (reset! (:on-submit editor) f))
@@ -1736,16 +1740,11 @@
 
 (defn editor-get-expanded-text
   "Get the editor text with paste markers expanded to their stored content
-   (pi: Editor.getExpandedText — used by the external editor flow)."
+   (pi: Editor.getExpandedText — used by submission and external editing)."
   [editor]
-  (reduce-kv (fn [result id content]
-               (if content
-                 (clojure.string/replace result
-                                         (re-pattern (str "\\[paste #" id "[^\\]]*\\]"))
-                                         content)
-                 result))
-             (editor-get-text editor)
-             @(:paste-store editor)))
+  (let [store @(:paste-store editor)]
+    (clojure.string/join "\n" (map #(edit/expand-paste-markers-in-line % store)
+                                   (:lines @(:state-atom editor))))))
 
 (defn editor-autocomplete-active?
   "True when the autocomplete dropdown is currently showing."

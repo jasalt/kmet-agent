@@ -527,7 +527,7 @@
    submit like regular Enter."
   [cs]
   (let [ed @(:current-editor-atom cs)
-        text (str/trim (tui/editor-get-text ed))]
+        text (str/trim (tui/editor-get-expanded-text ed))]
     (when (seq text)
       (tui/editor-add-to-history! ed text)
       (tui/editor-set-text! ed "")
@@ -545,7 +545,7 @@
         all (into (vec steering) (concat follow-up (map :text cq)))]
     (when (seq all)
       (let [ed @(:current-editor-atom cs)
-            current (tui/editor-get-text ed)
+            current (tui/editor-get-expanded-text ed)
             queued-text (str/join "\n\n" all)
             combined (str/join "\n\n" (remove str/blank? [queued-text current]))]
         (runtime/clear-queues! (:engine cs))

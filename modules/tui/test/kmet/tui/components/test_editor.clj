@@ -876,6 +876,23 @@
     (t/is (= "/model " @submitted) "slash completion applies then submits")
     (t/is (nil? @(:autocomplete-state e)))))
 
+(t/deftest test-submit-expands-collapsed-pastes
+  (doseq [autocomplete? [false true]
+          line ["original text"
+                "[user@machine:~]$ curl --connect-timeout 5 http://123.234.345.456:7780/v1/models"
+                "$1 ${HOME} C:\\Users\\user\\file.txt \\n"]]
+    (let [e (make-ac-editor)
+          pasted (clojure.string/join "\n" (repeat 15 line))
+          submitted (atom nil)]
+      (core/editor-set-on-submit! e #(reset! submitted %))
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #1"))
+      (when autocomplete?
+        (swap! (:state-atom e) assoc :cursor-line 0 :cursor-col 0)
+        (doseq [c "/mo"] (core/handle-input e (str c))))
+      (core/handle-input e K-ENTER)
+      (t/is (= (str (when autocomplete? "/model ") pasted) @submitted)))))
+
 (t/deftest test-autocomplete-escape-cancels
   (let [e (make-ac-editor)
         submitted (atom :none)]
@@ -1087,13 +1104,49 @@
 
 (t/deftest test-editor-get-expanded-text
   (let [e (editor/make-editor)
-        big1 (clojure.string/join "\n" (repeat 15 "one"))
-        big2 (clojure.string/join "\n" (repeat 15 "two"))]
+        big1 (clojure.string/join "\n" (repeat 15 "[user@machine:~]$ command"))
+        big2 (clojure.string/join "\n" (repeat 15 "$1 ${HOME} C:\\Users\\user"))]
     (core/handle-input e (str "\u001b[200~" big1 "\u001b[201~"))
     (core/handle-input e (str "\u001b[200~" big2 "\u001b[201~"))
     (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #1"))
     (t/is (= (str big1 big2) (editor/editor-get-expanded-text e))
           "all paste markers expanded to their stored content")))
+
+(t/deftest test-editor-get-expanded-text-matches-ids-exactly
+  (let [e (editor/make-editor)
+        pastes (mapv #(clojure.string/join "\n" (repeat 15 (str "P" %))) (range 1 12))]
+    (doseq [p pastes]
+      (core/handle-input e (str "\u001b[200~" p "\u001b[201~")))
+    (t/is (clojure.string/includes? (editor/editor-get-text e) "[paste #10"))
+    (t/is (= (apply str pastes) (editor/editor-get-expanded-text e))
+          "#1 does not claim the #10/#11 markers")))
+
+(t/deftest test-editor-get-expanded-text-preserves-markers-without-ids
+  (doseq [literal ["[paste #]" "[paste #oops1]" "[paste #] 1"
+                   "[paste #" "[paste #oops1" "[paste # then [paste #"
+                   "[paste #1 then " "[paste #1oops]" "[paste #01]"
+                   "[paste #1 +3 frogs]" "[paste #1 3 lines]"
+                   "[paste #1 +3 lines — wrong hint]"
+                   "[paste #999999999999999999999999999999]"]]
+    (let [e (editor/make-editor)
+          pasted (clojure.string/join "\n" (repeat 15 "payload"))
+          prefix (str "literal " literal " followed by ")
+          submitted (atom nil)]
+      (editor/editor-set-text! e prefix)
+      (core/editor-set-on-submit! e #(reset! submitted %))
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (t/is (= (str prefix pasted) (editor/editor-get-expanded-text e)))
+      (core/handle-input e K-ENTER)
+      (t/is (= (str prefix pasted) @submitted)))))
+
+(t/deftest test-editor-get-expanded-text-does-not-rescan-content
+  (let [e (editor/make-editor)
+        big1 (clojure.string/join "\n" (repeat 15 "see [paste #2 +15 lines]"))
+        big2 (clojure.string/join "\n" (repeat 15 "two"))]
+    (core/handle-input e (str "\u001b[200~" big1 "\u001b[201~"))
+    (core/handle-input e (str "\u001b[200~" big2 "\u001b[201~"))
+    (t/is (= (str big1 big2) (editor/editor-get-expanded-text e))
+          "marker text inside pasted content stays literal")))
 
 (t/deftest test-editor-get-expanded-text-no-markers
   (let [e (editor/make-editor)]
@@ -1143,6 +1196,17 @@
     (t/is (= "" (editor/editor-get-text e)))
     (core/handle-input e (ctrl 31))
     (t/is (= "msg" (editor/editor-get-text e)) "cleared text restored by undo")))
+
+(t/deftest test-editor-set-text-retires-paste-store
+  (doseq [same-text? [false true]]
+    (let [e (editor/make-editor)
+          pasted (clojure.string/join "\n" (cons "literal [paste #1 +15 lines]" (repeat 14 "payload")))]
+      (core/handle-input e (str "\u001b[200~" pasted "\u001b[201~"))
+      (let [replacement (if same-text? (core/editor-get-text e) (str "edited " pasted))]
+        (core/editor-set-text! e replacement)
+        (t/is (= replacement (core/editor-get-expanded-text e)))
+        (t/is (empty? @(:paste-store e)))
+        (t/is (zero? @(:paste-counter e)))))))
 
 ;; ─── IEditorComponent protocol ───────────────────────────────────────────────
 
