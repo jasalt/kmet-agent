@@ -34,8 +34,20 @@
   (testing "2-arity passes opts through"
     (is (= "{\"a\":1}" (json/generate-string {:a 1} {:pretty true})))
     (is (= "{\"a\":\"h\\u00e9llo\"}"
-           (json/generate-string {:a "héllo"} {:escape-non-ascii true})))
+           (json/generate-string {:a "héllo"} {:escape-unicode true})))
     (is (= "{\"a\":1}" (json/generate-string {:a 1} {:pretty false})))))
+
+(deftest astral-round-trip
+  (testing "non-BMP text crosses the seam as raw UTF-8, not a split backslash-u escape"
+    ;; A code point above U+FFFF has to be escaped as a surrogate pair. Jolt's
+    ;; data.json escapes with exactly four hex digits instead, so U+1F44D is
+    ;; written as a five-digit escape that a lenient reader splits back into
+    ;; U+1F44 plus the literal "d" — the thumbs-up bug. Raw UTF-8 is valid
+    ;; JSON everywhere and never enters that escape path.
+    (let [emoji (String. (Character/toChars 128077))]
+      (is (= (str "{\"a\":\"" emoji "\"}")
+             (json/generate-string {:a emoji})))
+      (is (= emoji (:a (json/parse-string (json/generate-string {:a emoji}) true)))))))
 
 (deftest round-trips
   (testing "keyword-keyed data round-trips through generate"
