@@ -190,6 +190,27 @@
       (is (str/includes? (peek lines) "... (+7 lines,") "the hint is at the bottom")
       (is (not-any? #(str/includes? % "Took") lines)
           "the state line belongs to the component (tail line)")))
+  (testing "a wrapped tail still caps the visual window and counts logical lines"
+    (let [content (str/join "\n" (concat (mapv #(str "r-" %) (range 9))
+                                         [(apply str (repeat 60 "w"))]))
+          lines (plain (r/render-bash-result content false th 20 false 1000 2000 nil {}) 20)]
+      (is (= 7 (count lines)) "spacer + 5 visual lines + hint")
+      (is (str/includes? (peek lines) "... (+7 lines,")
+          "the hint counts LOGICAL lines not shown in full: the nine r- lines
+           above the wrapped tail are hidden, and the wrapped line is not
+           consumed whole")
+      (is (every? #(<= (count %) 20) (subvec lines 1 6)) "the window respects the width")))
+  (testing "a big body is neither styled nor wrapped past the window"
+    (let [content (str/join "\n" (mapv #(str "line " %) (range 2000)))
+          wrapped-chars (atom 0)
+          orig utils/wrap-text-with-ansi]
+      (with-redefs [utils/wrap-text-with-ansi
+                    (fn [s w] (swap! wrapped-chars + (count s)) (orig s w))]
+        (r/render-bash-result content false th 60 false 1000 2000 nil {}))
+      (is (< @wrapped-chars 2000)
+          (str "only the tail lines are wrapped, got " @wrapped-chars " chars"))
+      (is (= 2001 (count (plain (r/render-bash-result content false th 60 true 1000 2000 nil {}) 60)))
+          "expanded still carries every line")))
   (testing "expanded renders every line, no hint"
     (let [content (str/join "\n" (mapv #(str "r-" %) (range 7)))
           lines (plain (r/render-bash-result content false th 60 true 1000 2000 nil {}) 60)]

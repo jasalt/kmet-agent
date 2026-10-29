@@ -168,11 +168,41 @@
                  (+ visual (count wrapped)))
           {:visual-lines (into acc wrapped) :consumed consumed})))))
 
+(defn- bounded-tail-visual-lines
+  "Bounded tail VISUAL-line truncation over logical LINES — the mirror of
+   bounded-head-visual-lines for previews that keep the end of the body.
+   Only the last lines are STYLED and WRAPPED (each logical line contributes
+   at least one visual line, so the window is complete once MAX-VISUAL is
+   filled), so the cost is O(window) instead of O(content): a collapsed
+   shell result used to style, join and wrap its whole body to show five
+   lines — 336 ms bb / 164 ms jolt for a 135 KB output, 2.4 / 0.7 ms here.
+   Lines are wrapped one at a time, so
+   STYLE must return a self-contained line (no style left open across
+   lines) — which is what the per-line fg renders produce.
+   :consumed counts lines shown in FULL (a line cut mid-wrap is not
+   consumed), so (- total consumed) is the logical 'N more lines' hint count
+   the head variant reports too. Returns {:visual-lines [...] :consumed n}."
+  [lines max-visual width style]
+  (let [n (count lines)]
+    (loop [i (dec n), visual 0, consumed 0, acc []]
+      (if (or (neg? i) (>= visual max-visual))
+        {:visual-lines (vec (take-last max-visual acc)) :consumed consumed}
+        (let [wrapped (vec (utils/wrap-text-with-ansi (style (nth lines i)) width))
+              room (- max-visual visual)]
+          (if (<= (count wrapped) room)
+            (recur (dec i) (+ visual (count wrapped)) (inc consumed)
+                   (into wrapped acc))
+            ;; only the tail of this line reaches the window, and it is not
+            ;; consumed: the hint counts it as hidden
+            {:visual-lines (vec (concat (take-last room wrapped) acc))
+             :consumed consumed}))))))
+
 (defn expand-hint
   "The compact ctrl+o nag shared by every collapsed body: `... (+N lines,
    ctrl+o toggle)`. Public: the built-in renderers and extensions use it so
-   every transcript hint reads the same. N is the hidden count: visual lines
-   for the shell output window, logical lines for file previews."
+   every transcript hint reads the same. N is the hidden count in LOGICAL
+   lines — the shell output window and the file previews both count the lines
+   not shown in full (pi: bash-execution's hiddenLineCount)."
   [theme hidden-lines]
   (str (theme/fg theme :muted (str "... (+" hidden-lines " lines, "))
        (app-kb/key-hint "app.tools.expand" "toggle")
@@ -853,7 +883,8 @@
         nil))))
 (def ^:private bash-result-preview-lines
   "Collapsed cap on the rendered output, in visual lines — a wrapped line
-   counts once, and the expand hint reports the rest."
+   counts once, and the expand hint reports the logical lines not shown in
+   full."
   5)
 
 (defn shell-call-renderer
@@ -908,23 +939,28 @@
                    trimmed))]
     (concat
      (when (seq output)
-       (let [styled (->> (str/split-lines output)
-                         (mapv #(theme/fg theme :tool-output %))
-                         (str/join "\n"))]
+       (let [lines (str/split-lines output)]
          (if expanded?
            (concat [[:spacer {:lines 1}]]
-                   [(tool-text styled)])
-           (let [{:keys [visual-lines skipped-count]}
-                 (utils/truncate-to-visual-lines styled
-                                                 bash-result-preview-lines
-                                                 width)]
+                   [(tool-text (->> lines
+                                    (mapv #(theme/fg theme :tool-output %))
+                                    (str/join "\n")))])
+           ;; Only the tail is styled and wrapped (see
+           ;; bounded-tail-visual-lines): the hint counts the logical lines
+           ;; not shown in full, like the file previews.
+           (let [{:keys [visual-lines consumed]}
+                 (bounded-tail-visual-lines lines
+                                            bash-result-preview-lines
+                                            width
+                                            #(theme/fg theme :tool-output %))
+                 hidden (- (count lines) consumed)]
              (concat
               [[:spacer {:lines 1}]]
               (tool-text-lines visual-lines)
-              (when (pos? skipped-count)
+              (when (pos? hidden)
                 [(tool-text
                   (utils/truncate-to-width
-                   (expand-hint theme skipped-count)
+                   (expand-hint theme hidden)
                    width
                    "..."))]))))))
      (when truncation
