@@ -2407,3 +2407,261 @@ exercised: an email starting after a marker char (`~~user@example.com`),
 multiple emails per line, and case-insensitive/mid-word URL schemes.
 `bb test-changed` 1728 tests / 11,001 assertions green, `bb lint-changed`
 0 findings, `bb format-check-changed` clean.
+
+---
+
+## 22. Rendering hot paths after the streaming work (x86_64, 2026-10-29, bb 1.13.229 / `jolt v0.8.23-199-g0ac561e1`)
+
+§21 and the three streaming landings (`f5bd6d56` re-render only the changed
+block, `83a42d95` re-highlight only a fence's tail, `2a615ca6` line-start
+code cache) changed the markdown render path. This pass re-measured the three
+hot paths — full re-render, streaming, idle — on the desktop rather than the
+phone, and removed the per-character/per-content cliffs it found: the
+collapsed shell preview, the grapheme walker on wide text, and the per-code-
+point walk over long wide/narrow words.
+
+Fixture: `~/.kmet/sessions/19fdb60dc61-b305.ednl` (427 KB, 358 messages; 2,262
+rendered lines collapsed / 9,040 expanded at width 100; 1.36 MB of tool
+output). Harnesses: `scripts/bench/kmet_frame_bench.clj` (live loop frames),
+`scripts/bench/kmet_render_bench.clj` (cold/warm/global reflows), plus scratch
+probes in `target/streambench/` (streaming shapes, markdown phases, wrap and
+CJK width micro, per-role attribution) kept out of the tree like §21's
+`target/mdbench`. `wrap-micro`/`cjk-width` print their fixtures' char counts,
+which caught two mislabelled runs in this pass — read the shapes, not the
+labels.
+
+### 22.1 Idle: the parked loop costs nothing
+
+The render loop parks on `wake/park!` with a 100 ms heartbeat (resize poll +
+safety net) and renders only when a frame is requested. Measured on the real
+app in a tmux pty (`/proc/<pid>/stat` user+sys ticks, 10 s window): **bb 0.1 %
+of a core, jolt 0.0 %** after settling. The 2.9 % a 15 s settle still caught
+is host startup (extensions, catalog), not the loop — the same burn §11.4
+records for jolt, and it ends after ~20 s.
+
+A *requested* frame with no content change ("calm") still costs 1.4–2.1 ms
+(render-stack 1.3–1.9 ms), and a per-frame render is what a spinner bucket
+(240 ms) or an input tick buys; nothing periodic requests frames, so this is
+the input-latency cost, not idle cost.
+
+### 22.2 Streaming: per-append is fine at real block sizes
+
+Frame bench, bb, expanded tools: **1.55 ms/frame** median (render-stack 1.0,
+lines 0.31, diff+emit 0.21; 644-byte writes) on the 9 k-line document;
+collapsed 1.17–1.25 ms. §13.5/§13.6 measured 9–15 ms for the same scenario
+on the phone (14.9 k lines) before the incremental markdown work, so the
+streaming landing holds.
+
+The synthetic shapes (24 KB body, 10-char deltas, bb) show what the cache can
+and cannot do:
+
+| shape | deltas | total | median | max | full render |
+|---|---:|---:|---:|---:|---:|
+| blank-line separated (`thinking`) | 2400 | 308 ms | **0.12 ms** | 3.1 ms | 8.6 ms |
+| one growing paragraph (`prose`) | 2400 | 6.0 s | 2.4 ms | 9.4 ms | 6.8 ms |
+| growing code fence | 2402 | 4.4 s | 1.7 ms | 8.5 ms | 100.8 ms |
+| growing list (no blank lines) | 2400 | 10.2 s | 4.3 ms | 16.1 ms | 8.2 ms |
+
+The blank-line case is the one real thinking/text streams hit: the stable
+prefix advances at every clean blank run, so the delta pays only its trailing
+block. A construct spanning blank lines (a long paragraph, a list, a fence) is
+re-rendered per delta — the fence is still 23x cheaper than a full render
+(highlight + wrapped-body caches), the list and paragraph are *at* full-render
+cost per delta because the block itself is the unit.
+
+Real sessions never reach those shapes: across the 77 stored sessions that
+parse as EDN the largest blank-line-free run in an assistant message is
+**1.16 KB** (text) / **0.9 KB** (thinking), i.e. ≤0.2 ms per append. The synthetic list/paragraph
+rows are the ceiling, not the common case.
+
+One O(document) cost per append remains by construction: `render-lines`
+rebuilds the returned line vector (`(into [] cat per-block)`) and compares
+`(str/starts-with? text stable-text)` against the whole prefix, and the frame
+then walks the document anyway. Measured with a 1.5 MB markdown body the
+per-delta cost rises 1.5 → 6 ms as the body grows; at message sizes it is
+noise.
+
+### 22.3 Full re-render: still the whole document, but the collapsed preview no longer wraps it all
+
+Cold frame, bb, width 100: collapsed sits around **110–125 ms frame** after
+§22.4/§22.5 (the same-run A/B is in §22.4); expanded 406 ms (render-stack
+351 ms, diff+emit 53 ms writing 1.48 MB). Warm frame 1.1 ms. Role split
+(one cold run per mode; the per-message harness swings ±25 % run to run, so
+read the shares):
+
+| role | expanded | collapsed |
+|---|---|---|
+| tools | 340 ms — **85 %** (read 176, bash 160, write 4) | 91 ms — **86 %** (bash 73, write 11, read 7) |
+| assistant markdown | 15 ms | 13 ms |
+| user markdown | 1.4 ms | 1.2 ms |
+
+Markdown is no longer the cost on a tool-heavy session — the tool renderers
+are. A fresh expanded `read` result highlights its whole body (tokenize ~75 %
+of `render-highlighted` on both hosts), and only expanded mode renders file
+bodies at all (`render-read-result` returns nil when collapsed).
+
+A session-B-sized markdown render (1.5 MB assistant text, 32 k lines, bb)
+shows where the remaining big-session time goes: **1031 ms cold**, `wrap`
+512 ms (50 %, 9,856 calls), `parse` + `parse-inline` 364 ms (35 %), highlight
+127 ms (12 %), visible-width 97 ms (9 %). The block cache answers a repeat
+render of the same text at the same key in **0.7 ms**, but a theme switch
+re-keys it: **1.08 s** again. A fresh render through the cache costs the same
+as a plain render (within noise); when the stable segment's last block is a
+code fence it pays one extra full `md/parse` (the `clean-probe` parses the
+segment plus 256 spaces — measured 2× the document's chars against 1× for a
+paragraph-ending segment), i.e. parse's whole 16 % share again.
+
+### 22.4 Applied: the collapsed shell preview is bounded
+
+`output-result-nodes` styled, joined and wrapped the **entire** shell output
+and only then kept the last five visual lines (`truncate-to-visual-lines`
+wraps to count). Collapsed is the default display mode, so every replay,
+theme switch, pad change and expand/collapse re-wrap paid O(content) per
+result — up to the tool's output cap each:
+
+| 135 KB shell output, collapsed preview | before | after |
+|---|---:|---:|
+| bb | 336 ms | **2.4 ms** |
+| jolt | 164 ms | **0.7 ms** |
+
+(`20 KB`: bb 46 → 1.0 ms, jolt 27 → 0.35 ms.)
+
+`bounded-tail-visual-lines` is the tail mirror of the existing
+`bounded-head-visual-lines`: it styles and wraps only the last lines until the
+visual window is full (each logical line contributes at least one visual
+line), so the cost is O(window). Wrapped lines are then trimmed to the cap as
+before, and the expand hint now reports **logical lines** not shown in full
+(`:consumed`), the same count the head previews and `bash_execution`'s live
+preview report (pi: `hiddenLineCount`) — the previous visual count was the
+only visual/logical mismatch left in the transcript.
+
+Collapsed cold frame on the fixture, medians of 3 back-to-back runs with the
+change stashed vs applied on the same tree: **bb 233 → 153 ms frame total
+(−34 %)**, and the preview fix alone accounts for it (stash only that file:
+156 ms) — the width work in §22.5 is noise on an ASCII/box-drawing
+transcript. **jolt** (single runs, before the drift was noticed): 345.3 →
+192.3 ms, render-stack 328.5 → 179.6. The collapsed render bench reads
+106–121 ms/2,262 lines with a 1.1 ms warm frame (bb). Absolute times drifted
+±30 % between this pass's runs (background load), so the tables' before/after
+pairs are the numbers to trust, not their absolutes; the calm/stream frames
+stayed at 1.4/1.2 ms (bb) and 1.1/1.1 ms (jolt) throughout. The rendered document is
+otherwise identical: dumping the whole collapsed transcript before/after and
+diffing shows the same 2,261 lines, differing only in the 36 hint counts
+(e.g. `+66` → `+42` where lines wrap). Tests pin the wrapped-tail window, the
+logical hint count, and that a 2,000-line body wraps only its tail;
+`test-bash-result`'s existing tail/cap/hint cases pass unchanged.
+
+### 22.5 Applied: BMP-wide text takes the arithmetic width path
+
+`visible-width-plain` sent every string with a CJK or wide-emoji code point to
+the grapheme walker (~8 µs/code point under bb/SCI) because
+`grapheme-complex-re` mixed the wide ranges into the "needs the walker" class.
+But the walker only decides things a per-character sum cannot: zero-width
+characters and variation selectors (0), pairing constructs (regional
+indicators, skin tones, ZWJ chains) and astral code points (one grapheme, two
+UTF-16 units). A BMP-wide code point is just 2 columns, which is arithmetic.
+
+The single class is now three answers behind one presence scan
+(`width-path`): a `width-special-re` miss (the §10.5 class, unchanged —
+accents, Cyrillic, box drawing) stays `:narrow` on exactly one scan; a hit is
+then classified by `walker-re` (zero-width ∪ non-BMP) into `:walker`, or
+`:wide` when no walker code point appears at all. `plain-char-width` takes
+that verdict and adds one column per BMP-wide match — a whole-string
+`str/replace` delta (one native pass, no per-match allocation). Both classes
+are generated from the walker's own tables (`cjk-ranges`, the BMP slice of
+`wide-emoji-ranges`), so the arithmetic and the walker agree by construction,
+and `test-utils`'s equivalence corpus (CJK, fullwidth, Hangul, CJK
+compatibility, BMP emoji, plus the boundary ±1 / 400 random-mix checks) pins
+it; `wide-lines-skip-the-walker` asserts the CJK/Hangul/fullwidth/BMP-emoji
+cases never enter the walker while flags, ZWJ chains, VS16 and astral emoji
+still do.
+
+| op | bb before | bb after | jolt before | jolt after |
+|---|---:|---:|---:|---:|
+| `visible-width` CJK 196 chars | 700 µs | **40 µs** (17x) | 206 µs | **43 µs** (4.8x) |
+| `visible-width` BMP emoji 119 chars | 520 µs | **28 µs** (19x) | 163 µs | **23 µs** (7x) |
+| `visible-width` Cyrillic 360 chars | 160 µs | **82 µs** (2x) | 19 µs | **20 µs** (=) |
+| `wrap` CJK 196 chars @100 | 1.68 ms | **250 µs** (6.7x) | 628 µs | **205 µs** (3.1x) |
+| `wrap` CJK 40 words @100 | 1.69 ms | **180 µs** (9.4x) | 511 µs | **180 µs** (2.8x) |
+| stream a 1,320-char CJK paragraph (6-char deltas) | 2.32 s / 10.3 ms median | **235 ms / 1.0 ms** (10x) | 739 ms / 3.4 ms | **258 ms / 1.1 ms** (2.9x) |
+
+Astral text is unchanged by design (it still walks: 40 astral emoji, 200
+UTF-16 units, measure ~120 µs on jolt / ~400 µs on bb either way). The boring
+non-ASCII case does not regress — jolt is unchanged, and bb measures ~2x
+faster than the old single class on the same fixture (same code-point set,
+isolated from the new tables; the cause was not chased), which matters because
+every box-drawing or accented line in the transcript pays it.
+
+The change is output-neutral on real content: dumping the fixture's whole
+transcript before/after (collapsed 2,261 lines, expanded 9,039) and diffing
+gives 0 differing lines. `bb test` 4,340 tests / 26,367 assertions (the only
+4 failures are `kmet.app.test-process-state`'s pre-existing ledger misses for
+`run_code.cljc`'s lane cells and `mutation.clj`'s `tails`, unrelated to this
+pass), and `test-utils` + `test-tool-renderers` pass under jolt.
+
+The width work left one more walk in the path — long unbroken words — which
+§22.6 removes.
+
+### 22.6 Applied: long wide/narrow words wrap by native slicing
+
+An unbroken run (a CJK paragraph has no spaces at all) is one word, so
+`wrap-single-line` hands it to `split-long-word`, which walked code points to
+place the cuts (`ansi-active-codes` per piece plus `char-width` per code
+point). But two shapes need no walk: a word whose code points are all
+2 columns (BMP-wide: CJK, Hangul, fullwidth, BMP emoji) slices at
+`width / 2` characters, and a word with nothing wider than one column
+(accents, Cyrillic, box drawing) slices at `width` characters. Both are one
+native scan to identify (`all-bmp-wide-re` / the absence of
+`width-special-re` and controls) and then `subs` per piece; an ANSI-free word
+also cannot change the tracker between pieces, so the active state is read
+once (`walk-pieces` keeps the per-code-point fallback for mixed
+wide/narrow, astral or code-bearing words, now without the per-piece code
+scan). The per-word width in `wrap-single-line` was deliberately left alone:
+an A/B of the uniform shortcut there measured no better on short words (one
+run read CJK 40 words 170 → 226 µs; later runs were within noise), so the
+second per-word classification was dropped rather than kept for a maybe.
+
+`wrap-text-with-ansi` micro, before this pass / after both fixes:
+
+| shape | bb | jolt |
+|---|---:|---:|
+| CJK 196 chars, one word @100 | 1.68 ms → **161 µs** (10.5x) | 628 µs → **123 µs** (5.1x) |
+| Cyrillic 360 chars, one word @100 | 1.13 ms → **302 µs** (3.7x) | 359 µs → **99 µs** (3.6x) |
+| CJK 40 words @100 | 1.69 ms → 193 µs | 511 µs → 168 µs |
+| astral emoji 40 words @100 | 0.90 ms → 0.97 ms (=) | 273 µs → 321 µs (=) |
+| ASCII 400 @100 | 71 µs → 71 µs (=) | — |
+| stream a 1,320-char CJK paragraph (6-char deltas) | 2.32 s / 10.3 ms median → **175 ms / 0.78 ms** (13x) | 739 ms / 3.40 ms → **174 ms / 0.68 ms** (4.2x) |
+
+The same-process A/B (stashed vs applied, interleaved in one process) shows
+the per-word shapes and plain ASCII unchanged within the bench's ±20 % noise
+(CJK 40 words 0.86–1.13x, Cyrillic 40 words 0.82–1.22x, ASCII 0.97–1.18x),
+CJK-in-prose lines unchanged, and the unbroken shapes 1.5–3.7x. Output is
+bit-identical: a frozen copy of the pre-pass `utils` wraps 5,000 random
+strings (CJK, astral emoji, flags, ZWJ, VS16, skin tones, controls, SGR and
+OSC 8 codes, widths 1–30) and every line of the 9,040-line transcript dump at
+7 widths the same on both hosts — 0 mismatches. `test-wrap-long-unbreakable-
+word-shapes` pins the three new slicings plus the mixed walker and a styled
+all-wide word; `test-wrap-cjk-width` (existing) covers the all-wide path.
+
+What is left in this path is the *narrow* per-character work for mixed
+wide/narrow unbroken words and astral runs: the walker is ~2 µs/code point
+(astral emoji 40 words is ~0.9 ms either way), and CJK prose with spaces
+still pays the width classifier per word (~1 µs each). Neither is on the
+streaming path at real block sizes (§22.2).
+
+### 22.7 What is left, in the order the numbers point
+
+- **A theme switch (and every key change) re-parses and re-styles
+  everything.** The markdown block cache key includes the theme, so 1.5 MB
+  costs 1.08 s again; a parse-level cache keyed on (text, transform, width)
+  would keep `parse` + `parse-inline` (35 %) and re-style from tokens, and the
+  read/write renderers would keep their tokens too (`render-highlighted`'s
+  tokenize is 75–90 % of the call on both hosts, and a resize re-tokenizes
+  identical text).
+- **Expanded tool bodies are highlighted whole.** `read` calls
+  `render-highlighted` on the full file at every width/theme change; the
+  `write` tool already keeps a per-component highlight cache
+  (`write-highlight-cache`), the read result does not.
+- Virtualization still stands as §10.6 left it: the scroll view renders the
+  whole document, so a redraw (resize) re-renders every component
+  (468 ms on the fixture, 1.48 MB written).
